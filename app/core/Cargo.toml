@@ -1,0 +1,20 @@
+[package]
+name = "strays-core"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+# Debug-only tools (spec §14.3): allows a local fake GitHub server. Never on in release builds.
+devtools = []
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std", "serde"] }
+gix = { version = "0.90.0", default-features = false, features = ["sha1"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "native-tls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+uuid = { version = "1.29.0", features = ["v4", "serde"] }
+
+[dev-dependencies]
+proptest = "1.12.0"
+tempfile = "3.27.0"

@@ -146,7 +146,7 @@ idleDays     = max(0, idleSpan − frozen − excluded) / 24h
 
 - **The app never runs `git fetch`** and never touches git credentials or SSH keys.
 - **A local folder with no GitHub match** shows the badge *"This Mac only. Work from other devices won't count."* and defaults to the **Slow-burn** pace.
-- **Matching a local folder to a GitHub repo:** parse `remote.*.url` (https, ssh, scp-style), resolve host aliases from `~/.ssh/config`, apply git `url.*.insteadOf` rewrites, and match `owner/name` case-insensitively. Ambiguous or unmatched → **ask the user to confirm**.
+- **Matching a local folder to a GitHub repo:** parse `remote.*.url` (https, ssh, scp-style), resolve host aliases from `~/.ssh/config` (only if the user grants access to that file: the App Sandbox blocks it otherwise, and an unresolved alias falls back to asking), apply git `url.*.insteadOf` rewrites, and match `owner/name` case-insensitively. Ambiguous or unmatched → **ask the user to confirm**.
 
 ### 5.5 Releases → holiday
 
@@ -221,7 +221,7 @@ idleDays     = max(0, idleSpan − frozen − excluded) / 24h
   - `/user/repos` returns `pushed_at`.
   - Contents and commits of **private** repos return **403**.
   - Public repos are readable by any token.
-- **Still unverified:** access to repos where the user is only a collaborator (owned by someone else). Test at Gate 1.
+- **Collaborator repos (user decision, Gate 1):** not supported in v1. A repo owned by another account can be tracked as a local folder only, and the adoption list says so.
 
 ### 6.2 Setup flow
 
@@ -582,7 +582,7 @@ strays/
 | Gate | Scope | Pass criteria |
 |---|---|---|
 | **0: Test** | Rive CLI rig of one cat: breathing, blinking, tail sway with bones, colour data binding in the web runtime inside Tauri. Overlay window prototype A vs B. Cursor/modifier polling without permission prompts. Unsigned `.riv` plays without a watermark. | All pass + contact sheet reviewed + **user approves the look**. Any failure → **pause and decide with the user**. |
-| **1: Core** | Mood engine, state machine, settings, storage, GitHub client, local git, matching | Unit + property tests green; fake-server scenarios green; live test token scenarios green (incl. collaborator access) |
+| **1: Core** | Mood engine, state machine, settings, storage, GitHub client, local git, matching | Unit + property tests green; fake-server scenarios green; live test token scenarios green |
 | **2: Overlay** | Windows, placement, modifier interaction, actions, menu bar, displays, Spaces, full screen, capture exclusion, Reduce Motion | Automated OS tests green; performance budgets met |
 | **3: Content** | All 4 species, all clips, props, accessories, audio, writing | Contact sheets reviewed, **user sign-off per species**, contrast tests green |
 | **4: Release** | Signing, notarisation, packaging, opt-in updater, docs | Notarised `.dmg` installs and runs on a clean macOS 14 VM and on the latest macOS |
@@ -644,7 +644,7 @@ strays/
 
 | # | Question | Resolved by |
 |---|---|---|
-| 1 | Do fine-grained tokens see collaborator-only repos? | Gate 1 live test |
+| 1 | Do fine-grained tokens see collaborator-only repos? | **Skipped for v1** (user decision); local folders only |
 | 2 | Is `sharingType = .none` respected by current screen-capture APIs? | Gate 2 |
 | 3 | Overlay architecture A vs B | **Resolved (Gate 0):** B |
 | 4 | Does Rive colour data binding work in the web runtime inside Tauri's webview? | **Resolved (Gate 0):** yes |
