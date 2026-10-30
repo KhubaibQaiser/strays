@@ -5,7 +5,7 @@
 | Status | Draft for review |
 | Date | 2026-10-30 |
 | Owner | Khubaib Qaiser |
-| Platforms (v1) | macOS 12+ (Apple Silicon + Intel). The code stays cross-platform; Windows comes later. |
+| Platforms (v1) | macOS 14+ (Apple Silicon + Intel). The code stays cross-platform; Windows comes later. |
 | Repo | Private for now. Licence to be decided. |
 | Price | Free. The design must not block paid cosmetics later. |
 
@@ -63,7 +63,7 @@ Strays is a calm desktop companion. Every unfinished project you choose to track
 | Storage | JSON files in the app container, written atomically |
 | Sandbox | macOS App Sandbox enabled (Developer ID distribution) |
 
-**Minimum OS:** macOS 12. Verify that Tauri 2, the Rive runtime and the chosen native APIs all work on 12 (Gate 0); raise the minimum if any don't.
+**Minimum OS:** macOS 14 Sonoma (user decision, Gate 0). It keeps frame-rate control available and removes the need for an older-OS test matrix.
 
 **Placeholder bundle ID:** `com.khubaibqaiser.strays`.
 
@@ -273,9 +273,7 @@ idleDays     = max(0, idleSpan − frozen − excluded) / 24h
 
 ### 7.1 Windows and placement
 
-- **Window architecture: decided at Gate 0** by measurement (CPU, memory, smoothness):
-  - **(A)** one small transparent window per visible pet, moved natively; or
-  - **(B)** one transparent window per display.
+- **Window architecture (decided at Gate 0):** **(B)** one transparent window per display, with pets drawn inside it. It measured lower CPU and memory than one window per pet. See `docs/gate-0.md`.
 - **Window properties:**
   - Borderless, transparent, always on top (floating level).
   - Joins all Spaces, stationary in Mission Control.
@@ -314,10 +312,14 @@ idleDays     = max(0, idleSpan − frozen − excluded) / 24h
 
 ### 7.4 Animation behaviour
 
-- **Continuous micro-idle:** breathing; blinks every 3–7 s, randomised; an ear/tail/feather twitch every 20–60 s.
+- **Liveliness (Settings → Display):** how often pets move between big moves. Rendering stops completely while a pet holds a pose. A held pose costs about 0.07% CPU; each animated frame is what costs (Gate 0).
+  - **Calm (default):** the pet holds a resting pose. A short moment (a blink, an ear/tail/feather twitch) plays per pet every 20–60 s, randomised.
+  - **Gentle:** moments every 5–15 s.
+  - **Lively:** continuous breathing and blinks every 3–7 s at 15 fps.
+  - The setting shows the expected cost next to each option (for example "Lively: noticeably higher CPU and battery use"). The figures shown come from the Gate 2 measurements, not guesses.
 - **Big moves** (stretch, walk to a new spot, groom) happen every 2–5 h, randomised **(default)**. They're slow, under 8 s, and are skipped in Reduce Motion mode.
 - **Feeding:** new activity detected → the bowl fills and an eat animation plays (~4 s) the next time the pet is visible.
-- **Reduce Motion (system setting):** no walking; only breathing and blinking; holiday and snooze exits become fades.
+- **Reduce Motion (system setting):** no walking; Calm moments only (blinks); holiday and snooze exits become fades.
 
 ### 7.5 Menu-bar menu
 
@@ -384,7 +386,7 @@ A small floating panel next to the pet. It closes on Esc or a click outside.
 | General | Launch at login · menu-bar icon style · language (English only in v1) |
 | Pets | Slots · default pace · holiday length · release cooldown · pet size · ignore rules |
 | Moods | Thresholds, presets, preview, don't-count-weekends |
-| Display | Max/min visible · rotation period · full-screen behaviour · which displays · Presentation mode · hide repo names in bubbles |
+| Display | Liveliness (§7.4) · max/min visible · rotation period · full-screen behaviour · which displays · Presentation mode · hide repo names in bubbles |
 | Nudges | Style · per-pet and global daily caps · quiet hours · respect Focus (§9) · wake stagger |
 | Sound | Master on/off (off by default) · volume · per-species toggle |
 | Interaction | Modifier · global shortcut (off by default) · shortcut recorder |
@@ -551,11 +553,13 @@ strays/
 
 | Metric | Target |
 |---|---|
-| Average CPU, 3 visible pets idle, 10 min | < 1% |
+| Average CPU, 3 visible pets, Calm (default), 10 min | < 1% |
+| Average CPU, 3 visible pets, Gentle / Lively | Measured and shown in Settings; no hard target |
+| CPU while every pet holds a pose | < 0.1% |
 | CPU during a walk | < 5%, then back to idle within 2 s |
 | Memory (all processes) | < 200 MB |
 | Frame rate during big moves | 60 fps |
-| Frame rate during micro-idle | ≤ 30 fps |
+| Frame rate during micro-idle | ≤ 30 fps (Lively: 15 fps) |
 | Frame rate when hidden or covered | Paused rendering |
 | Energy | No "Significant Energy" entry in Activity Monitor |
 | Cold start to pets visible | < 2 s |
@@ -577,11 +581,11 @@ strays/
 
 | Gate | Scope | Pass criteria |
 |---|---|---|
-| **0: Test** | Rive CLI rig of one cat: breathing, blinking, tail sway with bones, colour data binding in the web runtime inside Tauri. Overlay window prototype A vs B. Cursor/modifier polling without permission prompts. Unsigned `.riv` plays without a watermark. macOS 12 compatibility of the key APIs. | All pass + contact sheet reviewed + **user approves the look**. Any failure → **pause and decide with the user**. |
+| **0: Test** | Rive CLI rig of one cat: breathing, blinking, tail sway with bones, colour data binding in the web runtime inside Tauri. Overlay window prototype A vs B. Cursor/modifier polling without permission prompts. Unsigned `.riv` plays without a watermark. | All pass + contact sheet reviewed + **user approves the look**. Any failure → **pause and decide with the user**. |
 | **1: Core** | Mood engine, state machine, settings, storage, GitHub client, local git, matching | Unit + property tests green; fake-server scenarios green; live test token scenarios green (incl. collaborator access) |
 | **2: Overlay** | Windows, placement, modifier interaction, actions, menu bar, displays, Spaces, full screen, capture exclusion, Reduce Motion | Automated OS tests green; performance budgets met |
 | **3: Content** | All 4 species, all clips, props, accessories, audio, writing | Contact sheets reviewed, **user sign-off per species**, contrast tests green |
-| **4: Release** | Signing, notarisation, packaging, opt-in updater, docs | Notarised `.dmg` installs and runs on a clean macOS 12 VM and on the latest macOS |
+| **4: Release** | Signing, notarisation, packaging, opt-in updater, docs | Notarised `.dmg` installs and runs on a clean macOS 14 VM and on the latest macOS |
 
 ### 14.2 Test layers
 
@@ -621,7 +625,7 @@ strays/
 | Gate 1 | Confirm creation of `strays-test-*` repos using the `gh` login |
 | Before 2026-11-29 | Replace the test token if testing continues |
 | Gate 3 | Approve sound download batches; sign off each species |
-| Gate 0 / Gate 4 | Approve installing UTM and downloading a macOS 12 restore image for the minimum-OS VM |
+| Gate 0 / Gate 4 | Approve installing UTM and downloading a macOS 14 restore image for the minimum-OS VM |
 | Gate 4 | Enrol in the Apple Developer Program; create a Developer ID certificate and a notarisation key; store CI secrets; keep an offline backup of the updater signing key |
 | Before release | Choose the licence and whether the repo goes public; confirm the final name after a conflict check |
 
@@ -642,8 +646,8 @@ strays/
 |---|---|---|
 | 1 | Do fine-grained tokens see collaborator-only repos? | Gate 1 live test |
 | 2 | Is `sharingType = .none` respected by current screen-capture APIs? | Gate 2 |
-| 3 | Overlay architecture A vs B | Gate 0 measurement |
-| 4 | Does Rive colour data binding work in the web runtime inside Tauri's webview? | Gate 0 |
-| 5 | Can the RML/CLI route produce bones-based motion of acceptable quality? | Gate 0 + user review |
+| 3 | Overlay architecture A vs B | **Resolved (Gate 0):** B |
+| 4 | Does Rive colour data binding work in the web runtime inside Tauri's webview? | **Resolved (Gate 0):** yes |
+| 5 | Can the RML/CLI route produce bones-based motion of acceptable quality? | **Resolved (Gate 0):** yes; user approved the test cat as a starting direction |
 | 6 | Is Focus status available to a sandboxed Tauri app (Intents entitlement)? | Gate 2; fallback: quiet hours only |
 | 7 | Does launch at login through `SMAppService` work from Tauri in the sandbox? | Gate 2 |

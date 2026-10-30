@@ -72,3 +72,26 @@ Findings:
 - Bursts (pause between short plays) helped less than the duty cycle predicts. Pause/play in the high-level API seems to keep rendering for a while, or to cost something on resume. Needs the low-level API (manual `advance` on our own timer) to test properly.
 - `sharingType = .none` keeps pets out of `screencapture` (verified: pets invisible in screenshots unless the test flag re-enables capture).
 - Colour binding: `ColorProperty.set(red:green:blue:)` turned colours white; assigning `value = NSColor(...)` works.
+
+## Tauri, tuned (2026-10-31)
+
+Two changes to the Tauri prototype: the poller reads `NSEvent.mouseLocation` directly and fetches the screen height once, rather than calling Tauri's monitor and cursor APIs on every tick. And a paused Rive instance stops rendering completely (`STRAYS_PAUSED=1`, `STRAYS_BURST=<s>`). Layout B, 3 cats, release build, 30 s samples.
+
+| Setup | CPU | Memory |
+|---|---|---|
+| All 3 pets holding a pose | **0.0%** (top), **0.07%** (process CPU time) | 145 MB |
+| 0.6 s burst per pet every 8 s, 30 fps | 5.5% | 182 MB |
+| Continuous, 10 fps (new poller) | 12.2% | 186 MB |
+
+Findings:
+- With every pet still, Tauri costs the same as native (0.07%). The ~3–6% baseline measured earlier came from the poller and a render loop that never stopped.
+- Native's remaining advantages are memory (45 MB vs 145–185 MB, still under the 200 MB budget) and about half the cost per animated frame.
+- Bursts cost more than their duty cycle predicts. At 0.6 s every 8 s the duty cycle predicts ~1.5%; the measured figure is 5.5%. Resuming probably carries a fixed cost. Calm mode therefore keeps moments rare (every 20–60 s), and Gate 2 must measure it, along with driving frames from our own loop instead of pause/play.
+
+## Decisions (user, 2026-10-30/31)
+
+- **Stack:** stay on Tauri. When pets are still, native gives no CPU gain. The `native-overlay/` prototype stays in the repo as the fallback if Gate 2 misses the Calm budget.
+- **Liveliness setting:** Calm (default), Gentle, Lively. Users can trade CPU for motion (spec §7.4).
+- **Minimum macOS:** 14 Sonoma.
+- **Test cat look:** good enough to start; polish in Gate 2.
+- **Still open:** the click-through test (Accessibility not granted to the agent's host app). Capture exclusion is verified for native panels only; Tauri windows need `sharingType` set via objc2 and a re-check.

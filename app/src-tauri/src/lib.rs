@@ -52,14 +52,27 @@ fn modifier_held() -> bool {
     flags.contains(NSEventModifierFlags::Option)
 }
 
+/// Cursor in logical points, top-left origin. AppKit reports bottom-left, so flip by the primary screen height.
+#[cfg(target_os = "macos")]
+fn cursor(primary_height: f64) -> Option<(f64, f64)> {
+    let p = objc2_app_kit::NSEvent::mouseLocation();
+    Some((p.x, primary_height - p.y))
+}
+
 #[cfg(not(target_os = "macos"))]
 fn modifier_held() -> bool {
     false
 }
 
-// Prototype knob for the Gate 0 frame-rate measurements.
-fn fps() -> String {
-    std::env::var("STRAYS_FPS").unwrap_or_else(|_| "30".into())
+#[cfg(not(target_os = "macos"))]
+fn cursor(_primary_height: f64) -> Option<(f64, f64)> {
+    None // ponytail: Windows poller comes with the Windows port
+}
+
+// Prototype knobs for the Gate 0 measurements: STRAYS_FPS, STRAYS_PAUSED=1, STRAYS_BURST=<seconds>.
+fn query() -> String {
+    let var = |k: &str, d: &str| std::env::var(k).unwrap_or_else(|_| d.into());
+    format!("fps={}&paused={}&burst={}", var("STRAYS_FPS", "30"), var("STRAYS_PAUSED", "0"), var("STRAYS_BURST", ""))
 }
 
 fn base_window(app: &AppHandle, label: &str, url: &str) -> tauri::Result<WebviewWindow> {
@@ -98,7 +111,7 @@ fn setup_mode_a(app: &AppHandle, rects: &[Rect]) -> tauri::Result<Vec<WebviewWin
         .iter()
         .enumerate()
         .map(|(i, r)| {
-            let w = base_window(app, &format!("pet{i}"), &format!("index.html?mode=A&pet={i}&fps={}", fps()))?;
+            let w = base_window(app, &format!("pet{i}"), &format!("index.html?mode=A&pet={i}&{}", query()))?;
             w.set_size(LogicalSize::new(r.w, r.h))?;
             w.set_position(LogicalPosition::new(r.x, r.y))?;
             w.set_ignore_cursor_events(true)?;
@@ -116,7 +129,7 @@ fn setup_mode_b(app: &AppHandle, rects: &[Rect]) -> tauri::Result<Vec<WebviewWin
         .iter()
         .map(|r| format!("{},{},{},{}", r.x - pos.x as f64 / scale, r.y - pos.y as f64 / scale, r.w, r.h))
         .collect();
-    let w = base_window(app, "overlay", &format!("index.html?mode=B&fps={}&pets={}", fps(), pets.join(";")))?;
+    let w = base_window(app, "overlay", &format!("index.html?mode=B&{}&pets={}", query(), pets.join(";")))?;
     w.set_size(LogicalSize::new(size.width as f64 / scale, size.height as f64 / scale))?;
     w.set_position(PhysicalPosition::new(pos.x, pos.y))?;
     w.set_ignore_cursor_events(true)?;
@@ -129,18 +142,18 @@ fn start_poller(app: AppHandle, windows: Vec<WebviewWindow>, rects: Vec<Rect>, m
         let interactive: Vec<Arc<AtomicBool>> =
             windows.iter().map(|_| Arc::new(AtomicBool::new(false))).collect();
         let mut hovered: Option<usize> = None;
+        // Read once: querying Tauri's monitor/cursor APIs every tick cost ~3% CPU in Gate 0.
+        let primary_height = app
+            .primary_monitor()
+            .ok()
+            .flatten()
+            .map(|m| m.size().height as f64 / m.scale_factor())
+            .unwrap_or(0.0);
         loop {
-            let scale = app
-                .primary_monitor()
-                .ok()
-                .flatten()
-                .map(|m| m.scale_factor())
-                .unwrap_or(1.0);
-            let Ok(cursor) = app.cursor_position() else {
+            let Some((px, py)) = cursor(primary_height) else {
                 thread::sleep(SLOW_POLL);
                 continue;
             };
-            let (px, py) = (cursor.x / scale, cursor.y / scale);
             let held = modifier_held();
             let over = rects.iter().position(|r| r.hit(px, py));
             let target = if held { over } else { None };

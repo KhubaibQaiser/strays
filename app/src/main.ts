@@ -67,6 +67,17 @@ for (const slot of slots) {
         return prop != null;
       });
       void invoke("pet_log", { msg: `LOADED pet=${slot.pet} colours=${bound.length}/4` });
+      // Still and burst modes: hold a pose, or play briefly every 8 s (staggered per pet).
+      const burst = Number(params.get("burst") || 0);
+      if (params.get("paused") === "1" || burst > 0) rive.pause();
+      if (burst > 0) {
+        setInterval(() => {
+          setTimeout(() => {
+            rive.play();
+            setTimeout(() => rive.pause(), burst * 1000);
+          }, slot.pet * 2500);
+        }, 8000);
+      }
       rive.enableFPSCounter(() => {});
       setTimeout(() => log(`FPS pet=${slot.pet} ${rive.fps}`), 6000);
     },
