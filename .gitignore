@@ -5,3 +5,4 @@ dist/
 *.local
 art/**/build/
 tools/overlay-harness/harness
+native-overlay/.build/

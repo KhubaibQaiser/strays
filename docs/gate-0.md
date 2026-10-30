@@ -46,3 +46,29 @@ Breakdown at B/20 fps: WebKit GPU process ~9%, WebContent ~8%, app (Rust poller 
 2. **Native overlay on macOS**: Rive's Apple runtime (Metal) in native windows, with Tauri (or SwiftUI) for settings. Likely the most efficient. It changes the stack: the overlay becomes per-platform code.
 3. **Tune the current path**: render only while something moves, idle at ≤10 fps, a cheaper poller. Unlikely to reach 1% alone, but it combines with 1 or 2.
 4. **Relax the budget**, e.g. < 3% average. A product decision, because it affects battery.
+
+## Native overlay (Rive Apple runtime 6.28.1, Metal) — `native-overlay/`
+
+Measured by process CPU time over 15–32 s (`ps` cputime delta), release build. Windows are `NSPanel`s, floating level, all Spaces, `sharingType = .none`.
+
+| Setup | CPU | Memory |
+|---|---|---|
+| Panels + ⌥ poller, 0 pets | **0.07%** | — |
+| 1 pet paused (static frame) | 0.07% | — |
+| 1 pet, 10 fps | 1.73% | — |
+| 1 pet, 15 fps | 2.87% | — |
+| 1 pet, 30 fps | 4.67% | — |
+| 1 pet, 60 fps | 8.00% | — |
+| 3 pets, 15 fps | 5.87% | ~45 MB total |
+| 3 pets, 30 fps | 11.33% | ~45 MB total |
+| 3 pets, 30 fps, 0.6 s burst every 8 s | 4.78% | |
+| 3 pets, 30 fps, 1.2 s burst every 8 s | 7.69% | |
+
+Findings:
+- Memory is ~4× lower than the webview (45 MB vs ~190 MB), and the poller is essentially free (0.07% vs ~3%).
+- Rendering costs about 0.15% CPU per pet per frame per second. **Continuous animation of 3 pets cannot meet < 1%** at any smooth frame rate.
+- The frame cap only takes effect when set on the `RiveView` after it is added to a window, and it needs macOS 14 (on 13 the runtime draws at display rate).
+- **Rive's Apple runtime requires macOS 13.1+**, which raises the spec's macOS 12 minimum.
+- Bursts (pause between short plays) helped less than the duty cycle predicts. Pause/play in the high-level API seems to keep rendering for a while, or to cost something on resume. Needs the low-level API (manual `advance` on our own timer) to test properly.
+- `sharingType = .none` keeps pets out of `screencapture` (verified: pets invisible in screenshots unless the test flag re-enables capture).
+- Colour binding: `ColorProperty.set(red:green:blue:)` turned colours white; assigning `value = NSColor(...)` works.
