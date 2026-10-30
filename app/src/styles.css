@@ -32,3 +32,19 @@ canvas.hover {
   white-space: nowrap;
   pointer-events: none;
 }
+
+canvas {
+  position: absolute;
+}
+
+.tooltip {
+  position: absolute;
+  transform: translate(-50%, 0);
+  background: rgba(30, 30, 34, 0.88);
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+}

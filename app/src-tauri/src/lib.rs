@@ -1,220 +1,206 @@
-// Gate 0 overlay prototype: transparent always-on-top pet windows that pass clicks through
-// unless the modifier (⌥) is held while the cursor is over a pet.
-//
-// STRAYS_MODE=A (default): one small window per pet.
-// STRAYS_MODE=B: one window covering the main screen, pets drawn inside it.
-
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
-
-use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, PhysicalPosition, WebviewUrl,
-    WebviewWindow, WebviewWindowBuilder,
-};
-
-const PET_COUNT: usize = 3;
-const PET_SIZE: f64 = 160.0; // logical points; the cat art sits in the lower part
-const SLOW_POLL: Duration = Duration::from_millis(250);
-const FAST_POLL: Duration = Duration::from_millis(33);
-const NEAR_DISTANCE: f64 = 150.0;
-
-#[derive(Clone, Copy)]
-struct Rect {
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-}
-
-impl Rect {
-    // Hit area: the pet's body inside its square, not the transparent margin around it.
-    fn hit(&self, px: f64, py: f64) -> bool {
-        let (cx, cy) = (self.x + self.w * 0.5, self.y + self.h * 0.6);
-        let (rx, ry) = (self.w * 0.38, self.h * 0.38);
-        let (dx, dy) = ((px - cx) / rx, (py - cy) / ry);
-        dx * dx + dy * dy <= 1.0
-    }
-    fn near(&self, px: f64, py: f64) -> bool {
-        px > self.x - NEAR_DISTANCE
-            && px < self.x + self.w + NEAR_DISTANCE
-            && py > self.y - NEAR_DISTANCE
-            && py < self.y + self.h + NEAR_DISTANCE
-    }
-}
-
+//! Strays app shell: the core's state, a background sync loop, the menu-bar menu and the pet overlay.
 #[cfg(target_os = "macos")]
-fn modifier_held() -> bool {
-    use objc2_app_kit::{NSEvent, NSEventModifierFlags};
-    // Reading the current modifier state needs no Accessibility or Input Monitoring permission.
-    let flags = NSEvent::modifierFlags_class();
-    flags.contains(NSEventModifierFlags::Option)
-}
-
-/// Cursor in logical points, top-left origin. AppKit reports bottom-left, so flip by the primary screen height.
+mod macos;
 #[cfg(target_os = "macos")]
-fn cursor(primary_height: f64) -> Option<(f64, f64)> {
-    let p = objc2_app_kit::NSEvent::mouseLocation();
-    Some((p.x, primary_height - p.y))
+use macos as platform;
+
+mod menu;
+mod overlay;
+mod state;
+mod sync;
+mod token;
+
+use std::path::PathBuf;
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
+
+use serde::Serialize;
+use strays_core::chrono::Utc;
+use strays_core::uuid::Uuid;
+use tauri::tray::TrayIconBuilder;
+use tauri::{AppHandle, Emitter, Manager, State};
+
+use crate::overlay::Overlay;
+use crate::state::App;
+use crate::sync::Cmd;
+
+struct Shared {
+    app: Arc<Mutex<App>>,
+    tx: Sender<Cmd>,
+    overlay: Overlay,
 }
 
-#[cfg(not(target_os = "macos"))]
-fn modifier_held() -> bool {
-    false
+const TRAY: &str = "strays";
+
+#[derive(Clone, Serialize)]
+struct Feedback {
+    id: Uuid,
+    ok: bool,
+    text: String,
 }
 
-#[cfg(not(target_os = "macos"))]
-fn cursor(_primary_height: f64) -> Option<(f64, f64)> {
-    None // ponytail: Windows poller comes with the Windows port
-}
-
-// Prototype knobs for the Gate 0 measurements: STRAYS_FPS, STRAYS_PAUSED=1, STRAYS_BURST=<seconds>.
-fn query() -> String {
-    let var = |k: &str, d: &str| std::env::var(k).unwrap_or_else(|_| d.into());
-    format!("fps={}&paused={}&burst={}", var("STRAYS_FPS", "30"), var("STRAYS_PAUSED", "0"), var("STRAYS_BURST", ""))
-}
-
-fn base_window(app: &AppHandle, label: &str, url: &str) -> tauri::Result<WebviewWindow> {
-    WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
-        .transparent(true)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .shadow(false)
-        .resizable(false)
-        .focused(false)
-        .visible_on_all_workspaces(true)
-        .accept_first_mouse(true)
-        .build()
-}
-
-/// Pet rects in logical screen points (top-left origin), sitting on the bottom of the work area.
-fn pet_rects(app: &AppHandle) -> Vec<Rect> {
-    let monitor = app.primary_monitor().ok().flatten().expect("no primary monitor");
-    let scale = monitor.scale_factor();
-    let area = monitor.work_area();
-    let (ax, ay) = (area.position.x as f64 / scale, area.position.y as f64 / scale);
-    let (aw, ah) = (area.size.width as f64 / scale, area.size.height as f64 / scale);
-    (0..PET_COUNT)
-        .map(|i| Rect {
-            x: ax + aw - (PET_SIZE + 40.0) * (i as f64 + 1.0),
-            y: ay + ah - PET_SIZE,
-            w: PET_SIZE,
-            h: PET_SIZE,
-        })
-        .collect()
-}
-
-fn setup_mode_a(app: &AppHandle, rects: &[Rect]) -> tauri::Result<Vec<WebviewWindow>> {
-    rects
-        .iter()
-        .enumerate()
-        .map(|(i, r)| {
-            let w = base_window(app, &format!("pet{i}"), &format!("index.html?mode=A&pet={i}&{}", query()))?;
-            w.set_size(LogicalSize::new(r.w, r.h))?;
-            w.set_position(LogicalPosition::new(r.x, r.y))?;
-            w.set_ignore_cursor_events(true)?;
-            Ok(w)
-        })
-        .collect()
-}
-
-fn setup_mode_b(app: &AppHandle, rects: &[Rect]) -> tauri::Result<Vec<WebviewWindow>> {
-    let monitor = app.primary_monitor()?.expect("no primary monitor");
-    let scale = monitor.scale_factor();
-    let size = monitor.size();
-    let pos = monitor.position();
-    let pets: Vec<String> = rects
-        .iter()
-        .map(|r| format!("{},{},{},{}", r.x - pos.x as f64 / scale, r.y - pos.y as f64 / scale, r.w, r.h))
-        .collect();
-    let w = base_window(app, "overlay", &format!("index.html?mode=B&{}&pets={}", query(), pets.join(";")))?;
-    w.set_size(LogicalSize::new(size.width as f64 / scale, size.height as f64 / scale))?;
-    w.set_position(PhysicalPosition::new(pos.x, pos.y))?;
-    w.set_ignore_cursor_events(true)?;
-    Ok(vec![w])
-}
-
-/// Poll cursor + modifier; make a window catch clicks only while ⌥ is held over a pet.
-fn start_poller(app: AppHandle, windows: Vec<WebviewWindow>, rects: Vec<Rect>, mode_b: bool) {
-    thread::spawn(move || {
-        let interactive: Vec<Arc<AtomicBool>> =
-            windows.iter().map(|_| Arc::new(AtomicBool::new(false))).collect();
-        let mut hovered: Option<usize> = None;
-        // Read once: querying Tauri's monitor/cursor APIs every tick cost ~3% CPU in Gate 0.
-        let primary_height = app
-            .primary_monitor()
-            .ok()
-            .flatten()
-            .map(|m| m.size().height as f64 / m.scale_factor())
-            .unwrap_or(0.0);
-        loop {
-            let Some((px, py)) = cursor(primary_height) else {
-                thread::sleep(SLOW_POLL);
-                continue;
-            };
-            let held = modifier_held();
-            let over = rects.iter().position(|r| r.hit(px, py));
-            let target = if held { over } else { None };
-
-            if target != hovered {
-                if let Some(i) = hovered {
-                    let _ = app.emit("pet-hover", (i, false));
-                }
-                if let Some(i) = target {
-                    let _ = app.emit("pet-hover", (i, true));
-                }
-                println!("HOVER {:?}", target);
-                hovered = target;
-            }
-
-            for (wi, w) in windows.iter().enumerate() {
-                let want = if mode_b { target.is_some() } else { target == Some(wi) };
-                if interactive[wi].swap(want, Ordering::Relaxed) != want {
-                    let _ = w.set_ignore_cursor_events(!want);
-                }
-            }
-
-            let near = rects.iter().any(|r| r.near(px, py));
-            thread::sleep(if near { FAST_POLL } else { SLOW_POLL });
-        }
-    });
-}
-
+/// ⌥-click on a pet: ⇧ quick-syncs it (§7.3), otherwise its menu opens at the cursor.
 #[tauri::command]
-fn pet_clicked(pet: usize) {
-    println!("CLICK pet={pet}");
+fn pet_click(id: Uuid, shift: bool, shared: State<'_, Shared>, h: AppHandle) {
+    #[cfg(debug_assertions)]
+    println!("CLICK pet={id} shift={shift}");
+    if shift {
+        let _ = shared.tx.send(Cmd::SyncNow(Some(id)));
+        return;
+    }
+    let menu = menu::pet_menu(&h, &shared.app.lock().unwrap(), id);
+    if let Ok(Some(menu)) = menu {
+        let w = shared.overlay.window();
+        // ponytail: after Escape closes this menu, AppKit swallows the next click (a known AppKit
+        // pop-up quirk in a non-active app). The info card (§8.3, Gate 2b) replaces this menu.
+        let _ = w.popup_menu(&menu);
+    }
 }
 
-// Prototype-only: lets the webview report to stdout so tests can read it.
+/// The webview asks for the current frame once it has loaded.
+#[tauri::command]
+fn overlay_ready(shared: State<'_, Shared>) {
+    #[cfg(debug_assertions)]
+    println!("OVERLAY READY");
+    shared.overlay.resend();
+}
+
+/// Debug builds only: lets the webview report to stdout for the OS test harness.
 #[tauri::command]
 fn pet_log(msg: String) {
+    #[cfg(debug_assertions)]
     println!("{msg}");
+    #[cfg(not(debug_assertions))]
+    let _ = msg;
+}
+
+fn data_dir(h: &AppHandle) -> PathBuf {
+    #[cfg(debug_assertions)]
+    if let Some(dir) = std::env::var_os("STRAYS_DATA_DIR") {
+        return dir.into();
+    }
+    h.path().app_data_dir().expect("app data dir")
+}
+
+/// Debug only: `STRAYS_SPAWN=n` adds n local cats (not saved) so the overlay can be tested without GitHub.
+#[cfg(debug_assertions)]
+fn spawn_test_pets(app: &mut App) {
+    use strays_core::pet::{Activity, ActivitySource, LocalRef, Pet, Project, Species};
+    let Some(n) = std::env::var("STRAYS_SPAWN").ok().and_then(|v| v.parse::<usize>().ok()) else { return };
+    let now = Utc::now();
+    let looks = [["#EFE1CC", "#D9C4A6", "#FFF8EE", "#7A5C46"], ["#34343A", "#26262B", "#55555E", "#A9A9B6"], ["#E8A15C", "#CB8240", "#FBE3C6", "#7A4520"]];
+    for i in 0..n {
+        let local = LocalRef { bookmark_id: Uuid::new_v4(), display_path: format!("~/Code/test-{i}") };
+        let project = Project { github: None, local: Some(local) };
+        let mut p = Pet::new(now, &format!("Test {i}"), Species::Cat, project, Activity { last: now, source: ActivitySource::LocalCommit }, app.settings.default_pace);
+        for (name, hex) in ["coatBase", "coatShade", "coatHighlight", "outline"].iter().zip(looks[i % 3]) {
+            p.colors.insert((*name).into(), hex.into());
+        }
+        p.adopt(now).expect("new pet");
+        app.pets.push(p);
+    }
+}
+
+fn handle_menu(h: &AppHandle, id: &str) {
+    let shared = h.state::<Shared>();
+    let Some(event) = menu::parse(id) else { return };
+    let now = Utc::now();
+    let mut app = shared.app.lock().unwrap();
+    let result = match event {
+        menu::Event::Pet(pet, action) => app.act(pet, action, now).map(Some),
+        menu::Event::SyncPet(pet) => {
+            let _ = shared.tx.send(Cmd::SyncNow(Some(pet)));
+            return;
+        }
+        menu::Event::Sync => {
+            let _ = shared.tx.send(Cmd::SyncNow(None));
+            return;
+        }
+        menu::Event::Repo(repo, species) => app.adopt_repo(repo, species, now).map(Some),
+        menu::Event::IgnoreRepo(repo) => {
+            app.ignore_new(repo);
+            Ok(None)
+        }
+        menu::Event::Presentation => {
+            app.flags.presentation = !app.flags.presentation;
+            Ok(None)
+        }
+        menu::Event::Vacation => {
+            let on = !app.flags.vacation;
+            app.set_vacation(on, now);
+            Ok(None)
+        }
+        menu::Event::HideAll => {
+            app.flags.hide_all = !app.flags.hide_all;
+            Ok(None)
+        }
+        menu::Event::Quit => {
+            app.save_all();
+            h.exit(0);
+            return;
+        }
+    };
+    drop(app);
+    match result {
+        Ok(Some(msg)) | Err(msg) => {
+            #[cfg(debug_assertions)]
+            println!("ACTION {msg}");
+            let _ = h.emit("notice", msg);
+        }
+        Ok(None) => {}
+    }
+    let _ = shared.tx.send(Cmd::Changed);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![pet_clicked, pet_log])
-        .setup(|app| {
+        .invoke_handler(tauri::generate_handler![pet_click, overlay_ready, pet_log])
+        .on_menu_event(|h, e| handle_menu(h, e.id().as_ref()))
+        .setup(|tauri_app| {
             #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            tauri_app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            let h = tauri_app.handle().clone();
 
-            let handle = app.handle().clone();
-            let rects = pet_rects(&handle);
-            let mode_b = std::env::var("STRAYS_MODE").as_deref() == Ok("B");
-            let windows = if mode_b {
-                setup_mode_b(&handle, &rects)?
-            } else {
-                setup_mode_a(&handle, &rects)?
-            };
-            let rect_list: Vec<String> =
-                rects.iter().map(|r| format!("{},{},{},{}", r.x, r.y, r.w, r.h)).collect();
-            println!("READY mode={} rects={}", if mode_b { "B" } else { "A" }, rect_list.join(";"));
-            start_poller(handle, windows, rects, mode_b);
+            #[allow(unused_mut)]
+            let mut app = App::load(data_dir(&h)).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            #[cfg(debug_assertions)]
+            spawn_test_pets(&mut app);
+            let menu = menu::build(&h, &app)?;
+            TrayIconBuilder::with_id(TRAY).title(menu::tray_title(&app)).tooltip("Strays").menu(&menu).show_menu_on_left_click(true).build(&h)?;
+
+            let overlay = Overlay::create(&h)?;
+            overlay.start_poller(h.clone());
+            let app = Arc::new(Mutex::new(app));
+            let (tx, rx) = mpsc::channel();
+            h.manage(Shared { app: app.clone(), tx, overlay: overlay.clone() });
+
+            let ui = h.clone();
+            std::thread::spawn(move || {
+                sync::run(app, rx, move |app, outcome| {
+                    overlay.set_pets(app.views(Utc::now()), app.settings.liveliness);
+                    if let Some(tray) = ui.tray_by_id(TRAY) {
+                        let _ = tray.set_title(Some(menu::tray_title(app)));
+                        if let Ok(m) = menu::build(&ui, app) {
+                            let _ = tray.set_menu(Some(m));
+                        }
+                    }
+                    if let Some(sync::SyncOutcome { ok, for_pet: Some(id) }) = outcome {
+                        let text = if ok { "✓".into() } else { format!("⚠ {}", app.sync_error.clone().unwrap_or_default()) };
+                        let _ = ui.emit("feedback", Feedback { id, ok, text });
+                    }
+                    #[cfg(debug_assertions)]
+                    println!("STATE visible={} pets={} sync={}", app.visible.len(), app.pets.len(), menu::status_line(app));
+                });
+            });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_, event| {
+            // a menu-bar app keeps running with no windows open
+            if let tauri::RunEvent::ExitRequested { api, code: None, .. } = event {
+                api.prevent_exit();
+            }
+        });
 }

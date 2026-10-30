@@ -1,22 +1,33 @@
 #!/usr/bin/env bash
-# Gate 0 interaction test: plain clicks pass through a pet; ⌥-click hits the pet.
-# Usage: click-test.sh [A|B]   (needs Accessibility for the calling app; app must be built)
+# Gate 2 interaction test on the real app: plain clicks pass through a pet; ⌥-hover outlines it;
+# ⌥-click opens its menu; ⌥⇧-click quick-syncs it; ⌥ on the transparent margin still passes through.
+# Usage: click-test.sh   (needs Accessibility for the calling app; build first with
+#   npx tauri build --debug --no-bundle --features devtools   in app/)
+# Pets are throwaway (STRAYS_SPAWN, temp data folder). Syncs go to the fake GitHub server.
 set -euo pipefail
-MODE=${1:-B}
 HERE=$(cd "$(dirname "$0")" && pwd)
-APP="$HERE/../../app/src-tauri/target/release/app"
+APP="$HERE/../../app/src-tauri/target/debug/app"
 H="$HERE/harness"
 OUT=$(mktemp -d)
-trap 'pkill -f "$APP" 2>/dev/null || true; kill $TPID 2>/dev/null || true' EXIT
+trap 'pkill -f "$APP" 2>/dev/null || true; kill $TPID $FPID 2>/dev/null || true; "$H" opt up' EXIT
 
-STRAYS_MODE=$MODE "$APP" >"$OUT/app.log" 2>&1 &
-for _ in $(seq 50); do grep -q "LOADED pet=0" "$OUT/app.log" 2>/dev/null && break; sleep 0.2; done
-IFS=, read -r X Y W Hh <<<"$(sed -n 's/.*rects=\([^;]*\).*/\1/p' "$OUT/app.log")"
-CX=$(awk "BEGIN{print int($X+$W*0.5)}"); CY=$(awk "BEGIN{print int($Y+$Hh*0.6)}")
-# a corner of the pet's square that is outside its hit area (transparent margin)
+python3 "$HERE/../fake-github/server.py" >"$OUT/fake.log" &
+FPID=$!
+for _ in $(seq 50); do grep -q PORT "$OUT/fake.log" && break; sleep 0.1; done
+PORT=$(sed -n 's/PORT //p' "$OUT/fake.log")
+
+STRAYS_DATA_DIR="$OUT/data" STRAYS_SPAWN=1 STRAYS_CAPTURABLE=1 STRAYS_TOKEN=github_pat_fake \
+  STRAYS_FAKE_GITHUB="http://127.0.0.1:$PORT" "$APP" >"$OUT/app.log" 2>&1 &
+for _ in $(seq 100); do grep -q "^LOADED" "$OUT/app.log" 2>/dev/null && break; sleep 0.2; done
+sleep 1
+read -r ID X Y S <<<"$(grep '^LAYOUT' "$OUT/app.log" | tail -1 | cut -d' ' -f2-)"
+CX=$(awk "BEGIN{print int($X+$S*0.5)}"); CY=$(awk "BEGIN{print int($Y+$S*0.62)}")
 MX=$(awk "BEGIN{print int($X+6)}"); MY=$(awk "BEGIN{print int($Y+6)}")
 
-"$H" target "$X" "$Y" "$W" "$Hh" 30 >"$OUT/target.log" 2>&1 &
+# The target window may become the frontmost window once clicked, and pets keep out of the middle 60%
+# of the frontmost window (§7.1). So it extends left of the pet, putting the pet in its outer 20%.
+TX=$(awk "BEGIN{print int($X-4*$S)}"); TY=$(awk "BEGIN{print int($Y-$S)}")
+"$H" target "$TX" "$TY" "$((5 * ${S%.*}))" "$((2 * ${S%.*}))" 60 >"$OUT/target.log" 2>&1 &
 TPID=$!
 sleep 1
 
@@ -30,25 +41,36 @@ check() { # name expected actual
 "$H" move "$CX" "$CY"; sleep 0.4
 "$H" click "$CX" "$CY"; sleep 0.5
 check "plain click passes through" 1 "$(count 'TARGET CLICK' "$OUT/target.log")"
-check "plain click not caught by pet" 0 "$(count 'CLICK pet=' "$OUT/app.log")"
+check "plain click not caught by pet" 0 "$(count '^CLICK' "$OUT/app.log")"
 
-# 2. hold ⌥ over the pet: hover state turns on, click lands on the pet
+# 2. ⌥ over the pet: hover reported, click opens the pet's menu
 "$H" opt down; "$H" move "$((CX + 1))" "$CY"; sleep 0.6
-check "⌥-hover detected" 1 "$(count 'HOVER Some(0)' "$OUT/app.log")"
-"$H" click "$CX" "$CY" opt; sleep 0.5
-check "⌥-click caught by pet" 1 "$(count 'CLICK pet=0' "$OUT/app.log")"
+check "⌥-hover detected" 1 "$(count "HOVER Some($ID) held=true" "$OUT/app.log")"
+"$H" click "$CX" "$CY" opt; sleep 0.8
+check "⌥-click caught by pet" 1 "$(count "^CLICK pet=$ID shift=false" "$OUT/app.log")"
 check "⌥-click not passed through" 1 "$(count 'TARGET CLICK' "$OUT/target.log")"
+# close the menu by clicking away from it on the target window (Escape leaves the next click
+# swallowed: a known AppKit pop-up issue, fixed by the info card in Gate 2b). Clicking another app's
+# window would raise it over the target, so stay on the target and count from here.
+"$H" opt up; "$H" click "$((${TX%.*} + 20))" "$((${TY%.*} + 20))"; sleep 0.4; "$H" opt down; "$H" move "$CX" "$CY"; sleep 0.6
+BASE=$(count 'TARGET CLICK' "$OUT/target.log")
 
-# 3. ⌥ held over the transparent margin of the pet window still passes through
+# 3. ⌥⇧-click quick-syncs
+"$H" click "$CX" "$CY" optshift; sleep 2
+check "⌥⇧-click syncs this pet" 1 "$(count "^CLICK pet=$ID shift=true" "$OUT/app.log")"
+check "sync reached the fake server" 1 "$(grep -c 'Last synced' "$OUT/app.log" | awk '{print ($1 >= 1)}')"
+
+# 4. ⌥ held over the transparent margin still passes through
 "$H" move "$MX" "$MY"; sleep 0.6
 "$H" click "$MX" "$MY" opt; sleep 0.5
-check "⌥-click on margin passes through" 2 "$(count 'TARGET CLICK' "$OUT/target.log")"
+check "⌥-click on margin passes through" $((BASE + 1)) "$(count 'TARGET CLICK' "$OUT/target.log")"
 
-# 4. release ⌥: back to pass-through
+# 5. release ⌥: back to pass-through
 "$H" move "$CX" "$CY"; "$H" opt up; sleep 0.6
 "$H" click "$CX" "$CY"; sleep 0.5
-check "after ⌥ release, click passes through" 3 "$(count 'TARGET CLICK' "$OUT/target.log")"
-check "pet caught exactly one click" 1 "$(count 'CLICK pet=' "$OUT/app.log")"
+check "after ⌥ release, click passes through" $((BASE + 2)) "$(count 'TARGET CLICK' "$OUT/target.log")"
+check "pet caught exactly two clicks" 2 "$(count '^CLICK' "$OUT/app.log")"
+check "pet stayed put" 1 "$(grep "^LAYOUT $ID" "$OUT/app.log" | sort -u | wc -l | tr -d ' ')"
 
-echo "--- app log"; cat "$OUT/app.log"
+echo "--- app log"; grep -v "^LAYOUT" "$OUT/app.log" | head -30
 exit $fail

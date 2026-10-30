@@ -274,42 +274,86 @@ pub struct SyncReport {
     pub new_projects: Vec<Repo>,
 }
 
-/// One sync run. `full` lists every repo, ignoring the ETag, and checks pets whose repo is missing
-/// by id, to catch deletions. Use it on launch and about daily; otherwise the cheap incremental form.
-pub fn sync(gh: &Github, st: &mut SyncState, pets: &mut [Pet], settings: &Settings, full: bool, now: Time) -> Result<SyncReport, GhError> {
+/// The network half of a sync, done without holding app state: the listing, plus a lookup by id for
+/// each tracked repo missing from a complete listing (404 → `None`, meaning deleted).
+#[derive(Debug, PartialEq)]
+pub struct Fetched {
+    pub listing: Listing,
+    pub by_id: Vec<(u64, Option<Repo>)>,
+}
+
+/// `full` lists every repo, ignoring the ETag, and looks up `tracked` repos missing from it, to catch
+/// deletions. Use it on launch and about daily; otherwise the cheap incremental form.
+pub fn fetch(gh: &Github, st: &SyncState, tracked: &[u64], full: bool) -> Result<Fetched, GhError> {
+    let since = if full { None } else { st.last_successful_check };
+    let listing = gh.list_repos(since, if full { None } else { st.etag.as_deref() })?;
+    let mut by_id = Vec::new();
+    if let Listing::Changed { repos, complete: true, .. } = &listing
+        && full
+    {
+        let listed: BTreeSet<u64> = repos.iter().map(|r| r.id).collect();
+        for &id in tracked.iter().filter(|id| !listed.contains(id)) {
+            by_id.push((id, gh.repo_by_id(id)?));
+        }
+    }
+    Ok(Fetched { listing, by_id })
+}
+
+/// The state half: applies a fetch result (or its error) to the sync state and pets.
+/// Errors leave `last_successful_check` alone, so moods freeze (§5.3).
+pub fn apply(result: Result<Fetched, GhError>, meta: &Meta, st: &mut SyncState, pets: &mut [Pet], settings: &Settings, now: Time) -> Result<SyncReport, GhError> {
     st.last_attempt = Some(now);
     st.installed_at.get_or_insert(now);
-    let since = if full { None } else { st.last_successful_check };
-    let result = gh.list_repos(since, if full { None } else { st.etag.as_deref() }).and_then(|listing| {
-        let mut report = SyncReport::default();
-        match listing {
-            Listing::NotModified => report.not_modified = true,
-            Listing::Changed { repos, etag, complete } => {
-                st.etag = etag;
-                apply_repos(pets, &repos, st, settings, now, &mut report);
-                if full && complete {
-                    check_missing(gh, pets, &repos, now, &mut report)?;
-                }
-            }
-        }
-        Ok(report)
-    });
-    let meta = gh.meta();
     st.token_expires = meta.token_expires.or(st.token_expires);
     st.rate_remaining = meta.rate_remaining;
     st.rate_reset = meta.rate_reset;
-    match &result {
-        Ok(_) => {
-            st.last_successful_check = Some(now);
-            st.failures = 0;
-            st.disconnected = false;
-        }
+    let fetched = match result {
+        Ok(f) => f,
         Err(e) => {
             st.failures += 1;
-            st.disconnected = *e == GhError::Unauthorized;
+            st.disconnected = e == GhError::Unauthorized;
+            return Err(e);
+        }
+    };
+    st.last_successful_check = Some(now);
+    st.failures = 0;
+    st.disconnected = false;
+    let mut report = SyncReport::default();
+    match fetched.listing {
+        Listing::NotModified => report.not_modified = true,
+        Listing::Changed { repos, etag, .. } => {
+            st.etag = etag;
+            apply_repos(pets, &repos, st, settings, now, &mut report);
         }
     }
-    result
+    for (id, repo) in fetched.by_id {
+        for pet in pets.iter_mut().filter(|p| p.project.github.as_ref().is_some_and(|g| g.id == id)) {
+            match &repo {
+                None => {
+                    if pet.let_go(now, "Repo no longer exists").is_ok() {
+                        report.gone.push(pet.id);
+                    }
+                }
+                Some(r) => apply_repos(std::slice::from_mut(pet), std::slice::from_ref(r), st, settings, now, &mut report),
+            }
+        }
+    }
+    Ok(report)
+}
+
+/// Fetch and apply in one go (tests, and callers that own the state outright).
+pub fn sync(gh: &Github, st: &mut SyncState, pets: &mut [Pet], settings: &Settings, full: bool, now: Time) -> Result<SyncReport, GhError> {
+    let tracked = tracked_ids(pets);
+    let fetched = fetch(gh, st, &tracked, full);
+    apply(fetched, &gh.meta(), st, pets, settings, now)
+}
+
+/// Repo ids of pets that still follow their repo (not graduated or let go).
+pub fn tracked_ids(pets: &[Pet]) -> Vec<u64> {
+    pets.iter()
+        .filter(|p| !matches!(p.state.kind, StateKind::Graduated | StateKind::LetGo))
+        .filter_map(|p| p.project.github.as_ref().map(|g| g.id))
+        .collect()
 }
 
 fn apply_repos(pets: &mut [Pet], repos: &[Repo], st: &mut SyncState, settings: &Settings, now: Time, report: &mut SyncReport) {
@@ -338,26 +382,6 @@ fn apply_repos(pets: &mut [Pet], repos: &[Repo], st: &mut SyncState, settings: &
             report.new_projects.push(repo.clone());
         }
     }
-}
-
-/// A pet whose repo is absent from a complete listing is looked up by id; 404 means deleted (§5.1).
-fn check_missing(gh: &Github, pets: &mut [Pet], repos: &[Repo], now: Time, report: &mut SyncReport) -> Result<(), GhError> {
-    let listed: BTreeSet<u64> = repos.iter().map(|r| r.id).collect();
-    for pet in pets.iter_mut() {
-        let Some(id) = pet.project.github.as_ref().map(|g| g.id).filter(|id| !listed.contains(id)) else { continue };
-        if matches!(pet.state.kind, StateKind::Graduated | StateKind::LetGo) {
-            continue;
-        }
-        match gh.repo_by_id(id)? {
-            None => {
-                if pet.let_go(now, "Repo no longer exists").is_ok() {
-                    report.gone.push(pet.id);
-                }
-            }
-            Some(repo) => apply_repos(std::slice::from_mut(pet), &[repo], &mut SyncState::default(), &Settings::default(), now, report),
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -524,11 +548,13 @@ mod tests {
         assert_eq!(gh.repo_by_id(2).unwrap(), None);
         assert!(gh.repo_by_id(3).unwrap().unwrap().archived);
         let mut pets = vec![pet_for(4, t("2026-10-01T00:00:00Z")), pet_for(3, t("2026-10-01T00:00:00Z"))];
-        let mut report = SyncReport::default();
-        check_missing(&gh, &mut pets, &[], t("2026-10-30T00:00:00Z"), &mut report).unwrap();
+        let fetched = Fetched { listing: Listing::NotModified, by_id: vec![(4, gh.repo_by_id(4).unwrap()), (3, gh.repo_by_id(3).unwrap())] };
+        let mut st = SyncState::default();
+        let report = apply(Ok(fetched), &gh.meta(), &mut st, &mut pets, &Settings::default(), t("2026-10-30T00:00:00Z")).unwrap();
         assert_eq!(pets[0].project.github.as_ref().unwrap().full_name, "me/renamed");
         assert_eq!(pets[1].state.kind, StateKind::Graduated);
         assert_eq!((report.renamed.len(), report.graduated.len()), (1, 1));
+        assert_eq!(tracked_ids(&pets), vec![4]);
     }
 
     /// Live check with the user's test token: `cargo test -- --ignored live`. Prints no secrets.
