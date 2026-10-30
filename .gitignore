@@ -4,3 +4,5 @@ dist/
 .DS_Store
 *.local
 art/**/build/
+tools/overlay-harness/harness
+native-overlay/.build/
