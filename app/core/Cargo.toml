@@ -3,6 +3,10 @@ name = "strays-core"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# Debug-only tools (spec §14.3): allows a local fake GitHub server. Never on in release builds.
+devtools = []
+
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std", "serde"] }
 gix = { version = "0.90.0", default-features = false, features = ["sha1"] }
