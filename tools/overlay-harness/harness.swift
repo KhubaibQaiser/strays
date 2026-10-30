@@ -10,7 +10,8 @@ import AppKit
 let args = CommandLine.arguments
 let src = CGEventSource(stateID: .hidSystemState)
 
-func post(_ e: CGEvent?) { e?.post(tap: .cghidEventTap) }
+// The short wait lets the event reach the HID system before this process exits; without it ~1 in 4 ⌥ events was lost.
+func post(_ e: CGEvent?) { e?.post(tap: .cghidEventTap); usleep(50_000) }
 
 func point(_ x: String, _ y: String) -> CGPoint { CGPoint(x: Double(x)!, y: Double(y)!) }
 
@@ -56,6 +57,7 @@ case "click":
 case "opt":
     let down = args[2] == "down"
     let e = CGEvent(keyboardEventSource: src, virtualKey: 58, keyDown: down) // 58 = left ⌥
+    e?.type = .flagsChanged // a modifier is a flags change, not a key press; keyDown/keyUp left HID state stale
     e?.flags = down ? .maskAlternate : []
     post(e)
 default:

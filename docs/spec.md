@@ -291,7 +291,7 @@ idleDays     = max(0, idleSpan − frozen − excluded) / 24h
 
 - **By default, every pet window passes all mouse events through.**
 - **Polling:**
-  - Reads cursor position (`NSEvent.mouseLocation`) and modifier state (`NSEvent.modifierFlags`). **No Accessibility or Input Monitoring permission is needed; verify at Gate 0.**
+  - Reads cursor position (`NSEvent.mouseLocation`) and modifier state (`NSEvent.modifierFlags`). No Accessibility or Input Monitoring permission is needed (verified at Gate 0).
   - Rate: 4 Hz normally, 30 Hz while the cursor is within 150 pt of a pet **(targets)**.
 - **Interactive state:** when the **modifier is held and the cursor is over a pet's hit shape** (the pet's opaque area + 6 pt padding), that pet's window stops passing clicks through. Releasing the key or leaving the shape restores pass-through within one polling tick.
 - **Modifier down:** every pet **freezes** its movement and shows a soft outline. This prevents clicks landing where a pet has just walked away.

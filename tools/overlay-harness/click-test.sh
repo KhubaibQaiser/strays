@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Gate 0 interaction test: plain clicks pass through a pet; ⌥-click hits the pet.
-# Usage: click-test.sh A|B   (needs Accessibility for the calling app; app must be built)
+# Usage: click-test.sh [A|B]   (needs Accessibility for the calling app; app must be built)
 set -euo pipefail
-MODE=${1:-A}
+MODE=${1:-B}
 HERE=$(cd "$(dirname "$0")" && pwd)
-APP="$HERE/../../app/src-tauri/target/debug/app"
+APP="$HERE/../../app/src-tauri/target/release/app"
 H="$HERE/harness"
 OUT=$(mktemp -d)
 trap 'pkill -f "$APP" 2>/dev/null || true; kill $TPID 2>/dev/null || true' EXIT

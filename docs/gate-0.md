@@ -14,8 +14,8 @@ Machine: MacBook (Apple Silicon, arm64), macOS 26.5, 3024×1964 display at 2×. 
 | Unsigned `.riv` (no scripts) plays without watermark | ✅ Pass | screenshot of the overlay |
 | Rive WASM bundled locally, strict CSP | ✅ Pass | `dist/assets/rive-*.wasm`; CSP `default-src 'self'` |
 | Transparent always-on-top overlay windows | ✅ Pass | screenshot |
-| Click-through + ⌥-click (real OS events) | ⏸ Blocked | Accessibility not yet granted to the agent's host app (`AXIsProcessTrusted: false`); test ready in `tools/overlay-harness/click-test.sh` |
-| Cursor/modifier polling with no permission prompt | ✅ Pass (partial) | ran without any TCC prompt; ⌥ detection itself is verified by the blocked test |
+| Click-through + ⌥-click (real OS events) | ✅ Pass | `tools/overlay-harness/click-test.sh`: 8/8 checks, 3 runs each for layouts A and B, pets moving and still (2026-10-31) |
+| Cursor/modifier polling with no permission prompt | ✅ Pass | no TCC prompt; ⌥ hover detected within one poll tick |
 | **CPU budget < 1% (3 idle pets)** | ❌ **Fail** | see below |
 | Memory < 200 MB | ✅ Layout B / ❌ Layout A | see below |
 | macOS 12 compatibility | ⏳ Not run | needs a macOS 12 VM (manual approval) |
@@ -94,4 +94,5 @@ Findings:
 - **Liveliness setting:** Calm (default), Gentle, Lively. Users can trade CPU for motion (spec §7.4).
 - **Minimum macOS:** 14 Sonoma.
 - **Test cat look:** good enough to start; polish in Gate 2.
-- **Still open:** the click-through test (Accessibility not granted to the agent's host app). Capture exclusion is verified for native panels only; Tauri windows need `sharingType` set via objc2 and a re-check.
+- **Click-through test:** passes. A first run with still pets failed because the test harness dropped about 1 in 4 synthetic ⌥ events. The harness now posts them as `flagsChanged` and waits 50 ms before exiting. A probe then showed 15/15 toggles registering.
+- **Still open:** capture exclusion is verified for native panels only; Tauri windows need `sharingType` set via objc2 and a re-check.
