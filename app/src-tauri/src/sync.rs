@@ -52,6 +52,13 @@ pub fn run(shared: Arc<Mutex<App>>, rx: Receiver<Cmd>, on_change: impl Fn(&App, 
         let app = shared.lock().unwrap();
         app.settings.sync_on_launch.then_some(None)
     };
+    // show pets straight away; the first sync may take a while on a slow network
+    {
+        let mut app = shared.lock().unwrap();
+        app.tick(Utc::now());
+        app.refresh_visible(Utc::now());
+        on_change(&app, None);
+    }
     let mut changed = true;
     loop {
         let now = Utc::now();
