@@ -99,3 +99,40 @@ Gate 3 lands one species per PR (user decision). Each one needs the user's sign-
 **Review:** `art/review/hamster/*.png` (every pose and clip), `celebrate.gif`, `joyful.gif`, and `with-cat-and-corgi-in-app.png` (all three in the real overlay page).
 
 **Tests:** the overlay test now draws a cat, a hamster and a corgi together, and all three rigs load. Playwright passes 14/14.
+
+## Parrot (budgerigar)
+
+**Rig:** `art/parrot/make.py` writes `art/parrot/scene.rml`, using the shared `art/tools/pet.py`.
+
+**Drawing:**
+- A green budgie, with the coat colour on the body, wings and tail.
+- Fixed parts: a yellow face mask, a barred crown, blue cheek patches, throat spots, a hooked horn-coloured beak and a blue cere.
+- Barred wings and a long tail on the 3-bone chain. The tail is three rigid feather segments, one per bone, hanging down behind the body.
+- It sits on its own perch, which is part of the rig and stays put when it flies.
+
+**Fly and perch (§10.2):** the parrot keeps the same action ids, but four clips are flights instead of walks:
+- **Enter (5):** flies in from the right and lands on the perch with a squash.
+- **Exit (4):** crouches, takes off and flies out.
+- **Postcard (9):** flies in carrying the postcard in its beak.
+- **Walk (10):** two fluttering hops in place.
+
+**Other differences:**
+- The shared ear poses drive the wings, so joyful lifts them slightly and gloomy tucks them in.
+- It sleeps fluffed up on the perch, so the bed never shows.
+- Its tail sway is gentler than the other pets'.
+
+**Celebration (§10.3):** takes off, flies a full loop (turning with the loop, so it stays in frame), lands, fluffs its feathers twice, then the shared proud sit with confetti.
+
+**In the app:** `src/art.ts` maps `parrot` to its rig. All four species now have their own art, and the adoption page's "still being drawn" note is gone. Placement already perches the parrot top-right under the menu bar (Gate 2a).
+
+**Review:** `art/review/parrot/*.png` (every pose and clip), `celebrate.gif`, `joyful.gif`, `fly-in.gif`, and `all-four-in-app.png`.
+
+**Tests:** the overlay test draws all four species together, and all four rigs load. Playwright passes 14/14. The app build bundles all four `.riv` files.
+
+## Fix: linear keys were holding (all species)
+
+`interpolationType` on a Rive keyframe defaults to **hold**. `art/tools/rml.py` wrote "linear" keys with no type, so they held:
+- Exit and enter stood still and then jumped, instead of walking across.
+- The rain drops and Zzz didn't drift.
+
+The parrot's loop flight showed it. `rml.py` now writes `interpolationType="linear"`. I regenerated all four rigs and re-rendered the affected sheets (exit, enter, postcard, gloomy, sleep, walk) for the cat, corgi and hamster.
