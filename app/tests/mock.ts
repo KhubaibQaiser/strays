@@ -69,6 +69,8 @@ export const STATE = {
     { id: 2, fullName: "me/side-project", pushedAt: "2026-10-01T10:00:00Z", private: false, tracked: false },
   ],
   newProjects: [],
+  localRepos: [["/Users/me/Code/notes", "~/Code/notes", false]],
+  newFolders: [],
   slotsUsed: 1,
   presentation: false,
   vacation: false,
@@ -96,10 +98,19 @@ export async function mockApp(page: Page, fail: Record<string, string> = {}) {
         pick_folder: "/Users/me/Code",
         export_data: "/tmp/strays-export.json",
       };
+      // event handlers by name, so tests can emit events the way the app does
+      const callbacks: Record<number, (e: unknown) => void> = {};
+      const handlers: Record<string, number[]> = {};
+      (window as unknown as { __emit: unknown }).__emit = (event: string, payload: unknown) =>
+        (handlers[event] ?? []).forEach((h) => callbacks[h]?.({ event, id: 0, payload }));
       (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
-        transformCallback: () => next++,
+        transformCallback: (cb: (e: unknown) => void) => {
+          callbacks[next] = cb;
+          return next++;
+        },
         unregisterCallback: () => {},
         invoke: async (cmd: string, args: Record<string, unknown>) => {
+          if (cmd === "plugin:event|listen") (handlers[args.event as string] ??= []).push(args.handler as number);
           if (cmd.startsWith("plugin:event|")) return next++;
           calls.push({ cmd, args });
           if (cmd in fail) throw fail[cmd];
