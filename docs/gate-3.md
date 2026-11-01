@@ -79,3 +79,23 @@ Gate 3 lands one species per PR (user decision). Each one needs the user's sign-
 **Review:** `art/review/dog/*.png` (every pose and clip), `celebrate.gif`, `joyful.gif`, and `with-cat-in-app.png` (a cat and a corgi in the real overlay page).
 
 **Tests:** the overlay test draws a cat and a corgi together, and both rigs load. Playwright passes 14/14. The app build bundles both `.riv` files.
+
+## Hamster (Syrian)
+
+**Rig:** `art/hamster/make.py` writes `art/hamster/scene.rml`, using the shared `art/tools/pet.py`.
+
+**Drawing:**
+- A round body with the head sitting right on it (no neck), and small round ears.
+- Cream belly, muzzle and cheek pouches, plus whiskers. The cream is fixed, like the corgi's white, so it doesn't follow the coat colour.
+- Pink feet and little hands held at the chest.
+- A tiny stub tail on the shared 3-bone chain, mostly hidden behind the body.
+
+**Celebration (§10.3):** stuffs its cheeks in three gulps (the pouches grow to 1.38×), hops four times with full cheeks, then the shared proud sit with confetti. The cheeks empty at the end.
+
+**Moods and clips:** the same five poses and ten clips, fitted to the hamster's measurements. Its eating reach is longer than the cat's, so the lower head still meets the bowl.
+
+**In the app:** `src/art.ts` maps `hamster` to its rig. Only the parrot still falls back to the cat.
+
+**Review:** `art/review/hamster/*.png` (every pose and clip), `celebrate.gif`, `joyful.gif`, and `with-cat-and-corgi-in-app.png` (all three in the real overlay page).
+
+**Tests:** the overlay test now draws a cat, a hamster and a corgi together, and all three rigs load. Playwright passes 14/14.
