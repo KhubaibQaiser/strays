@@ -76,7 +76,7 @@ pub fn run(
     tx: Sender<Cmd>,
     rx: Receiver<Cmd>,
     full_screen: impl Fn() -> bool,
-    on_change: impl Fn(&App, Option<SyncOutcome>, Option<Nudge>),
+    on_change: impl Fn(&App, Option<SyncOutcome>, Option<Nudge>, Vec<(strays_core::uuid::Uuid, crate::state::Cue)>),
 ) {
     let mut last_pass = Utc::now();
     let mut last_full: Option<Time> = None;
@@ -90,7 +90,7 @@ pub fn run(
         let mut app = shared.lock().unwrap();
         app.tick(Utc::now());
         app.refresh_visible(Utc::now());
-        on_change(&app, None, None);
+        on_change(&app, None, None, Vec::new());
     }
     let mut changed = true;
     let mut manual = false;
@@ -173,6 +173,8 @@ pub fn run(
                             }
                             app.sync_error = None;
                             not_before = None;
+                            let fed: Vec<_> = report.updated.iter().map(|id| (*id, crate::state::Cue::Eat)).collect();
+                            app.cues.extend(fed);
                             let fresh: Vec<_> = report.new_projects.iter().filter(|r| !app.new_projects.iter().any(|n| n.id == r.id)).cloned().collect();
                             app.new_projects.extend(fresh);
                         }
@@ -192,8 +194,10 @@ pub fn run(
         }
         let nudge = app.next_nudge(now, full_screen());
         if changed || nudge.is_some() {
+            let was_visible = app.visible.clone();
             app.refresh_visible(now);
-            on_change(&app, outcome, nudge);
+            let cues = app.take_cues(&was_visible);
+            on_change(&app, outcome, nudge, cues);
             changed = false;
         }
         let until_deadline = app.next_deadline().map(|d| (d - now).to_std().unwrap_or_default());

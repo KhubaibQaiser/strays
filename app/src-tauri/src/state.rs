@@ -82,6 +82,8 @@ pub struct App {
     known_folders: KnownFolders,
     nudge_log: strays_core::nudge::NudgeLog,
     pub load_problems: usize,
+    /// Clips waiting to be played; `Eat` waits until its pet is on screen.
+    pub cues: Vec<(Uuid, Cue)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -103,6 +105,22 @@ pub enum Action {
     Graduate,
     LetGo,
     UndoLetGo,
+}
+
+/// A one-off clip the overlay should play (spec §5.5, §5.6, §7.4). Matches the rig's `action` clips.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Cue {
+    /// New activity: the bowl fills and the pet eats, the next time it's on screen.
+    Eat,
+    /// A release: celebrate, then leave on holiday if `leave`.
+    Celebrate { leave: bool },
+    /// Snoozed: fall asleep and fade out.
+    FallAsleep,
+    /// Snooze over: appear asleep, then wake with a stretch.
+    Wake,
+    /// Back from holiday: walk in with a postcard.
+    Postcard,
 }
 
 /// What the overlay needs to draw one pet. Contains no token and no paths.
@@ -164,6 +182,7 @@ impl App {
             rotation_started: None,
             sync_error: None,
             load_problems: problems.len(),
+            cues: Vec::new(),
             local_repos: Vec::new(),
             new_folders: Vec::new(),
             known_folders,
@@ -204,12 +223,30 @@ impl App {
     pub fn tick(&mut self, now: Time) -> bool {
         let mut changed = Vec::new();
         for p in &mut self.pets {
+            let was = p.state.kind;
             if p.tick(now) {
                 changed.push(p.id);
+                match was {
+                    StateKind::Snoozed => self.cues.push((p.id, Cue::Wake)),
+                    StateKind::Holiday => self.cues.push((p.id, Cue::Postcard)),
+                    _ => {}
+                }
             }
         }
         changed.iter().for_each(|&id| self.save_pet(id));
         !changed.is_empty()
+    }
+
+    /// Cues for pets on screen now. `Eat` waits for its pet to appear; other cues are dropped if it isn't.
+    /// The cue for a pet that is just leaving (release, snooze) arrives before the frame that removes it.
+    pub fn take_cues(&mut self, was_visible: &[Uuid]) -> Vec<(Uuid, Cue)> {
+        let (now, later): (Vec<_>, Vec<_>) = std::mem::take(&mut self.cues).into_iter().partition(|(id, cue)| {
+            let leaving = matches!(cue, Cue::Celebrate { .. } | Cue::FallAsleep);
+            (if leaving { was_visible } else { &self.visible[..] }).contains(id)
+        });
+        self.cues = later.into_iter().filter(|(_, c)| *c == Cue::Eat).collect();
+        let mut seen = std::collections::HashSet::new();
+        now.into_iter().filter(|c| seen.insert(*c)).collect()
     }
 
     pub fn next_deadline(&self) -> Option<Time> {
@@ -294,14 +331,21 @@ impl App {
             Action::Adopt => p.adopt(now).map(|_| format!("{name} moved in")).map_err(refused)?,
             Action::Snooze(s) => {
                 p.snooze(now, snooze_until(s, now)).map_err(refused)?;
+                self.cues.push((id, Cue::FallAsleep));
                 format!("{name} is asleep")
             }
             Action::Wake => p.wake(now).map(|_| format!("{name} woke up")).map_err(refused)?,
             Action::Pause => p.pause(now, None).map(|_| format!("{name} is paused")).map_err(refused)?,
             Action::Resume => p.resume(now).map(|_| format!("{name} is back")).map_err(refused)?,
             Action::Release => match p.mark_release(now, None, &settings).map_err(refused)? {
-                ReleaseOutcome::Holiday { .. } => format!("Shipped! {name} is taking a little holiday"),
-                ReleaseOutcome::CelebrationOnly { reason } => format!("Shipped! ({reason}, so no holiday)"),
+                ReleaseOutcome::Holiday { .. } => {
+                    self.cues.push((id, Cue::Celebrate { leave: true }));
+                    format!("Shipped! {name} is taking a little holiday")
+                }
+                ReleaseOutcome::CelebrationOnly { reason } => {
+                    self.cues.push((id, Cue::Celebrate { leave: false }));
+                    format!("Shipped! ({reason}, so no holiday)")
+                }
             },
             Action::Graduate => p.graduate(now, "Marked finished").map(|_| format!("{name} graduated 🎓")).map_err(refused)?,
             Action::LetGo => p.let_go(now, "Let go").map(|_| format!("Let {name} go")).map_err(refused)?,
@@ -368,6 +412,7 @@ impl App {
             }
             if p.activity.last != before {
                 changed.push(p.id);
+                self.cues.push((p.id, Cue::Eat));
             }
         }
         changed.iter().for_each(|&id| self.save_pet(id));

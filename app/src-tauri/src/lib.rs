@@ -35,6 +35,12 @@ struct Shared {
 const TRAY: &str = "strays";
 
 #[derive(Clone, Serialize)]
+struct Cue {
+    id: Uuid,
+    cue: state::Cue,
+}
+
+#[derive(Clone, Serialize)]
 struct Feedback {
     id: Uuid,
     ok: bool,
@@ -232,7 +238,11 @@ pub fn run() {
             let ui = h.clone();
             std::thread::spawn(move || {
                 let fs = overlay.clone();
-                sync::run(app, tx, rx, move || fs.is_full_screen(), move |app, outcome, nudge| {
+                sync::run(app, tx, rx, move || fs.is_full_screen(), move |app, outcome, nudge, cues| {
+                    // cues go first: a pet that's leaving must start its clip before the frame removes it
+                    for (id, cue) in cues {
+                        let _ = ui.emit("cue", Cue { id, cue });
+                    }
                     let s = &app.settings;
                     let config = overlay::Config {
                         liveliness: s.liveliness,
