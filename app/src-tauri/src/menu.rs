@@ -97,7 +97,23 @@ pub fn pet_entries<Rt: Runtime>(h: &AppHandle<Rt>, app: &App, p: &Pet, now: Time
 
 fn pet_title(app: &App, p: &Pet, now: Time) -> String {
     let mood = if matches!(p.state.kind, StateKind::Active) { format!(" · {}", mood_word(app.mood(p, now))) } else { String::new() };
-    format!("{} {}{mood}", species_icon(p.species), p.name)
+    let worn = match (p.state.kind, p.accessory.as_deref()) {
+        (StateKind::Graduated, Some(a)) => format!(" · {}", accessory_label(a)),
+        _ => String::new(),
+    };
+    format!("{} {}{mood}{worn}", species_icon(p.species), p.name)
+}
+
+/// How the Graduates list names the accessory a pet earned.
+fn accessory_label(a: &str) -> &'static str {
+    match a {
+        "cap" => "🎓 graduation cap",
+        "scarf" => "🧣 scarf",
+        "bow" => "🎀 bow",
+        "star" => "⭐ star badge",
+        "crown" => "🌸 flower crown",
+        _ => "🎁 reward",
+    }
 }
 
 pub fn status_line(app: &App) -> String {

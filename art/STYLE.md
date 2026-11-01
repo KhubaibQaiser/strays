@@ -45,6 +45,7 @@ The rules every pet, prop and accessory follows (spec §10.1). The aim is calm, 
 - View model `PetLook`, with the four colours plus:
   - `mood` (number, 1 Joyful … 5 Gloomy), which picks the resting pose
   - `action` (number), which plays one-off clips; it returns to the pose afterwards
+  - `accessory` (number, 0 none, 1 cap, 2 scarf, 3 bow, 4 star badge, 5 flower crown), on its own layer, so it shows with any pose or clip
 
 | `action` | Clip |
 |---|---|

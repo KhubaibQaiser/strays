@@ -189,6 +189,7 @@ idleDays     = max(0, idleSpan − frozen − excluded) / 24h
 - When a slot is full, a newly detected or manually added project joins the **Shelter**: it's tracked, but no pet is adopted yet. Shelter projects are listed with their last activity.
 - Freeing a slot (graduate, let go, or raising the limit) shows one prompt: "A slot opened. Adopt {top shelter project}?"
 - Graduating earns a cosmetic reward. v1 ships a small accessory set (§10.2), and a "Graduates" list appears in the menu-bar menu.
+  - **Decided (user, 2026-11-01): the graduate wears it.** The pet gets one of the five accessories (fixed per pet), puts it on for its farewell (celebrate, then leave), and the Graduates list names it. Other pets don't wear accessories in v1.
 
 ### 5.9 Detecting new projects
 

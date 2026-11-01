@@ -13,13 +13,13 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
-from pet import PUPIL, Fit, actions, ambient, controls, face, moods, proud, props  # noqa: E402
+from pet import accessories, PUPIL, Fit, actions, ambient, controls, face, moods, proud, props  # noqa: E402
 from rml import Clip, Rig, coat_fill, curve, ellipse, fill, path, rect, shape, solid, stroke, write, LINE, SHADE  # noqa: E402
 
 rig = Rig("Parrot")
 N = rig.node
 # wings stand in for ears: rest folded (0); negative lifts them outwards, positive tucks them in
-fit = Fit(head_y=-150, lie_body=0.88, lie_head=-138, eye_dx=26, ear=0.0, ear_up=-0.35, ear_soft=-0.15, ear_low=0.08, ear_flat=0.14,
+fit = Fit(crown=-55, chin=56, head_w=116, chest=(28, -92), head_y=-150, lie_body=0.88, lie_head=-138, eye_dx=26, ear=0.0, ear_up=-0.35, ear_soft=-0.15, ear_low=0.08, ear_flat=0.14,
           paw_y=-4, mouth_y=22, eat_dx=-50, eat_dy=60)
 MASK, BEAK, CERE, CHEEK, PERCH = "FFF7E27A", "FFE8C88A", "FF6C8FD6", "FF4A6FD8", "FF9A6A3E"
 
@@ -43,9 +43,11 @@ def tail() -> str:
     return N("Tail Mount", out, y=-46, rotation=math.pi / 2 - 0.45)
 
 
+acc_head, acc_body, acc_clips = accessories(rig, fit)
 head = N(
     "Head",
-    shape("Beak", curve([(0, 26), (-9, 12), (-8, 2), (8, 2), (9, 12)], closed=True), fill(solid(BEAK)) + stroke(LINE, 2.5), y=4)
+    acc_head
+    + shape("Beak", curve([(0, 26), (-9, 12), (-8, 2), (8, 2), (9, 12)], closed=True), fill(solid(BEAK)) + stroke(LINE, 2.5), y=4)
     + shape("Cere", ellipse(22, 9), fill(solid(CERE)) + stroke(LINE, 2), y=4)
     + face(rig, fit)
     + "".join(shape(f"Spot {i}", ellipse(7, 7), fill(solid(PUPIL)), x=x, y=50) for i, x in enumerate((-22, 0, 22)))
@@ -57,7 +59,8 @@ head = N(
 )
 body = N(
     "Body",
-    shape("Paw L", ellipse(18, 12), fill(solid("FFC9A9A0")) + stroke(LINE, 2), x=-18, y=fit.paw_y, sid=rig.id("Paw L"))
+    acc_body
+    + shape("Paw L", ellipse(18, 12), fill(solid("FFC9A9A0")) + stroke(LINE, 2), x=-18, y=fit.paw_y, sid=rig.id("Paw L"))
     + shape("Paw R", ellipse(18, 12), fill(solid("FFC9A9A0")) + stroke(LINE, 2), x=18, y=fit.paw_y, sid=rig.id("Paw R"))
     + wing(-1) + wing(1)
     + shape("Body Shape", curve([(0, -150), (52, -112), (56, -50), (30, -12), (-30, -12), (-56, -50), (-52, -112)], closed=True), coat_fill()),
@@ -153,5 +156,6 @@ write(
     actions=acts,
     instance={"coatBase": "FF7DC44E", "coatShade": "FF5EA233", "coatHighlight": "FFA6DE7B", "outline": "FF2F5A1C"},
     path_out=os.path.join(os.path.dirname(__file__), "scene.rml"),
+    accessories=acc_clips,
 )
 print("wrote scene.rml")

@@ -121,6 +121,16 @@ pub enum Cue {
     Wake,
     /// Back from holiday: walk in with a postcard.
     Postcard,
+    /// Graduated: put on the earned accessory (the rig's `accessory` number, 1-5), celebrate, then leave for good.
+    Graduate { accessory: u8 },
+}
+
+impl Cue {
+    /// The farewell for a pet that just graduated, wearing the accessory it earned.
+    pub fn graduate(p: &Pet) -> Cue {
+        let accessory = p.accessory.as_deref().and_then(|a| pet::ACCESSORIES.iter().position(|&x| x == a)).map_or(0, |i| i as u8 + 1);
+        Cue::Graduate { accessory }
+    }
 }
 
 /// What the overlay needs to draw one pet. Contains no token and no paths.
@@ -241,7 +251,7 @@ impl App {
     /// The cue for a pet that is just leaving (release, snooze) arrives before the frame that removes it.
     pub fn take_cues(&mut self, was_visible: &[Uuid]) -> Vec<(Uuid, Cue)> {
         let (now, later): (Vec<_>, Vec<_>) = std::mem::take(&mut self.cues).into_iter().partition(|(id, cue)| {
-            let leaving = matches!(cue, Cue::Celebrate { .. } | Cue::FallAsleep);
+            let leaving = matches!(cue, Cue::Celebrate { .. } | Cue::FallAsleep | Cue::Graduate { .. });
             (if leaving { was_visible } else { &self.visible[..] }).contains(id)
         });
         self.cues = later.into_iter().filter(|(_, c)| *c == Cue::Eat).collect();
@@ -347,7 +357,11 @@ impl App {
                     format!("Shipped! ({reason}, so no holiday)")
                 }
             },
-            Action::Graduate => p.graduate(now, "Marked finished").map(|_| format!("{name} graduated 🎓")).map_err(refused)?,
+            Action::Graduate => {
+                p.graduate(now, "Marked finished").map_err(refused)?;
+                self.cues.push((id, Cue::graduate(p)));
+                format!("{name} graduated 🎓")
+            }
             Action::LetGo => p.let_go(now, "Let go").map(|_| format!("Let {name} go")).map_err(refused)?,
             Action::UndoLetGo => p.undo_let_go(now, &settings).map(|_| format!("{name} is back in the shelter")).map_err(refused)?,
         };
@@ -636,5 +650,16 @@ mod tests {
         again.scan_folders();
         assert!(again.new_folders.is_empty());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_graduate_leaves_wearing_its_accessory() {
+        let now = strays_core::chrono::Utc::now();
+        let mut p = Pet::new(now, "Miso", Species::Cat, Project { github: None, local: None }, Activity { last: now, source: ActivitySource::LocalCommit }, Pace::Normal);
+        assert_eq!(Cue::graduate(&p), Cue::Graduate { accessory: 0 });
+        p.graduate(now, "").unwrap();
+        let Cue::Graduate { accessory } = Cue::graduate(&p) else { unreachable!() };
+        assert_eq!(pet::ACCESSORIES[accessory as usize - 1], p.accessory.as_deref().unwrap());
+        assert_eq!(serde_json::to_value(Cue::Graduate { accessory: 3 }).unwrap(), serde_json::json!({ "graduate": { "accessory": 3 } }));
     }
 }

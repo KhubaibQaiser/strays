@@ -7,7 +7,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
-from pet import BLUSH, INNER_EAR, NOSE, Fit, actions, ambient, controls, face, moods, props, skinned_tail, tail_bones, zoomies  # noqa: E402
+from pet import accessories, BLUSH, INNER_EAR, NOSE, Fit, actions, ambient, controls, face, moods, props, skinned_tail, tail_bones, zoomies  # noqa: E402
 from rml import HIGH, Rig, coat_fill, ellipse, fill, shape, solid, triangle, write  # noqa: E402
 
 rig = Rig("Cat")
@@ -22,9 +22,11 @@ def ear(side: int) -> str:
     return N(f"Ear {name} Pose", N(f"Ear {name}", inner + outer), x=40 * side, y=-40, rotation=fit.ear * side)
 
 
+acc_head, acc_body, acc_clips = accessories(rig, fit)
 head = N(
     "Head",
-    face(rig, fit)
+    acc_head
+    + face(rig, fit)
     + shape("Nose", triangle(14, 10), fill(solid(NOSE)), y=22, rotation=3.1415927)
     + shape("Blush L", ellipse(18, 9), fill(solid(BLUSH)), x=-44, y=24)
     + shape("Blush R", ellipse(18, 9), fill(solid(BLUSH)), x=44, y=24)
@@ -35,7 +37,8 @@ head = N(
 )
 body = N(
     "Body",
-    shape("Paw L", ellipse(44, 26), coat_fill(), x=-30, y=fit.paw_y, sid=rig.id("Paw L"))
+    acc_body
+    + shape("Paw L", ellipse(44, 26), coat_fill(), x=-30, y=fit.paw_y, sid=rig.id("Paw L"))
     + shape("Paw R", ellipse(44, 26), coat_fill(), x=30, y=fit.paw_y, sid=rig.id("Paw R"))
     + shape("Chest Fluff", ellipse(86, 76), fill(HIGH), y=-82)
     + shape("Body Shape", ellipse(156, 144), coat_fill(), y=-70),
@@ -53,5 +56,6 @@ write(
     actions=actions(fit, zoomies),
     instance={"coatBase": "FFEFE1CC", "coatShade": "FFD9C4A6", "coatHighlight": "FFFFF8EE", "outline": "FF7A5C46"},
     path_out=os.path.join(os.path.dirname(__file__), "scene.rml"),
+    accessories=acc_clips,
 )
 print("wrote scene.rml")

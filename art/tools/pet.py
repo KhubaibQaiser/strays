@@ -6,6 +6,8 @@ passes a celebration clip (spec §10.3). Node names are shared, so these clips k
 """
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass
 from typing import Callable
 
@@ -20,6 +22,10 @@ CLOUD, DROP = "FF9AA4B5", "FF6FA8DC"
 CARD, STAMP = "FFFFF6E0", "FFE2725B"
 CONFETTI = ["FFF2C14E", "FFE2725B", "FF5B8DEF", "FF7BC47F"]
 ZZZ, HEART = "FF8E8EA0", "FFE77A8F"
+CAP, TASSEL, SCARF, BOW, STAR, LEAF = "FF2E2E3A", "FFF2C14E", "FFD9534F", "FFE77A8F", "FFF2C14E", "FF7BC47F"
+FLOWERS = ["FFF29BB0", "FFFFFFFF", "FFB9A2E0", "FFF29BB0", "FFFFFFFF"]
+# graduation rewards (spec §10.2), in the order of the rig's `accessory` number (1-5); keep in step with app/src/main.ts
+ACCESSORIES = ["Cap", "Scarf", "Bow", "Star", "Crown"]
 
 
 @dataclass
@@ -38,6 +44,10 @@ class Fit:
     mouth_y: float = 31
     eat_dx: float = -46           # head reach towards the bowl
     eat_dy: float = 46
+    crown: float = -59            # top of the head, in Head coordinates (accessories)
+    chin: float = 56              # bottom of the head, where the scarf sits
+    head_w: float = 148
+    chest: tuple[float, float] = (36, -86)   # star badge, in Body coordinates
 
 
 def eye(side: int, dx: float) -> str:
@@ -308,3 +318,40 @@ def actions(f: Fit, celebrate: Callable[[Fit], Clip]) -> list[Clip]:
     postcard_in.key("Mouth", "opacity", (0, 0, "hold"), (230, 1, "hold"), (240, 1))
     walk = walk_keys(Clip("Walk", 120, True), f, 200, 200, 0, 120)
     return [eat, petted, celebrate(f), exit_, enter, fall_asleep, sleep, wake, postcard_in, walk]
+
+
+def accessories(rig: Rig, f: Fit) -> tuple[str, str, list[Clip]]:
+    """The five graduation accessories: (on top of the head, on top of the body, one clip per `accessory` value).
+    All hidden; the Accessory layer shows the one `accessory` picks (0 = none)."""
+    N, w, top = rig.node, f.head_w, f.crown
+    cap = N("Acc Cap",
+            shape("Tassel End", ellipse(8, 11), fill(solid(TASSEL)), x=38, y=26)
+            + shape("Tassel", path([(0, 0), (34, 4), (38, 22)], radius=6), stroke(solid(TASSEL), 3))
+            + shape("Board", path([(-48, 0), (0, -13), (48, 0), (0, 13)], closed=True, radius=2), fill(solid(CAP)) + stroke(solid("FF55556A"), 2.5))
+            + shape("Skull", rect(56, 24, 6), fill(solid(CAP)) + stroke(solid("FF55556A"), 2.5), y=10),
+            y=top - 6, rotation=-0.12, opacity=0.0)
+    bow = N("Acc Bow",
+            shape("Knot", ellipse(11, 11), fill(solid(BOW)) + stroke(LINE, 2))
+            + shape("Loop L", ellipse(24, 16), fill(solid(BOW)) + stroke(LINE, 2), x=-13, rotation=0.3)
+            + shape("Loop R", ellipse(24, 16), fill(solid(BOW)) + stroke(LINE, 2), x=13, rotation=-0.3),
+            x=w * 0.3, y=top + 10, rotation=0.35, opacity=0.0)
+    spots = [(-w * 0.4, top + 18), (-w * 0.21, top + 5), (0, top + 1), (w * 0.21, top + 5), (w * 0.4, top + 18)]
+    crown = N("Acc Crown",
+              "".join(shape(f"Centre {i}", ellipse(5, 5), fill(solid(TASSEL)), x=x, y=y) + shape(f"Flower {i}", ellipse(15, 15), fill(solid(FLOWERS[i])) + stroke(LINE, 2), x=x, y=y)
+                      for i, (x, y) in enumerate(spots))
+              + shape("Vine", curve(spots), stroke(solid(LEAF), 4)),
+              opacity=0.0)
+    scarf = N("Acc Scarf",
+              shape("Stripe", path([(-w * 0.3, 0), (w * 0.3, 0)]), stroke(solid("FFF6F1E7"), 3))
+              + shape("Band", rect(w * 0.78, 20, 10), fill(solid(SCARF)) + stroke(LINE, 2.5))
+              + shape("Scarf End", rect(18, 44, 6), fill(solid(SCARF)) + stroke(LINE, 2.5), x=w * 0.22, y=22, rotation=-0.15),
+              y=f.chin, opacity=0.0)
+    pts = [(math.cos(-math.pi / 2 + i * math.pi / 5) * (17 if i % 2 == 0 else 7), math.sin(-math.pi / 2 + i * math.pi / 5) * (17 if i % 2 == 0 else 7)) for i in range(10)]
+    star = N("Acc Star", shape("Star Shape", path(pts, closed=True, radius=1.5), fill(solid(STAR)) + stroke(LINE, 2.5)), x=f.chest[0], y=f.chest[1], opacity=0.0)
+    clips = []
+    for k, name in enumerate(["None"] + ACCESSORIES):
+        c = Clip(f"Accessory {name}", 1, False)
+        for j, other in enumerate(ACCESSORIES):
+            c.key(f"Acc {other}", "opacity", (0, 1 if j + 1 == k else 0))
+        clips.append(c)
+    return cap + bow + crown + scarf, star, clips

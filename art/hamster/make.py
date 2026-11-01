@@ -8,13 +8,13 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
-from pet import INNER_EAR, NOSE, Fit, actions, ambient, controls, face, moods, proud, props, skinned_tail, tail_bones  # noqa: E402
+from pet import accessories, INNER_EAR, NOSE, Fit, actions, ambient, controls, face, moods, proud, props, skinned_tail, tail_bones  # noqa: E402
 from rml import Clip, Rig, coat_fill, ellipse, fill, path, shape, solid, stroke, write, LINE  # noqa: E402
 
 rig = Rig("Hamster")
 N = rig.node
 # the head sits right on the body; round ears barely move, so their poses are small
-fit = Fit(head_y=-150, lie_body=0.78, lie_head=-120, eye_dx=30, ear=0.25, ear_up=0.12, ear_soft=0.5, ear_low=0.55, ear_flat=0.85,
+fit = Fit(crown=-61, chin=60, head_w=150, chest=(36, -82), head_y=-150, lie_body=0.78, lie_head=-120, eye_dx=30, ear=0.25, ear_up=0.12, ear_soft=0.5, ear_low=0.55, ear_flat=0.85,
           paw_y=-6, mouth_y=42, eat_dx=-58, eat_dy=58)
 MARK = "FFFFF3DE"  # cream belly and muzzle, part of the Syrian look, so they don't follow the coat colour
 PINK = "FFF2B8B0"
@@ -36,9 +36,11 @@ def whiskers(side: int) -> str:
     return "".join(shape(f"Whisker {side}{i}", path([(0, 0), (24 * side, dy)]), stroke(LINE, 1.5), x=26 * side, y=30 + 6 * i) for i, dy in enumerate((-6, 0, 6)))
 
 
+acc_head, acc_body, acc_clips = accessories(rig, fit)
 head = N(
     "Head",
-    face(rig, fit)
+    acc_head
+    + face(rig, fit)
     + shape("Nose", ellipse(14, 9), fill(solid(NOSE)), y=24)
     + whiskers(-1) + whiskers(1)
     + shape("Muzzle", ellipse(56, 34), fill(solid(MARK)), y=32)
@@ -48,7 +50,8 @@ head = N(
 )
 body = N(
     "Body",
-    shape("Paw L", ellipse(26, 14), fill(solid(PINK)) + stroke(LINE, 2), x=-34, y=fit.paw_y, sid=rig.id("Paw L"))
+    acc_body
+    + shape("Paw L", ellipse(26, 14), fill(solid(PINK)) + stroke(LINE, 2), x=-34, y=fit.paw_y, sid=rig.id("Paw L"))
     + shape("Paw R", ellipse(26, 14), fill(solid(PINK)) + stroke(LINE, 2), x=34, y=fit.paw_y, sid=rig.id("Paw R"))
     + shape("Hand L", ellipse(16, 12), fill(solid(PINK)) + stroke(LINE, 2), x=-16, y=-52)
     + shape("Hand R", ellipse(16, 12), fill(solid(PINK)) + stroke(LINE, 2), x=16, y=-52)
@@ -90,5 +93,6 @@ write(
     actions=actions(fit, stuff_and_hop),
     instance={"coatBase": "FFE3A564", "coatShade": "FFC4843F", "coatHighlight": "FFF3C98F", "outline": "FF6E4320"},
     path_out=os.path.join(os.path.dirname(__file__), "scene.rml"),
+    accessories=acc_clips,
 )
 print("wrote scene.rml")
