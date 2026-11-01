@@ -144,8 +144,10 @@ def _keyed(rig: Rig, keys: dict, frames_total: int) -> str:
         kfs = []
         for i, (f, v, ease) in enumerate(frames):
             last = i == len(frames) - 1
-            if last or ease == "linear":
+            if last:
                 kfs.append(f'<KeyFrameDouble {attrs(value=float(v), frame=f)}/>')
+            elif ease == "linear":  # interpolationType defaults to hold, so linear must be explicit
+                kfs.append(f'<KeyFrameDouble {attrs(value=float(v), frame=f)} interpolationType="linear"/>')
             elif ease == "hold":
                 kfs.append(f'<KeyFrameDouble {attrs(value=float(v), frame=f)} interpolationType="hold"/>')
             else:

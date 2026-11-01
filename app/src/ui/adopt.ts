@@ -122,7 +122,6 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
       el("div", { class: "row" }, pickFolder, folderText),
       el("h2", {}, "2. Species"),
       speciesRow,
-      el("p", { class: "muted small" }, "The parrot is still being drawn; it shows as the cat for now."),
       el("h2", {}, "3. Colour"),
       el("div", { class: "row" }, canvas, swatches),
       el("h2", {}, "4. Name"),

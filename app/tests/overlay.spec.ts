@@ -47,15 +47,16 @@ test("with Reduce Motion a leaving pet only fades", async ({ page }) => {
 
 test("each species draws with its own rig", async ({ page }) => {
   await mockApp(page);
-  await page.setViewportSize({ width: 660, height: 240 });
+  await page.setViewportSize({ width: 880, height: 240 });
   await page.goto("/index.html");
   await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.some((c) => c.cmd === "overlay_ready"));
   const corgi = { ...pet("dog", "joyful", 440), species: "dog", colors: { coatBase: "#D98A4A", coatShade: "#B86C2E", coatHighlight: "#F2B57E", outline: "#6B3A17" } };
   const hamster = { ...pet("hamster", "content", 220), species: "hamster", colors: { coatBase: "#E3A564", coatShade: "#C4843F", coatHighlight: "#F3C98F", outline: "#6E4320" } };
-  await emit(page, "overlay", { pets: [pet("cat", "content", 0), hamster, corgi], liveliness: "calm", reduceMotion: false });
-  await expect(page.locator("canvas")).toHaveCount(3);
+  const parrot = { ...pet("parrot", "joyful", 660), species: "parrot", colors: { coatBase: "#7DC44E", coatShade: "#5EA233", coatHighlight: "#A6DE7B", outline: "#2F5A1C" } };
+  await emit(page, "overlay", { pets: [pet("cat", "content", 0), hamster, corgi, parrot], liveliness: "calm", reduceMotion: false });
+  await expect(page.locator("canvas")).toHaveCount(4);
   await page.waitForTimeout(1500);
   await page.screenshot({ path: `${shots}/overlay-species.png` });
   const logs = await page.evaluate(() => (window as unknown as { __calls: { cmd: string; args: { msg?: string } }[] }).__calls.filter((c) => c.cmd === "pet_log").map((c) => c.args.msg));
-  expect(logs.filter((m) => m?.startsWith("LOADED"))).toHaveLength(3);
+  expect(logs.filter((m) => m?.startsWith("LOADED"))).toHaveLength(4);
 });
