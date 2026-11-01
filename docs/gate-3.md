@@ -60,7 +60,7 @@ Gate 3 lands one species per PR (user decision). Each one needs the user's sign-
 - Exits and entrances always go right; walking to the nearest edge comes with home spots.
 - The cat faces the viewer while it scoots.
 
-## Dog (Pembroke Welsh Corgi)
+## Dog (Pembroke Welsh Corgi) — signed off by the user, 2026-11-01
 
 **Rig:** `art/dog/make.py` writes `art/dog/scene.rml`. The poses, clips and props come from `art/tools/pet.py`, which was factored out of the cat script. The cat's output didn't change; I checked it by rendering three frames.
 
