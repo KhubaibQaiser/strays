@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 use strays_core::pet::Species;
-use strays_core::settings::Liveliness;
+use strays_core::settings::{Liveliness, Modifier};
 use strays_core::uuid::Uuid;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
@@ -131,7 +131,17 @@ struct Inner {
     liveliness: Liveliness,
     reduce_motion: bool,
     pet_height: f64,
+    modifier: Modifier,
+    hide_full: bool,
     placed: Vec<Placed>,
+}
+
+/// The settings the overlay follows (§7.1, §7.2, §7.4).
+pub struct Config {
+    pub liveliness: Liveliness,
+    pub pet_height: f64,
+    pub modifier: Modifier,
+    pub hide_in_full_screen: bool,
 }
 
 #[derive(Clone)]
@@ -182,15 +192,32 @@ impl Overlay {
             liveliness: Liveliness::Calm,
             reduce_motion: platform::reduce_motion(),
             pet_height: 104.0,
+            modifier: Modifier::Option,
+            hide_full: true,
             placed: Vec::new(),
         }))))
     }
 
-    pub fn set_pets(&self, views: Vec<PetView>, liveliness: Liveliness) {
+    pub fn set_pets(&self, views: Vec<PetView>, c: Config) {
         let mut o = self.0.lock().unwrap();
         o.views = views;
-        o.liveliness = liveliness;
+        o.liveliness = c.liveliness;
+        o.pet_height = c.pet_height;
+        o.modifier = c.modifier;
+        o.hide_full = c.hide_in_full_screen;
         relayout(&mut o);
+    }
+
+    /// Whether pets are hidden because an app is full screen.
+    pub fn is_full_screen(&self) -> bool {
+        let o = self.0.lock().unwrap();
+        o.hide_full && o.front.is_some_and(|f| covers(f, o.screen.frame))
+    }
+
+    /// Where a pet is drawn, in global points, for placing its info card.
+    pub fn pet_rect(&self, id: Uuid) -> Option<Rect> {
+        let o = self.0.lock().unwrap();
+        o.placed.iter().find(|p| p.view.id == id).map(|p| Rect { x: o.screen.frame.x + p.x, y: o.screen.frame.y + p.y, w: p.s, h: p.s })
     }
 
     /// Re-sends the current frame, for a webview that has just loaded.
@@ -213,7 +240,8 @@ impl Overlay {
                 let primary_h = me.0.lock().unwrap().screen.frame.h;
                 let (mx, my) = platform::mouse_location();
                 let p = (mx, primary_h - my);
-                let now_held = platform::modifier_flags().contains(objc2_app_kit::NSEventModifierFlags::Option);
+                let modifier = me.0.lock().unwrap().modifier;
+                let now_held = held_modifier(modifier);
                 let (target, near) = {
                     let o = me.0.lock().unwrap();
                     let global = |pl: &Placed| Rect { x: o.screen.frame.x + pl.x, y: o.screen.frame.y + pl.y, w: pl.s, h: pl.s };
@@ -244,7 +272,7 @@ impl Overlay {
                             let _ = o.window.set_size(LogicalSize::new(screen.frame.w, screen.frame.h));
                             let _ = o.window.set_position(LogicalPosition::new(screen.frame.x, screen.frame.y));
                         }
-                        let moved = place(&o.views, &screen, front, o.pet_height).iter().map(|p| (p.x, p.y)).ne(o.placed.iter().map(|p| (p.x, p.y)));
+                        let moved = place(&o.views, &screen, effective_front(front, &screen, o.hide_full), o.pet_height).iter().map(|p| (p.x, p.y)).ne(o.placed.iter().map(|p| (p.x, p.y)));
                         o.screen = screen;
                         o.front = front;
                         let rm_changed = rm != o.reduce_motion;
@@ -261,8 +289,25 @@ impl Overlay {
     }
 }
 
+/// With "hide over full-screen apps" off, a full-screen window is ignored rather than hiding pets.
+fn effective_front(front: Option<Rect>, screen: &Screen, hide_full: bool) -> Option<Rect> {
+    front.filter(|f| hide_full || !covers(*f, screen.frame))
+}
+
+/// Whether exactly the chosen modifier is down (⌥⇧ needs both).
+fn held_modifier(m: Modifier) -> bool {
+    use objc2_app_kit::NSEventModifierFlags as F;
+    let f = platform::modifier_flags();
+    match m {
+        Modifier::Option => f.contains(F::Option),
+        Modifier::Control => f.contains(F::Control),
+        Modifier::Shift => f.contains(F::Shift),
+        Modifier::OptionShift => f.contains(F::Option) && f.contains(F::Shift),
+    }
+}
+
 fn relayout(o: &mut Inner) {
-    o.placed = place(&o.views, &o.screen, o.front, o.pet_height);
+    o.placed = place(&o.views, &o.screen, effective_front(o.front, &o.screen, o.hide_full), o.pet_height);
     #[cfg(debug_assertions)]
     for p in &o.placed {
         println!("LAYOUT {} {} {} {}", p.view.id, (o.screen.frame.x + p.x).round(), (o.screen.frame.y + p.y).round(), p.s.round());

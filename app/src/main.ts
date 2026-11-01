@@ -164,6 +164,8 @@ ready.push(listen<{ id: string | null; held: boolean }>("hover", ({ payload }) =
 }));
 
 ready.push(listen<{ id: string; ok: boolean; text: string }>("feedback", ({ payload }) => bubble(payload.id, payload.text, 2500)));
+// a nudge stays a little longer and needs no click (§5.10)
+ready.push(listen<{ id: string; text: string }>("nudge", ({ payload }) => bubble(payload.id, payload.text, 8000)));
 
 // Ask for the first frame only once every listener is registered, or it can arrive before them.
 void Promise.all(ready).then(() => invoke("overlay_ready"));

@@ -553,7 +553,7 @@ strays/
 
 | Metric | Target |
 |---|---|
-| Average CPU, 3 visible pets, Calm (default), 10 min | < 1% |
+| Average CPU, 3 visible pets, Calm (default), 10 min | ≤ 1.5% (user decision, Gate 2a: set from measurements of 0.9–1.2%; the original < 1% was not reached reliably) |
 | Average CPU, 3 visible pets, Gentle / Lively | Measured and shown in Settings; no hard target |
 | CPU while every pet holds a pose | < 0.1% |
 | CPU during a walk | < 5%, then back to idle within 2 s |

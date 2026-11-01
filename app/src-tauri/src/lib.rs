@@ -4,11 +4,13 @@ mod macos;
 #[cfg(target_os = "macos")]
 use macos as platform;
 
+mod commands;
 mod menu;
 mod overlay;
 mod state;
 mod sync;
 mod token;
+mod windows;
 
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
@@ -39,7 +41,7 @@ struct Feedback {
     text: String,
 }
 
-/// ⌥-click on a pet: ⇧ quick-syncs it (§7.3), otherwise its menu opens at the cursor.
+/// ⌥-click on a pet: ⇧ quick-syncs it (§7.3), otherwise its info card opens beside it (§8.3).
 #[tauri::command]
 fn pet_click(id: Uuid, shift: bool, shared: State<'_, Shared>, h: AppHandle) {
     #[cfg(debug_assertions)]
@@ -48,12 +50,8 @@ fn pet_click(id: Uuid, shift: bool, shared: State<'_, Shared>, h: AppHandle) {
         let _ = shared.tx.send(Cmd::SyncNow(Some(id)));
         return;
     }
-    let menu = menu::pet_menu(&h, &shared.app.lock().unwrap(), id);
-    if let Ok(Some(menu)) = menu {
-        let w = shared.overlay.window();
-        // ponytail: after Escape closes this menu, AppKit swallows the next click (a known AppKit
-        // pop-up quirk in a non-active app). The info card (§8.3, Gate 2b) replaces this menu.
-        let _ = w.popup_menu(&menu);
+    if let Err(e) = windows::open_card(&h, &id.to_string(), shared.overlay.pet_rect(id)) {
+        eprintln!("could not open the info card: {e}");
     }
 }
 
@@ -90,7 +88,7 @@ fn spawn_test_pets(app: &mut App) {
     let now = Utc::now();
     let looks = [["#EFE1CC", "#D9C4A6", "#FFF8EE", "#7A5C46"], ["#34343A", "#26262B", "#55555E", "#A9A9B6"], ["#E8A15C", "#CB8240", "#FBE3C6", "#7A4520"]];
     for i in 0..n {
-        let local = LocalRef { bookmark_id: Uuid::new_v4(), display_path: format!("~/Code/test-{i}") };
+        let local = LocalRef { bookmark_id: Uuid::new_v4(), display_path: format!("~/Code/test-{i}"), path: String::new() };
         let project = Project { github: None, local: Some(local) };
         let mut p = Pet::new(now, &format!("Test {i}"), Species::Cat, project, Activity { last: now, source: ActivitySource::LocalCommit }, app.settings.default_pace);
         for (name, hex) in ["coatBase", "coatShade", "coatHighlight", "outline"].iter().zip(looks[i % 3]) {
@@ -134,6 +132,31 @@ fn handle_menu(h: &AppHandle, id: &str) {
             app.flags.hide_all = !app.flags.hide_all;
             Ok(None)
         }
+        menu::Event::NewFolder(i, adopt) => {
+            let Some(path) = app.new_folders.get(i).cloned() else { return };
+            if adopt {
+                drop(app);
+                let _ = windows::adopt(h, &format!("folder={}", windows::encode(&path)));
+                return;
+            }
+            app.ignore_folder(&path);
+            Ok(None)
+        }
+        menu::Event::Settings => {
+            drop(app);
+            let _ = windows::settings(h, "pets");
+            return;
+        }
+        menu::Event::Setup => {
+            drop(app);
+            let _ = windows::setup(h);
+            return;
+        }
+        menu::Event::AdoptWindow => {
+            drop(app);
+            let _ = windows::adopt(h, "");
+            return;
+        }
         menu::Event::Quit => {
             app.save_all();
             h.exit(0);
@@ -155,7 +178,37 @@ fn handle_menu(h: &AppHandle, id: &str) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![pet_click, overlay_ready, pet_log])
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![
+            pet_click,
+            overlay_ready,
+            pet_log,
+            commands::ui_state,
+            commands::pet_action,
+            commands::set_goal,
+            commands::set_pet,
+            commands::adopt,
+            commands::ignore_repo,
+            commands::ignore_folder,
+            commands::save_settings,
+            commands::set_flag,
+            commands::sync_now,
+            commands::token_check,
+            commands::token_save,
+            commands::token_disconnect,
+            commands::pick_folder,
+            commands::open_github,
+            commands::reveal,
+            commands::netlog,
+            commands::open_link,
+            commands::open_data_folder,
+            commands::export_data,
+            commands::delete_everything,
+            commands::open_window,
+            commands::close_window,
+            commands::local_minute,
+        ])
         .on_menu_event(|h, e| handle_menu(h, e.id().as_ref()))
         .setup(|tauri_app| {
             #[cfg(target_os = "macos")]
@@ -166,6 +219,7 @@ pub fn run() {
             let mut app = App::load(data_dir(&h)).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             #[cfg(debug_assertions)]
             spawn_test_pets(&mut app);
+            let first_run = commands::snapshot(&app).first_run;
             let menu = menu::build(&h, &app)?;
             TrayIconBuilder::with_id(TRAY).title(menu::tray_title(&app)).tooltip("Strays").menu(&menu).show_menu_on_left_click(true).build(&h)?;
 
@@ -173,17 +227,34 @@ pub fn run() {
             overlay.start_poller(h.clone());
             let app = Arc::new(Mutex::new(app));
             let (tx, rx) = mpsc::channel();
-            h.manage(Shared { app: app.clone(), tx, overlay: overlay.clone() });
+            h.manage(Shared { app: app.clone(), tx: tx.clone(), overlay: overlay.clone() });
 
             let ui = h.clone();
             std::thread::spawn(move || {
-                sync::run(app, rx, move |app, outcome| {
-                    overlay.set_pets(app.views(Utc::now()), app.settings.liveliness);
+                let fs = overlay.clone();
+                sync::run(app, tx, rx, move || fs.is_full_screen(), move |app, outcome, nudge| {
+                    let s = &app.settings;
+                    let config = overlay::Config {
+                        liveliness: s.liveliness,
+                        pet_height: s.pet_size.height(),
+                        modifier: s.modifier,
+                        hide_in_full_screen: s.hide_in_full_screen,
+                    };
+                    overlay.set_pets(app.views(Utc::now()), config);
+                    commands::emit_changed(&ui);
                     if let Some(tray) = ui.tray_by_id(TRAY) {
                         let _ = tray.set_title(Some(menu::tray_title(app)));
                         if let Ok(m) = menu::build(&ui, app) {
                             let _ = tray.set_menu(Some(m));
                         }
+                    }
+                    if let Some(n) = nudge {
+                        let (id, text) = match n {
+                            strays_core::nudge::Nudge::Pet { id, text } | strays_core::nudge::Nudge::TakingABreak { id, text } => (id, text),
+                        };
+                        #[cfg(debug_assertions)]
+                        println!("NUDGE {id} {text}");
+                        let _ = ui.emit("nudge", Feedback { id, ok: true, text });
                     }
                     if let Some(sync::SyncOutcome { ok, for_pet: Some(id) }) = outcome {
                         let text = if ok { "✓".into() } else { format!("⚠ {}", app.sync_error.clone().unwrap_or_default()) };
@@ -193,6 +264,9 @@ pub fn run() {
                     println!("STATE visible={} pets={} sync={}", app.visible.len(), app.pets.len(), menu::status_line(app));
                 });
             });
+            if first_run {
+                let _ = windows::welcome(&h);
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
