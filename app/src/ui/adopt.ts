@@ -30,6 +30,7 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
   const name = el("input", { type: "text", "aria-label": "Name", value: NAMES[Math.floor(Math.random() * NAMES.length)] });
   repoSel.addEventListener("change", () => {
     repoId = repoSel.value ? Number(repoSel.value) : null;
+    notice("");
   });
   const pickFolder = el("button", {
     onclick: async () => {
@@ -37,6 +38,7 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
       if (f) {
         folder = f;
         folderText.textContent = f;
+        notice("");
       }
     },
   }, "Or a folder on this Mac…");
