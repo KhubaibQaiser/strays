@@ -59,3 +59,23 @@ Gate 3 lands one species per PR (user decision). Each one needs the user's sign-
 - Sounds: they come in the audio PR.
 - Exits and entrances always go right; walking to the nearest edge comes with home spots.
 - The cat faces the viewer while it scoots.
+
+## Dog (Pembroke Welsh Corgi) — signed off by the user, 2026-11-01
+
+**Rig:** `art/dog/make.py` writes `art/dog/scene.rml`. The poses, clips and props come from `art/tools/pet.py`, which was factored out of the cat script. The cat's output didn't change; I checked it by rendering three frames.
+
+**Drawing:**
+- Fox-like face with tall pointed ears.
+- White blaze, muzzle, bib and socks. These are fixed white, because they're part of the breed, so they don't follow the coat colour.
+- Short legs, shaded haunches, and a short fluffy tail on a 3-bone chain.
+- The head sits a little lower than the cat's, and the ears barely flop except when hungry or gloomy.
+
+**Celebration (§10.3):** two quick spins (flips with hops), then a play bow with a wagging tail, then the shared proud sit with confetti.
+
+**Moods and clips:** the same five poses and ten clips as the cat, fitted to the corgi's measurements.
+
+**In the app:** `src/art.ts` maps each species to its rig, for both the overlay and the adoption preview. The hamster and parrot still fall back to the cat.
+
+**Review:** `art/review/dog/*.png` (every pose and clip), `celebrate.gif`, `joyful.gif`, and `with-cat-in-app.png` (a cat and a corgi in the real overlay page).
+
+**Tests:** the overlay test draws a cat and a corgi together, and both rigs load. Playwright passes 14/14. The app build bundles both `.riv` files.

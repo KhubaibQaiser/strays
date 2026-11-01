@@ -3,7 +3,7 @@
 import { setFps } from "./throttle";
 import { Rive, RuntimeLoader } from "@rive-app/canvas";
 import riveWasmUrl from "@rive-app/canvas/rive.wasm?url";
-import catUrl from "../../art/cat/build/cat.riv?url";
+import { artFor } from "./art";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -18,9 +18,6 @@ log(`BOOT ${location.href}`);
 
 // Bundled locally: the runtime must never fetch its WASM from a CDN.
 RuntimeLoader.setWasmUrl(riveWasmUrl);
-
-// ponytail: every species renders as the cat until the other rigs land in Gate 3.
-const ART: Record<string, string> = { cat: catUrl };
 
 type Pet = { el: HTMLCanvasElement; rive: Rive; placed: Placed; timer?: number; playing: boolean; busy: boolean; leaving: boolean };
 type Cue = "eat" | "fallAsleep" | "wake" | "postcard" | { celebrate: { leave: boolean } };
@@ -134,7 +131,7 @@ function add(placed: Placed) {
   el.width = el.height = Math.round(placed.s * devicePixelRatio);
   document.body.appendChild(el);
   const rive: Rive = new Rive({
-    src: ART[placed.species] ?? catUrl,
+    src: artFor(placed.species),
     canvas: el,
     autoplay: true,
     stateMachines: "Idle",
