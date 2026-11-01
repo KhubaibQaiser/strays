@@ -27,6 +27,18 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
     ...untracked.map((r) => el("option", { value: r.id, selected: r.id === repoId }, `${r.fullName}${r.pushedAt ? ` · ${ago(r.pushedAt)}` : ""}`)),
   );
   const folderText = el("span", { class: "muted" }, folder ?? "");
+  const localChoices = state.localRepos.filter(([, , tracked]) => !tracked);
+  const folderSel = el(
+    "select",
+    { "aria-label": "Folder" },
+    el("option", { value: "" }, "Choose a folder from your watched folders…"),
+    ...localChoices.map(([path, shown]) => el("option", { value: path, selected: path === folder }, shown)),
+  );
+  folderSel.addEventListener("change", () => {
+    folder = folderSel.value || null;
+    folderText.textContent = "";
+    notice("");
+  });
   const name = el("input", { type: "text", "aria-label": "Name", value: NAMES[Math.floor(Math.random() * NAMES.length)] });
   repoSel.addEventListener("change", () => {
     repoId = repoSel.value ? Number(repoSel.value) : null;
@@ -101,6 +113,7 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
       slotsFull ? el("p", { class: "muted" }, `All ${state.settings.slots} slots are in use, so this pet will wait in the shelter until one frees up.`) : null,
       el("h2", {}, "1. Project"),
       repoSel,
+      localChoices.length ? folderSel : null,
       el("div", { class: "row" }, pickFolder, folderText),
       el("h2", {}, "2. Species"),
       speciesRow,

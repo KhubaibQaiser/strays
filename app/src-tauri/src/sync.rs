@@ -1,6 +1,6 @@
 //! Background loop: ends due snoozes and holidays, runs GitHub syncs on schedule (§6.3), and tells the
 //! UI when something changed. Waits are recomputed from timestamps every minute or sooner (§11).
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration as StdDuration;
 
@@ -15,6 +15,8 @@ pub enum Cmd {
     SyncNow(Option<strays_core::uuid::Uuid>),
     /// State changed in the UI; refresh the overlay and menu.
     Changed,
+    /// Something changed inside a watched folder.
+    Folders,
 }
 
 pub struct SyncOutcome {
@@ -44,7 +46,31 @@ fn error_text(e: &GhError) -> String {
 }
 
 /// `on_change` runs after every loop pass that changed something, and after every sync.
-pub fn run(shared: Arc<Mutex<App>>, rx: Receiver<Cmd>, on_change: impl Fn(&App, Option<SyncOutcome>)) {
+const RESCAN_EVERY: i64 = 6; // hours; FSEvents covers the time in between (§5.9)
+
+/// Watches the given folders (not recursively); any change asks the loop to rescan.
+fn watch(folders: &[String], tx: &Sender<Cmd>) -> Option<notify::RecommendedWatcher> {
+    use notify::Watcher;
+    if folders.is_empty() {
+        return None;
+    }
+    let tx = tx.clone();
+    let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        if res.is_ok() {
+            let _ = tx.send(Cmd::Folders);
+        }
+    })
+    .map_err(|e| eprintln!("folder watching unavailable: {e}"))
+    .ok()?;
+    for f in folders {
+        if let Err(e) = w.watch(std::path::Path::new(f), notify::RecursiveMode::NonRecursive) {
+            eprintln!("can't watch {f}: {e}");
+        }
+    }
+    Some(w)
+}
+
+pub fn run(shared: Arc<Mutex<App>>, tx: Sender<Cmd>, rx: Receiver<Cmd>, on_change: impl Fn(&App, Option<SyncOutcome>)) {
     let mut last_pass = Utc::now();
     let mut last_full: Option<Time> = None;
     let mut not_before: Option<Time> = None;
@@ -61,6 +87,11 @@ pub fn run(shared: Arc<Mutex<App>>, rx: Receiver<Cmd>, on_change: impl Fn(&App, 
     }
     let mut changed = true;
     let mut manual = false;
+    let mut watched: Vec<String> = Vec::new();
+    let mut watcher = None;
+    let mut last_scan: Option<Time> = None;
+    // a new clone or `git init` writes .git a moment after the folder appears, so rescan shortly after events
+    let mut rescan_at: Option<Time> = None;
     loop {
         let now = Utc::now();
         // A pass far later than the longest wait means the Mac slept.
@@ -68,6 +99,18 @@ pub fn run(shared: Arc<Mutex<App>>, rx: Receiver<Cmd>, on_change: impl Fn(&App, 
         last_pass = now;
         let mut app = shared.lock().unwrap();
         changed |= app.tick(now);
+        if app.settings.watched_folders != watched {
+            watched = app.settings.watched_folders.clone();
+            watcher = watch(&watched, &tx);
+            last_scan = None;
+        }
+        let _ = &watcher; // kept alive for its callbacks
+        if last_scan.is_none_or(|t| now - t > Duration::hours(RESCAN_EVERY)) || rescan_at.is_some_and(|t| now >= t) {
+            changed |= app.scan_folders();
+            last_scan = Some(now);
+            rescan_at = None;
+        }
+        changed |= app.refresh_local_activity();
         if woke && app.settings.sync_on_wake && forced.is_none() {
             forced = Some(None);
         }
@@ -147,13 +190,15 @@ pub fn run(shared: Arc<Mutex<App>>, rx: Receiver<Cmd>, on_change: impl Fn(&App, 
         }
         let until_deadline = app.next_deadline().map(|d| (d - now).to_std().unwrap_or_default());
         drop(app);
-        let timeout = until_deadline.map_or(MAX_WAIT, |d| d.min(MAX_WAIT)).max(StdDuration::from_millis(200));
+        let until_rescan = rescan_at.map(|t| (t - now).to_std().unwrap_or_default());
+        let timeout = [until_deadline, until_rescan].into_iter().flatten().fold(MAX_WAIT, StdDuration::min).max(StdDuration::from_millis(200));
         match rx.recv_timeout(timeout) {
             Ok(Cmd::SyncNow(pet)) => {
                 forced = Some(pet);
                 manual = true;
             }
             Ok(Cmd::Changed) => changed = true,
+            Ok(Cmd::Folders) => rescan_at = Some(Utc::now() + Duration::seconds(2)),
             // moods drift with time even when nothing happens
             Err(RecvTimeoutError::Timeout) => changed = true,
             Err(RecvTimeoutError::Disconnected) => return,

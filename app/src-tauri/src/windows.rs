@@ -69,3 +69,10 @@ pub fn adopt(h: &AppHandle, query: &str) -> tauri::Result<()> {
 pub fn welcome(h: &AppHandle) -> tauri::Result<()> {
     open(h, "welcome", "welcome", "Welcome to Strays", (560.0, 560.0))
 }
+
+/// Percent-encodes a value for the window's URL fragment.
+pub fn encode(v: &str) -> String {
+    v.bytes()
+        .map(|b| if b.is_ascii_alphanumeric() || b"-_.~/".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+        .collect()
+}

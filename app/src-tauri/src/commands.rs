@@ -66,6 +66,9 @@ pub struct UiState {
     requests_today: usize,
     repos: Vec<UiRepo>,
     new_projects: Vec<UiRepo>,
+    /// Git folders inside the watched folders: (path, shown as, has a pet).
+    local_repos: Vec<(String, String, bool)>,
+    new_folders: Vec<String>,
     slots_used: usize,
     presentation: bool,
     vacation: bool,
@@ -129,6 +132,8 @@ pub fn snapshot(app: &App) -> UiState {
         requests_today: app.netlog().iter().filter(|e| e.at.with_timezone(&Local).date_naive() == today).count(),
         repos: app.repos.iter().filter(|r| !r.archived).map(|r| repo_view(app, r)).collect(),
         new_projects: app.new_projects.iter().map(|r| repo_view(app, r)).collect(),
+        local_repos: app.local_repos.iter().map(|p| (p.clone(), crate::state::tilde(p), app.tracked_folder(p))).collect(),
+        new_folders: app.new_folders.clone(),
         slots_used: strays_core::pet::slots_used(&app.pets),
         presentation: app.flags.presentation,
         vacation: app.flags.vacation,
@@ -191,6 +196,12 @@ pub fn adopt(request: AdoptRequest, shared: State<'_, Shared>) -> Res<String> {
 #[tauri::command]
 pub fn ignore_repo(id: u64, shared: State<'_, Shared>) {
     shared.app.lock().unwrap().ignore_new(id);
+    changed(&shared);
+}
+
+#[tauri::command]
+pub fn ignore_folder(path: String, shared: State<'_, Shared>) {
+    shared.app.lock().unwrap().ignore_folder(&path);
     changed(&shared);
 }
 

@@ -161,14 +161,18 @@ pub fn build<Rt: Runtime>(h: &AppHandle<Rt>, app: &App) -> R<Menu<Rt>> {
             item(h, &id("shelter"), "Add to the shelter")?,
         ])
     };
-    if !app.new_projects.is_empty() {
+    if !app.new_projects.is_empty() || !app.new_folders.is_empty() {
         let mut list = Vec::new();
+        for (i, f) in app.new_folders.iter().enumerate() {
+            let choices = vec![item(h, &format!("newfolder/{i}/adopt"), "Adopt…")?, item(h, &format!("newfolder/{i}/ignore"), "Ignore")?];
+            list.push(sub(h, &format!("📁 {}", crate::state::tilde(f)), choices)?);
+        }
         for r in &app.new_projects {
             let mut choices = repo_choices(r)?;
             choices.push(item(h, &format!("repo/{}/ignore", r.id), "Ignore")?);
             list.push(sub(h, &r.full_name, choices)?);
         }
-        items.push(sub(h, &format!("✨ New projects ({})", app.new_projects.len()), list)?);
+        items.push(sub(h, &format!("✨ New projects ({})", app.new_projects.len() + app.new_folders.len()), list)?);
     }
     let untracked: Vec<_> = app.repos.iter().filter(|r| !app.tracked(r.id) && !r.archived).take(20).collect();
     if !untracked.is_empty() {
@@ -204,6 +208,7 @@ pub enum Event {
     Presentation,
     Vacation,
     HideAll,
+    NewFolder(usize, bool),
     Settings,
     Setup,
     AdoptWindow,
@@ -219,6 +224,7 @@ pub fn parse(id: &str) -> Option<Event> {
         ["hide-all"] => Event::HideAll,
         ["quit"] => Event::Quit,
         ["settings"] => Event::Settings,
+        ["newfolder", i, choice] => Event::NewFolder(i.parse().ok()?, *choice == "adopt"),
         ["setup"] => Event::Setup,
         ["adopt"] => Event::AdoptWindow,
         ["pet", pet, action] => {

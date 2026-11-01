@@ -132,6 +132,16 @@ fn handle_menu(h: &AppHandle, id: &str) {
             app.flags.hide_all = !app.flags.hide_all;
             Ok(None)
         }
+        menu::Event::NewFolder(i, adopt) => {
+            let Some(path) = app.new_folders.get(i).cloned() else { return };
+            if adopt {
+                drop(app);
+                let _ = windows::adopt(h, &format!("folder={}", windows::encode(&path)));
+                return;
+            }
+            app.ignore_folder(&path);
+            Ok(None)
+        }
         menu::Event::Settings => {
             drop(app);
             let _ = windows::settings(h, "pets");
@@ -180,6 +190,7 @@ pub fn run() {
             commands::set_pet,
             commands::adopt,
             commands::ignore_repo,
+            commands::ignore_folder,
             commands::save_settings,
             commands::set_flag,
             commands::sync_now,
@@ -216,11 +227,11 @@ pub fn run() {
             overlay.start_poller(h.clone());
             let app = Arc::new(Mutex::new(app));
             let (tx, rx) = mpsc::channel();
-            h.manage(Shared { app: app.clone(), tx, overlay: overlay.clone() });
+            h.manage(Shared { app: app.clone(), tx: tx.clone(), overlay: overlay.clone() });
 
             let ui = h.clone();
             std::thread::spawn(move || {
-                sync::run(app, rx, move |app, outcome| {
+                sync::run(app, tx, rx, move |app, outcome| {
                     let s = &app.settings;
                     let config = overlay::Config {
                         liveliness: s.liveliness,

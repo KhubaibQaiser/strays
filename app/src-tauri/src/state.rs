@@ -20,6 +20,14 @@ const SYNC_FILE: &str = "sync-state.json";
 const ACCOUNT_FILE: &str = "accounts.json";
 const NETLOG_FILE: &str = "netlog.jsonl";
 const NETLOG_KEEP: usize = 1000;
+const FOLDERS_FILE: &str = "folders.json";
+
+/// Git folders already seen inside watched folders, so only ones that appear later count as new (§5.9).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct KnownFolders {
+    roots: std::collections::BTreeSet<String>,
+    repos: std::collections::BTreeSet<String>,
+}
 
 /// The connected GitHub account (no secrets; the token itself is in the Keychain).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -66,6 +74,11 @@ pub struct App {
     last_shown: HashMap<Uuid, Time>,
     rotation_started: Option<Time>,
     pub sync_error: Option<String>,
+    /// Git repos found directly inside the watched folders.
+    pub local_repos: Vec<String>,
+    /// Ones that appeared after their folder was first watched, waiting for the user's decision.
+    pub new_folders: Vec<String>,
+    known_folders: KnownFolders,
     pub load_problems: usize,
 }
 
@@ -131,6 +144,7 @@ impl App {
         }
         let sync: SyncState = store.load(SYNC_FILE).unwrap_or_default();
         let account: Option<Account> = store.load(ACCOUNT_FILE).unwrap_or_default();
+        let known_folders: KnownFolders = store.load(FOLDERS_FILE).unwrap_or_default();
         Ok(Self {
             store,
             dir,
@@ -147,6 +161,9 @@ impl App {
             rotation_started: None,
             sync_error: None,
             load_problems: problems.len(),
+            local_repos: Vec::new(),
+            new_folders: Vec::new(),
+            known_folders,
         })
     }
 
@@ -254,6 +271,10 @@ impl App {
         Ok(message)
     }
 
+    pub fn ignore_folder(&mut self, path: &str) {
+        self.new_folders.retain(|f| f != path);
+    }
+
     pub fn ignore_new(&mut self, repo_id: u64) {
         self.new_projects.retain(|r| r.id != repo_id);
     }
@@ -284,6 +305,69 @@ impl App {
         };
         self.save_pet(id);
         Ok(msg)
+    }
+
+    pub fn tracked_folder(&self, path: &str) -> bool {
+        self.pets.iter().any(|p| p.project.local.as_ref().is_some_and(|l| l.path == path))
+    }
+
+    /// Lists git repos directly inside each watched folder. Repos that appear in a folder already
+    /// watched before become new-project candidates; a newly watched folder's repos don't (they're
+    /// offered in "Adopt a pet" instead). Returns whether anything changed.
+    pub fn scan_folders(&mut self) -> bool {
+        let mut found = Vec::new();
+        let mut fresh = Vec::new();
+        for root in &self.settings.watched_folders {
+            let seen_before = self.known_folders.roots.contains(root);
+            let Ok(entries) = std::fs::read_dir(root) else { continue };
+            for e in entries.flatten() {
+                let path = e.path();
+                if !path.join(".git").exists() {
+                    continue;
+                }
+                let p = path.display().to_string();
+                if self.known_folders.repos.insert(p.clone()) && seen_before && !self.tracked_folder(&p) {
+                    fresh.push(p.clone());
+                }
+                found.push(p);
+            }
+            self.known_folders.roots.insert(root.clone());
+        }
+        found.sort();
+        let changed = found != self.local_repos || !fresh.is_empty();
+        self.local_repos = found;
+        for f in fresh {
+            if !self.new_folders.contains(&f) {
+                self.new_folders.push(f);
+            }
+        }
+        if changed && let Err(e) = self.store.save(FOLDERS_FILE, &self.known_folders) {
+            eprintln!("could not save known folders: {e:?}");
+        }
+        changed
+    }
+
+    /// Reads commit dates from pets' local folders (§5.4). Never runs git or fetches.
+    pub fn refresh_local_activity(&mut self) -> bool {
+        let mut changed = Vec::new();
+        for p in &mut self.pets {
+            let Some(path) = p.project.local.as_ref().map(|l| l.path.clone()).filter(|p| !p.is_empty()) else { continue };
+            if matches!(p.state.kind, StateKind::Graduated | StateKind::LetGo) {
+                continue;
+            }
+            let Ok(info) = localgit::read(std::path::Path::new(&path), &Default::default()) else { continue };
+            let before = p.activity.last;
+            for (t, s) in [(info.last_commit, ActivitySource::LocalCommit), (info.last_remote_ref, ActivitySource::LocalRemoteRef)] {
+                if let Some(t) = t {
+                    p.record_activity(t, s);
+                }
+            }
+            if p.activity.last != before {
+                changed.push(p.id);
+            }
+        }
+        changed.iter().for_each(|&id| self.save_pet(id));
+        !changed.is_empty()
     }
 
     pub fn set_account(&mut self, account: Option<Account>) {
@@ -376,6 +460,9 @@ impl App {
             self.new_projects.retain(|r| r.id != id);
         }
         let id = p.id;
+        if let Some(f) = &req.folder {
+            self.new_folders.retain(|n| n != f);
+        }
         self.pets.push(p);
         self.save_pet(id);
         Ok(message)
@@ -439,5 +526,36 @@ pub fn tilde(path: &str) -> String {
     match std::env::var("HOME") {
         Ok(home) if path.starts_with(&home) => format!("~{}", &path[home.len()..]),
         _ => path.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_repos_appearing_after_a_folder_is_watched_count_as_new() {
+        let root = std::env::temp_dir().join(format!("strays-scan-{}", Uuid::new_v4()));
+        let (data, code) = (root.join("data"), root.join("code"));
+        std::fs::create_dir_all(code.join("old/.git")).unwrap();
+        std::fs::create_dir_all(code.join("not-a-repo")).unwrap();
+        let mut app = App::load(data.clone()).unwrap();
+        app.settings.watched_folders = vec![code.display().to_string()];
+
+        assert!(app.scan_folders());
+        assert_eq!(app.local_repos, vec![code.join("old").display().to_string()]);
+        assert!(app.new_folders.is_empty(), "repos already there when watching starts aren't new");
+
+        std::fs::create_dir_all(code.join("fresh/.git")).unwrap();
+        assert!(app.scan_folders());
+        assert_eq!(app.new_folders, vec![code.join("fresh").display().to_string()]);
+        assert!(!app.scan_folders(), "nothing changed");
+
+        // the known list survives a restart, so "fresh" isn't offered twice
+        let mut again = App::load(data).unwrap();
+        again.settings.watched_folders = app.settings.watched_folders.clone();
+        again.scan_folders();
+        assert!(again.new_folders.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

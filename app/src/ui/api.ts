@@ -73,6 +73,8 @@ export type UiState = {
   requestsToday: number;
   repos: Repo[];
   newProjects: Repo[];
+  localRepos: [string, string, boolean][];
+  newFolders: string[];
   slotsUsed: number;
   presentation: boolean;
   vacation: boolean;
