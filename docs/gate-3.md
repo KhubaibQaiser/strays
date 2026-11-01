@@ -136,3 +136,29 @@ Gate 3 lands one species per PR (user decision). Each one needs the user's sign-
 - The rain drops and Zzz didn't drift.
 
 The parrot's loop flight showed it. `rml.py` now writes `interpolationType="linear"`. I regenerated all four rigs and re-rendered the affected sheets (exit, enter, postcard, gloomy, sleep, walk) for the cat, corgi and hamster.
+
+## Accessories (graduation rewards)
+
+**Decision (user, 2026-11-01):** the graduating pet wears its accessory. No other pet does in v1. Recorded in spec §5.8.
+
+**Art:** five accessories in `art/tools/pet.py`, drawn in the fixed palette and fitted to each species with new `Fit` measurements (`crown`, `chin`, `head_w`, `chest`):
+- graduation cap with tassel
+- scarf
+- bow
+- star badge
+- flower crown
+
+A new `accessory` view-model number (0–5) drives its own state-machine layer, so an accessory shows with any pose or clip. `art/review/accessories.png` shows every pet wearing every accessory.
+
+**Core:** `Pet::graduate` sets `accessory`, picked from the pet's id, so it's fixed and never changes on later loads (`ACCESSORIES` in `pet.rs`).
+
+**App:**
+- A new `Cue::Graduate { accessory }` is sent when you graduate a pet, and when sync graduates one because its repo was archived.
+- The overlay sets the rig's `accessory`, plays celebrate, then exit, and removes the pet. With Reduce Motion it fades out wearing the accessory.
+- The menu-bar Graduates list adds the accessory to each graduate's name (for example "🐈 Miso · 🎓 graduation cap").
+
+**Fix:** the overlay gave the celebration 4.7 s, which cut off the end of the corgi's (5.0 s) and parrot's (5.5 s) celebrations. It now waits 5.8 s.
+
+**Tests:**
+- Rust: a core test checks the accessory is set and stays the same for the same pet; an app test checks the cue's accessory number and JSON shape.
+- Playwright: a graduate puts on its accessory, celebrates and leaves (`art/review/graduate-in-app.png`). 15/15 pass.

@@ -20,13 +20,14 @@ log(`BOOT ${location.href}`);
 RuntimeLoader.setWasmUrl(riveWasmUrl);
 
 type Pet = { el: HTMLCanvasElement; rive: Rive; placed: Placed; timer?: number; playing: boolean; busy: boolean; leaving: boolean };
-type Cue = "eat" | "fallAsleep" | "wake" | "postcard" | { celebrate: { leave: boolean } };
+type Cue = "eat" | "fallAsleep" | "wake" | "postcard" | { celebrate: { leave: boolean } } | { graduate: { accessory: number } };
 
 // The rig's `mood` and `action` view-model numbers (art/STYLE.md).
 const MOOD: Record<string, number> = { joyful: 1, content: 2, peckish: 3, hungry: 4, gloomy: 5 };
 const ACT = { eat: 1, petted: 2, celebrate: 3, exit: 4, enter: 5, fallAsleep: 6, sleep: 7, wake: 8, postcard: 9 };
 /** Seconds each clip takes (frames / 60 in art/cat/make.py, plus the blend). */
-const CLIP_S: Record<number, number> = { 1: 4.2, 2: 2.7, 3: 4.7, 4: 3.2, 5: 3.2, 6: 3.2, 8: 3.2, 9: 4.2 };
+// celebrate is the longest species clip (the parrot, 330 frames) plus the blend
+const CLIP_S: Record<number, number> = { 1: 4.2, 2: 2.7, 3: 5.8, 4: 3.2, 5: 3.2, 6: 3.2, 8: 3.2, 9: 4.2 };
 const ASLEEP_BEFORE_WAKE_S = 60;
 const pets = new Map<string, Pet>();
 let mode: Liveliness = "calm";
@@ -81,7 +82,9 @@ function fadeOut(p: Pet) {
 function cue(p: Pet, c: Cue) {
   const kind = typeof c === "string" ? c : Object.keys(c)[0];
   const leave = typeof c === "object" && "celebrate" in c && c.celebrate.leave;
-  if (kind === "fallAsleep" || leave) p.leaving = true;
+  if (kind === "fallAsleep" || kind === "graduate" || leave) p.leaving = true;
+  // a graduate wears its accessory for the farewell (§5.8), even with Reduce Motion
+  if (typeof c === "object" && "graduate" in c) setNumber(p, "accessory", c.graduate.accessory);
   if (reduceMotion) {
     if (p.leaving) fadeOut(p);
     return;
@@ -91,6 +94,8 @@ function cue(p: Pet, c: Cue) {
       return void play(p, [[ACT.eat, CLIP_S[ACT.eat]]]);
     case "celebrate":
       return void play(p, leave ? [[ACT.celebrate, CLIP_S[ACT.celebrate]], [ACT.exit, CLIP_S[ACT.exit]]] : [[ACT.celebrate, CLIP_S[ACT.celebrate]]]);
+    case "graduate":
+      return void play(p, [[ACT.celebrate, CLIP_S[ACT.celebrate]], [ACT.exit, CLIP_S[ACT.exit]]]);
     case "fallAsleep":
       return void play(p, [[ACT.fallAsleep, CLIP_S[ACT.fallAsleep]]]);
     case "wake":

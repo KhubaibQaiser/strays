@@ -146,6 +146,9 @@ pub enum ReleaseOutcome {
 
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// Graduation rewards (spec §10.2), in the order of the rigs' `accessory` number (1-5).
+pub const ACCESSORIES: [&str; 5] = ["cap", "scarf", "bow", "star", "crown"];
+
 impl Pet {
     pub fn new(now: Time, name: &str, species: Species, project: Project, activity: Activity, pace: Pace) -> Self {
         Self {
@@ -262,10 +265,12 @@ impl Pet {
         Ok(ReleaseOutcome::Holiday { until })
     }
 
-    /// Finished project (user, or repo archived on GitHub). Final.
+    /// Finished project (user, or repo archived on GitHub). Final. The pet earns one of the
+    /// graduation accessories (§5.8), picked from its id so it never changes.
     pub fn graduate(&mut self, now: Time, reason: &str) -> Result<(), Refused> {
         self.require(&[StateKind::Active, StateKind::Snoozed, StateKind::Paused, StateKind::Holiday, StateKind::Shelter])?;
         self.close_open_frozen(now);
+        self.accessory = Some(ACCESSORIES[(self.id.as_u128() % ACCESSORIES.len() as u128) as usize].into());
         self.set_state(StateKind::Graduated, None, now, reason);
         Ok(())
     }
@@ -461,6 +466,20 @@ mod tests {
         pets[2].graduate(d0, "").unwrap();
         pets[3].state.kind = StateKind::Shelter;
         assert_eq!(slots_used(&pets), 2);
+    }
+
+    #[test]
+    fn graduating_earns_a_fixed_accessory() {
+        let d0 = t("2026-10-01T00:00:00Z");
+        let mut p = pet(d0);
+        assert_eq!(p.accessory, None);
+        p.graduate(d0, "").unwrap();
+        let earned = p.accessory.clone().unwrap();
+        assert!(ACCESSORIES.contains(&earned.as_str()));
+        let mut twin = pet(d0);
+        twin.id = p.id;
+        twin.graduate(d0, "").unwrap();
+        assert_eq!(twin.accessory, Some(earned));
     }
 
     #[test]

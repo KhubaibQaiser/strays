@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from xml.sax.saxutils import quoteattr
 
 VM = "0:500"
-VM_PROPS = {"coatBase": "0:501", "coatShade": "0:502", "coatHighlight": "0:503", "outline": "0:504", "mood": "0:505", "action": "0:506"}
+VM_PROPS = {"coatBase": "0:501", "coatShade": "0:502", "coatHighlight": "0:503", "outline": "0:504", "mood": "0:505", "action": "0:506", "accessory": "0:507"}
 OUTLINE_W = 3
 EASE = '<CubicEaseInterpolator x1="0.42" y1="0" x2="0.58" y2="1"/>'
 
@@ -176,8 +176,10 @@ def _eq(prop: str, value: float, op: str = "equal") -> str:
     )
 
 
-def write(rig: Rig, artboard_children: str, ambient: list[Clip], moods: list[Clip], actions: list[Clip], instance: dict[str, str], path_out: str) -> None:
-    """moods[i] plays while mood == i+1 and action == 0; actions[j] plays while action == j+1."""
+def write(rig: Rig, artboard_children: str, ambient: list[Clip], moods: list[Clip], actions: list[Clip], instance: dict[str, str], path_out: str,
+          accessories: list[Clip] = ()) -> None:
+    """moods[i] plays while mood == i+1 and action == 0; actions[j] plays while action == j+1;
+    accessories[k] plays (on its own layer) while accessory == k."""
     sid = 1000
     aid = 2000
     anims = []
@@ -227,6 +229,22 @@ def write(rig: Rig, artboard_children: str, ambient: list[Clip], moods: list[Cli
             if j != i:
                 tr.append(f'<StateTransition stateToId="{t}" duration="150">{_eq("action", j + 1)}</StateTransition>')
         states.append(f'<AnimationState x="{160 + 200 * i}" y="300" animationId="{a}" reset="true" id="{s}">{"".join(tr)}</AnimationState>')
+    # accessory layer: one state per value, each showing one accessory (or none)
+    if accessories:
+        acc = [next_ids() for _ in accessories]
+        for clip, (_, a) in zip(accessories, acc):
+            anims.append(animation(rig, clip, a, posed=False))
+        acc_states = "".join(
+            f'<AnimationState x="{160 + 200 * i}" y="0" animationId="{a}" id="{s}">'
+            + "".join(f'<StateTransition stateToId="{t}">{_eq("accessory", j)}</StateTransition>' for j, (t, _) in enumerate(acc) if j != i)
+            + "</AnimationState>"
+            for i, (s, a) in enumerate(acc)
+        )
+        layers.append(
+            f'<StateMachineLayer name="Accessory" id="0:960"><AnyState x="160" y="-200"/><ExitState x="360" y="-200"/>'
+            f'<EntryState><StateTransition stateToId="{acc[0][0]}"/></EntryState>{acc_states}</StateMachineLayer>'
+        )
+
     # entry: rest in Content until the app sets a mood
     layers.append(
         f'<StateMachineLayer name="Pose" id="0:950"><AnyState x="160" y="-200"/><ExitState x="360" y="-200"/>'
@@ -236,9 +254,11 @@ def write(rig: Rig, artboard_children: str, ambient: list[Clip], moods: list[Cli
     props = "".join(
         f'<ViewModelPropertyColor name="{n}" id="{VM_PROPS[n]}"/>' for n in ("coatBase", "coatShade", "coatHighlight", "outline")
     ) + f'<ViewModelPropertyNumber name="mood" id="{VM_PROPS["mood"]}"/><ViewModelPropertyNumber name="action" id="{VM_PROPS["action"]}"/>'
+    props += f'<ViewModelPropertyNumber name="accessory" id="{VM_PROPS["accessory"]}"/>'
     inst = "".join(
         f'<ViewModelInstanceColor propertyValue="{instance[n]}" viewModelPropertyId="{VM_PROPS[n]}"/>' for n in ("coatBase", "coatShade", "coatHighlight", "outline")
     ) + f'<ViewModelInstanceNumber propertyValue="2" viewModelPropertyId="{VM_PROPS["mood"]}"/><ViewModelInstanceNumber propertyValue="0" viewModelPropertyId="{VM_PROPS["action"]}"/>'
+    inst += f'<ViewModelInstanceNumber propertyValue="0" viewModelPropertyId="{VM_PROPS["accessory"]}"/>'
 
     doc = (
         '<Rive version="1" kind="fragment">\n'
@@ -258,6 +278,7 @@ def write(rig: Rig, artboard_children: str, ambient: list[Clip], moods: list[Cli
     import json
     review = [{"name": c.name, "data": {"mood": i + 1, "action": 0}, "frames": c.frames} for i, c in enumerate(moods)]
     review += [{"name": c.name, "data": {"mood": 2, "action": j + 1}, "frames": c.frames} for j, c in enumerate(actions)]
+    review += [{"name": c.name, "data": {"mood": 1, "action": 0, "accessory": k}, "frames": 30} for k, c in enumerate(accessories) if k]
     build = os.path.join(os.path.dirname(path_out), "build")
     os.makedirs(build, exist_ok=True)
     with open(os.path.join(build, "review.json"), "w") as f:

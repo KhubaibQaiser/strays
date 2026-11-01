@@ -35,6 +35,22 @@ test("moods pick poses, and a release cue celebrates then leaves", async ({ page
   await expect(page.locator('canvas[data-id="joy"]')).toHaveCount(0, { timeout: 12000 });
 });
 
+test("a graduate puts on its accessory, celebrates and leaves", async ({ page }) => {
+  await mockApp(page);
+  await page.setViewportSize({ width: 440, height: 240 });
+  await page.goto("/index.html");
+  await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.some((c) => c.cmd === "overlay_ready"));
+  await emit(page, "overlay", { pets: [pet("grad", "content", 0)], liveliness: "calm", reduceMotion: false });
+  await expect(page.locator("canvas")).toHaveCount(1);
+  await page.waitForTimeout(1000);
+  await emit(page, "cue", { id: "grad", cue: { graduate: { accessory: 1 } } });
+  await emit(page, "overlay", { pets: [], liveliness: "calm", reduceMotion: false });
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${shots}/overlay-graduate.png` });
+  await expect(page.locator('canvas[data-id="grad"]')).toHaveCount(1);
+  await expect(page.locator('canvas[data-id="grad"]')).toHaveCount(0, { timeout: 14000 });
+});
+
 test("with Reduce Motion a leaving pet only fades", async ({ page }) => {
   await mockApp(page);
   await page.goto("/index.html");

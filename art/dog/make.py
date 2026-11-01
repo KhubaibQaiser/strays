@@ -8,13 +8,13 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
-from pet import INNER_EAR, PUPIL, Fit, actions, ambient, controls, face, moods, proud, props, skinned_tail, tail_bones  # noqa: E402
+from pet import accessories, INNER_EAR, PUPIL, Fit, actions, ambient, controls, face, moods, proud, props, skinned_tail, tail_bones  # noqa: E402
 from rml import Clip, Rig, coat_fill, curve, ellipse, fill, rect, shape, solid, stroke, triangle, write, LINE, SHADE  # noqa: E402
 
 rig = Rig("Dog")
 N = rig.node
 # a corgi's head sits a little lower on its long body; ears stand tall and barely flop
-fit = Fit(head_y=-170, lie_head=-132, eye_dx=30, ear=0.22, ear_up=0.12, ear_soft=0.55, ear_low=0.7, ear_flat=1.1, mouth_y=42, eat_dx=-48, eat_dy=48)
+fit = Fit(crown=-61, chin=58, head_w=156, chest=(34, -92), head_y=-170, lie_head=-132, eye_dx=30, ear=0.22, ear_up=0.12, ear_soft=0.55, ear_low=0.7, ear_flat=1.1, mouth_y=42, eat_dx=-48, eat_dy=48)
 MARK = "FFFFFAF2"  # corgi white markings are part of the breed, so they don't follow the coat colour
 
 
@@ -25,9 +25,11 @@ def ear(side: int) -> str:
     return N(f"Ear {name} Pose", N(f"Ear {name}", inner + outer), x=44 * side, y=-46, rotation=fit.ear * side)
 
 
+acc_head, acc_body, acc_clips = accessories(rig, fit)
 head = N(
     "Head",
-    face(rig, fit)
+    acc_head
+    + face(rig, fit)
     + shape("Nose", ellipse(20, 13), fill(solid(PUPIL)), y=24)
     + shape("Muzzle", ellipse(66, 40), fill(solid(MARK)) + stroke(LINE, 2.5), y=34)
     + shape("Blaze", curve([(0, -58), (8, -30), (6, 0), (0, 10), (-6, 0), (-8, -30)], closed=True), fill(solid(MARK)), y=0)
@@ -38,7 +40,8 @@ head = N(
 )
 body = N(
     "Body",
-    shape("Paw L", ellipse(36, 20), fill(solid(MARK)) + stroke(LINE), x=-28, y=fit.paw_y, sid=rig.id("Paw L"))
+    acc_body
+    + shape("Paw L", ellipse(36, 20), fill(solid(MARK)) + stroke(LINE), x=-28, y=fit.paw_y, sid=rig.id("Paw L"))
     + shape("Paw R", ellipse(36, 20), fill(solid(MARK)) + stroke(LINE), x=28, y=fit.paw_y, sid=rig.id("Paw R"))
     + shape("Leg L", rect(28, 40, 12), coat_fill(), x=-28, y=-26)
     + shape("Leg R", rect(28, 40, 12), coat_fill(), x=28, y=-26)
@@ -77,5 +80,6 @@ write(
     actions=actions(fit, spin_and_bow),
     instance={"coatBase": "FFD98A4A", "coatShade": "FFB86C2E", "coatHighlight": "FFF2B57E", "outline": "FF6B3A17"},
     path_out=os.path.join(os.path.dirname(__file__), "scene.rml"),
+    accessories=acc_clips,
 )
 print("wrote scene.rml")
