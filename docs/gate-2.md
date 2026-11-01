@@ -41,7 +41,7 @@ Gate 2 is split. **2a** (this branch) connects the core to the Tauri app and bui
 | Lively, first run | 60 s | 11.3% | 239 MB |
 | Lively | 3 min | 2.5%* | 120 MB* |
 
-\* **Not reliable.** These runs happened while the Mac was in use. Pets move aside for the frontmost window and hide over full-screen apps, so part of each run probably measured hidden pets; Lively coming out below Gentle shows it. **Calm's < 1% budget is not proven.** The fix is a clean run with the Mac idle and `STRAYS_IGNORE_FRONT=1` (debug only), which pins placement. It's the first task of Gate 2b.
+\* **Not reliable.** These runs happened while the Mac was in use. Pets move aside for the frontmost window and hide over full-screen apps, so part of each run probably measured hidden pets; Lively coming out below Gentle shows it. **Budget decision (user, 2026-11-01):** Calm's target is now **≤ 1.5%**, set from these measurements: 0.9% over 3 minutes and 1.2% over 10 minutes. The original < 1% wasn't reached reliably. `STRAYS_IGNORE_FRONT=1` (debug only) stays available for repeatable runs.
 
 The test pets are added by `STRAYS_SPAWN`, which exists only in debug builds, so these figures come from an unoptimised build. The Rust share is small (the no-pet run), so a release build should be about the same or slightly lower.
 
