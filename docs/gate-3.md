@@ -2,7 +2,7 @@
 
 Gate 3 lands one species per PR (user decision). Each one needs the user's sign-off (spec §14.1).
 
-## Cat (Persian)
+## Cat (Persian) — signed off by the user, 2026-11-01
 
 **Rig:** `art/cat/make.py` generates `art/cat/scene.rml`, using shared helpers in `art/tools/rml.py`. It follows `art/STYLE.md`:
 - 400 × 400 artboard; the `PetLook` view model holds the four coat colours plus `mood` and `action`.
