@@ -18,8 +18,9 @@ PORT=$(sed -n 's/PORT //p' "$OUT/fake.log")
 
 STRAYS_DATA_DIR="$OUT/data" STRAYS_SPAWN=1 STRAYS_CAPTURABLE=1 STRAYS_TOKEN=github_pat_fake \
   STRAYS_FAKE_GITHUB="http://127.0.0.1:$PORT" "$APP" >"$OUT/app.log" 2>&1 &
-for _ in $(seq 100); do grep -q "^LOADED" "$OUT/app.log" 2>/dev/null && break; sleep 0.2; done
-sleep 1
+# wait for the pet to load and the first sync to settle, so the layout is final before clicking
+for _ in $(seq 100); do grep -q "^LOADED" "$OUT/app.log" 2>/dev/null && grep -q "Last synced" "$OUT/app.log" && break; sleep 0.2; done
+sleep 1.5
 read -r ID X Y S <<<"$(grep '^LAYOUT' "$OUT/app.log" | tail -1 | cut -d' ' -f2-)"
 CX=$(awk "BEGIN{print int($X+$S*0.5)}"); CY=$(awk "BEGIN{print int($Y+$S*0.62)}")
 MX=$(awk "BEGIN{print int($X+6)}"); MY=$(awk "BEGIN{print int($Y+6)}")
@@ -29,7 +30,8 @@ MX=$(awk "BEGIN{print int($X+6)}"); MY=$(awk "BEGIN{print int($Y+6)}")
 TX=$(awk "BEGIN{print int($X-4*$S)}"); TY=$(awk "BEGIN{print int($Y-$S)}")
 "$H" target "$TX" "$TY" "$((5 * ${S%.*}))" "$((2 * ${S%.*}))" 60 >"$OUT/target.log" 2>&1 &
 TPID=$!
-sleep 1
+for _ in $(seq 50); do grep -q "TARGET READY" "$OUT/target.log" 2>/dev/null && break; sleep 0.1; done
+sleep 0.5
 
 count() { grep -c "$1" "$2" || true; }
 fail=0
