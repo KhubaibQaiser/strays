@@ -4,6 +4,7 @@ pub mod display;
 pub mod github;
 pub mod localgit;
 pub mod mood;
+pub mod nudge;
 pub mod pet;
 pub mod settings;
 pub mod store;

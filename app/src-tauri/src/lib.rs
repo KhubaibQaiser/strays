@@ -231,7 +231,8 @@ pub fn run() {
 
             let ui = h.clone();
             std::thread::spawn(move || {
-                sync::run(app, tx, rx, move |app, outcome| {
+                let fs = overlay.clone();
+                sync::run(app, tx, rx, move || fs.is_full_screen(), move |app, outcome, nudge| {
                     let s = &app.settings;
                     let config = overlay::Config {
                         liveliness: s.liveliness,
@@ -246,6 +247,14 @@ pub fn run() {
                         if let Ok(m) = menu::build(&ui, app) {
                             let _ = tray.set_menu(Some(m));
                         }
+                    }
+                    if let Some(n) = nudge {
+                        let (id, text) = match n {
+                            strays_core::nudge::Nudge::Pet { id, text } | strays_core::nudge::Nudge::TakingABreak { id, text } => (id, text),
+                        };
+                        #[cfg(debug_assertions)]
+                        println!("NUDGE {id} {text}");
+                        let _ = ui.emit("nudge", Feedback { id, ok: true, text });
                     }
                     if let Some(sync::SyncOutcome { ok, for_pet: Some(id) }) = outcome {
                         let text = if ok { "✓".into() } else { format!("⚠ {}", app.sync_error.clone().unwrap_or_default()) };

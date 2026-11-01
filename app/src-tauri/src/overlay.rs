@@ -208,6 +208,12 @@ impl Overlay {
         relayout(&mut o);
     }
 
+    /// Whether pets are hidden because an app is full screen.
+    pub fn is_full_screen(&self) -> bool {
+        let o = self.0.lock().unwrap();
+        o.hide_full && o.front.is_some_and(|f| covers(f, o.screen.frame))
+    }
+
     /// Where a pet is drawn, in global points, for placing its info card.
     pub fn pet_rect(&self, id: Uuid) -> Option<Rect> {
         let o = self.0.lock().unwrap();

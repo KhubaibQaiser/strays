@@ -19,7 +19,7 @@ use crate::settings::Settings;
 pub const API: &str = "https://api.github.com";
 const AFFILIATION: &str = "affiliation=owner,collaborator,organization_member";
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum GhError {
     /// Only fine-grained tokens (`github_pat_…`) are accepted.
     WrongTokenType,

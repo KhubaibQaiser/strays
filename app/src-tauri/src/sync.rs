@@ -7,6 +7,7 @@ use std::time::Duration as StdDuration;
 use strays_core::chrono::{Duration, Utc};
 use strays_core::clock::Time;
 use strays_core::github::{self, GhError, Github, Listing};
+use strays_core::nudge::Nudge;
 
 use crate::state::App;
 
@@ -70,7 +71,13 @@ fn watch(folders: &[String], tx: &Sender<Cmd>) -> Option<notify::RecommendedWatc
     Some(w)
 }
 
-pub fn run(shared: Arc<Mutex<App>>, tx: Sender<Cmd>, rx: Receiver<Cmd>, on_change: impl Fn(&App, Option<SyncOutcome>)) {
+pub fn run(
+    shared: Arc<Mutex<App>>,
+    tx: Sender<Cmd>,
+    rx: Receiver<Cmd>,
+    full_screen: impl Fn() -> bool,
+    on_change: impl Fn(&App, Option<SyncOutcome>, Option<Nudge>),
+) {
     let mut last_pass = Utc::now();
     let mut last_full: Option<Time> = None;
     let mut not_before: Option<Time> = None;
@@ -83,7 +90,7 @@ pub fn run(shared: Arc<Mutex<App>>, tx: Sender<Cmd>, rx: Receiver<Cmd>, on_chang
         let mut app = shared.lock().unwrap();
         app.tick(Utc::now());
         app.refresh_visible(Utc::now());
-        on_change(&app, None);
+        on_change(&app, None, None);
     }
     let mut changed = true;
     let mut manual = false;
@@ -183,9 +190,10 @@ pub fn run(shared: Arc<Mutex<App>>, tx: Sender<Cmd>, rx: Receiver<Cmd>, on_chang
             }
             changed = true;
         }
-        if changed {
+        let nudge = app.next_nudge(now, full_screen());
+        if changed || nudge.is_some() {
             app.refresh_visible(now);
-            on_change(&app, outcome);
+            on_change(&app, outcome, nudge);
             changed = false;
         }
         let until_deadline = app.next_deadline().map(|d| (d - now).to_std().unwrap_or_default());

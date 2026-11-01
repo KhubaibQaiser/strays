@@ -21,6 +21,7 @@ const ACCOUNT_FILE: &str = "accounts.json";
 const NETLOG_FILE: &str = "netlog.jsonl";
 const NETLOG_KEEP: usize = 1000;
 const FOLDERS_FILE: &str = "folders.json";
+const NUDGE_FILE: &str = "nudges.json";
 
 /// Git folders already seen inside watched folders, so only ones that appear later count as new (§5.9).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -79,6 +80,7 @@ pub struct App {
     /// Ones that appeared after their folder was first watched, waiting for the user's decision.
     pub new_folders: Vec<String>,
     known_folders: KnownFolders,
+    nudge_log: strays_core::nudge::NudgeLog,
     pub load_problems: usize,
 }
 
@@ -145,6 +147,7 @@ impl App {
         let sync: SyncState = store.load(SYNC_FILE).unwrap_or_default();
         let account: Option<Account> = store.load(ACCOUNT_FILE).unwrap_or_default();
         let known_folders: KnownFolders = store.load(FOLDERS_FILE).unwrap_or_default();
+        let nudge_log = store.load(NUDGE_FILE).unwrap_or_default();
         Ok(Self {
             store,
             dir,
@@ -164,6 +167,7 @@ impl App {
             local_repos: Vec::new(),
             new_folders: Vec::new(),
             known_folders,
+            nudge_log,
         })
     }
 
@@ -368,6 +372,36 @@ impl App {
         }
         changed.iter().for_each(|&id| self.save_pet(id));
         !changed.is_empty()
+    }
+
+    /// At most one nudge from an on-screen pet (§5.10); the rules live in `strays_core::nudge`.
+    pub fn next_nudge(&mut self, now: Time, full_screen: bool) -> Option<strays_core::nudge::Nudge> {
+        use strays_core::chrono::Timelike;
+        use strays_core::nudge::{Candidate, Context, pick};
+        let local = now.with_timezone(&Local);
+        let cx = Context {
+            now,
+            local_day: local.date_naive(),
+            local_minute: local.hour() * 60 + local.minute(),
+            presentation: self.flags.presentation,
+            full_screen,
+        };
+        let on_screen: Vec<Candidate> = self
+            .visible
+            .iter()
+            .filter_map(|id| self.pets.iter().find(|p| p.id == *id))
+            .map(|p| Candidate { id: p.id, repo: p.project.github.as_ref().map(|g| g.full_name.as_str()), mood: self.mood(p, now) })
+            .collect();
+        let all: Vec<Mood> = self.pets.iter().filter(|p| p.state.kind == StateKind::Active).map(|p| self.mood(p, now)).collect();
+        let mut log = self.nudge_log.clone();
+        let nudge = pick(&on_screen, &all, &mut log, &self.settings, &cx);
+        if log != self.nudge_log {
+            self.nudge_log = log;
+            if let Err(e) = self.store.save(NUDGE_FILE, &self.nudge_log) {
+                eprintln!("could not save the nudge log: {e:?}");
+            }
+        }
+        nudge
     }
 
     pub fn set_account(&mut self, account: Option<Account>) {
