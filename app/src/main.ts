@@ -1,10 +1,15 @@
-// Gate 0 overlay prototype renderer: plays the cat .riv, recolours it, reacts to ⌥-hover/click.
-import "./throttle";
+// Pet overlay: draws the pets the Rust core places, and plays their moments at the chosen liveliness.
+// The core owns all state; this page only renders and reports ⌥-clicks.
+import { setFps } from "./throttle";
 import { Rive, RuntimeLoader } from "@rive-app/canvas";
 import riveWasmUrl from "@rive-app/canvas/rive.wasm?url";
 import catUrl from "../../art/cat/build/cat.riv?url";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+
+type Liveliness = "calm" | "gentle" | "lively";
+type Placed = { id: string; species: string; colors: Record<string, string>; label: string; mood: string; x: number; y: number; s: number };
+type Frame = { pets: Placed[]; liveliness: Liveliness; reduceMotion: boolean };
 
 const log = (msg: string) => void invoke("pet_log", { msg });
 addEventListener("error", (e) => log(`ERROR ${e.message}`));
@@ -14,92 +19,151 @@ log(`BOOT ${location.href}`);
 // Bundled locally: the runtime must never fetch its WASM from a CDN.
 RuntimeLoader.setWasmUrl(riveWasmUrl);
 
-// One test colour per pet so recolouring is visible: coatBase, coatShade, coatHighlight, outline.
-const LOOKS: Array<[number, number, number, number]> = [
-  [0xffefe1cc, 0xffd9c4a6, 0xfffff8ee, 0xff7a5c46],
-  [0xff34343a, 0xff26262b, 0xff55555e, 0xffa9a9b6],
-  [0xffe8a15c, 0xffcb8240, 0xfffbe3c6, 0xff7a4520],
-];
+// ponytail: every species renders as the cat until the other rigs land in Gate 3.
+const ART: Record<string, string> = { cat: catUrl };
 
-const params = new URLSearchParams(location.search);
-const mode = params.get("mode") ?? "A";
+type Pet = { el: HTMLCanvasElement; rive: Rive; placed: Placed; timer?: number; playing: boolean };
+const pets = new Map<string, Pet>();
+let mode: Liveliness = "calm";
+let reduceMotion = false;
+let frozen = false;
 
-type Slot = { pet: number; x: number; y: number; w: number; h: number };
-const slots: Slot[] =
-  mode === "B"
-    ? (params.get("pets") ?? "").split(";").map((s, pet) => {
-        const [x, y, w, h] = s.split(",").map(Number);
-        return { pet, x, y, w, h };
-      })
-    : [{ pet: Number(params.get("pet") ?? 0), x: 0, y: 0, w: innerWidth, h: innerHeight }];
+/** Seconds between short moments per pet (§7.4); Lively plays continuously instead. */
+const GAP: Record<Exclude<Liveliness, "lively">, [number, number]> = { calm: [20, 60], gentle: [5, 15] };
+const MOMENT_MS = 1000;
 
-const canvases = new Map<number, HTMLCanvasElement>();
+function hexToArgb(hex: string): number {
+  return (0xff000000 | parseInt(hex.slice(1), 16)) >>> 0;
+}
 
-for (const slot of slots) {
-  const canvas = document.createElement("canvas");
-  Object.assign(canvas.style, {
-    position: "absolute",
-    left: `${slot.x}px`,
-    top: `${slot.y}px`,
-    width: `${slot.w}px`,
-    height: `${slot.h}px`,
-  });
-  canvas.width = slot.w * devicePixelRatio;
-  canvas.height = slot.h * devicePixelRatio;
-  document.body.appendChild(canvas);
-  canvases.set(slot.pet, canvas);
+function setPlaying(p: Pet, on: boolean) {
+  if (on === p.playing) return;
+  p.playing = on;
+  if (on) p.rive.play();
+  else p.rive.pause();
+}
 
+/** Schedules this pet's next moment, or keeps it moving in Lively. Rendering stops between moments. */
+function schedule(p: Pet) {
+  window.clearTimeout(p.timer);
+  if (frozen) return setPlaying(p, false);
+  const level = reduceMotion ? "calm" : mode;
+  if (level === "lively") return setPlaying(p, true);
+  setPlaying(p, false);
+  const [lo, hi] = GAP[level];
+  p.timer = window.setTimeout(() => {
+    setPlaying(p, true);
+    p.timer = window.setTimeout(() => schedule(p), MOMENT_MS);
+  }, (lo + Math.random() * (hi - lo)) * 1000);
+}
+
+function position(p: Pet) {
+  const { x, y, s } = p.placed;
+  Object.assign(p.el.style, { left: `${x}px`, top: `${y}px`, width: `${s}px`, height: `${s}px` });
+  const size = Math.round(s * devicePixelRatio);
+  if (p.el.width !== size) {
+    p.el.width = p.el.height = size;
+    p.rive.resizeDrawingSurfaceToCanvas();
+  }
+}
+
+function add(placed: Placed) {
+  const el = document.createElement("canvas");
+  el.dataset.id = placed.id;
+  el.width = el.height = Math.round(placed.s * devicePixelRatio);
+  document.body.appendChild(el);
   const rive: Rive = new Rive({
-    src: catUrl,
-    canvas,
+    src: ART[placed.species] ?? catUrl,
+    canvas: el,
     autoplay: true,
     stateMachines: "Idle",
     autoBind: true,
-    onLoadError: (e) => log(`LOADERROR pet=${slot.pet} ${JSON.stringify(e.data)}`),
+    onLoadError: (e) => log(`LOADERROR pet=${placed.id} ${JSON.stringify(e.data)}`),
     onLoad: () => {
       rive.resizeDrawingSurfaceToCanvas();
       const vmi = rive.viewModelInstance;
-      const look = LOOKS[slot.pet % LOOKS.length];
-      const names = ["coatBase", "coatShade", "coatHighlight", "outline"];
-      const bound = names.filter((name, i) => {
+      let bound = 0;
+      for (const [name, hex] of Object.entries(placed.colors)) {
         const prop = vmi?.color(name);
-        if (prop) prop.value = look[i];
-        return prop != null;
-      });
-      void invoke("pet_log", { msg: `LOADED pet=${slot.pet} colours=${bound.length}/4` });
-      // Still and burst modes: hold a pose, or play briefly every 8 s (staggered per pet).
-      const burst = Number(params.get("burst") || 0);
-      if (params.get("paused") === "1" || burst > 0) rive.pause();
-      if (burst > 0) {
-        setInterval(() => {
-          setTimeout(() => {
-            rive.play();
-            setTimeout(() => rive.pause(), burst * 1000);
-          }, slot.pet * 2500);
-        }, 8000);
+        if (prop) {
+          prop.value = hexToArgb(hex);
+          bound++;
+        }
       }
-      rive.enableFPSCounter(() => {});
-      setTimeout(() => log(`FPS pet=${slot.pet} ${rive.fps}`), 6000);
+      log(`LOADED pet=${placed.id} colours=${bound}/${Object.keys(placed.colors).length}`);
+      // let the first frame draw with the new colours, then hold still until a moment
+      window.setTimeout(() => schedule(p), 300);
     },
   });
-
-  canvas.addEventListener("mousedown", (e) => {
+  const p: Pet = { el, rive, placed, playing: true };
+  pets.set(placed.id, p);
+  position(p);
+  el.addEventListener("mousedown", (e) => {
     if (!e.altKey) return;
-    void invoke("pet_clicked", { pet: slot.pet });
-    showBubble(slot, "Hi! I'm tracking strays-test 🐾");
+    e.preventDefault();
+    void invoke("pet_click", { id: placed.id, shift: e.shiftKey });
   });
+  el.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
-void listen<[number, boolean]>("pet-hover", ({ payload: [pet, on] }) => {
-  canvases.get(pet)?.classList.toggle("hover", on);
-});
-
-function showBubble(slot: Slot, text: string) {
-  const bubble = document.createElement("div");
-  bubble.className = "bubble";
-  bubble.textContent = text;
-  bubble.style.left = `${slot.x + slot.w / 2}px`;
-  bubble.style.top = `${slot.y + 4}px`;
-  document.body.appendChild(bubble);
-  setTimeout(() => bubble.remove(), 2500);
+function remove(id: string) {
+  const p = pets.get(id);
+  if (!p) return;
+  window.clearTimeout(p.timer);
+  p.rive.cleanup();
+  p.el.remove();
+  pets.delete(id);
 }
+
+function bubble(id: string, text: string, ms: number, className = "bubble") {
+  const p = pets.get(id);
+  if (!p) return;
+  document.querySelectorAll(`.${className}[data-for="${id}"]`).forEach((b) => b.remove());
+  const b = document.createElement("div");
+  b.className = className;
+  b.dataset.for = id;
+  b.textContent = text;
+  b.style.left = `${p.placed.x + p.placed.s / 2}px`;
+  // above the pet's head; pets at the top edge get it below instead
+  const above = p.placed.y + p.placed.s * 0.25 - 34;
+  b.style.top = `${above > 0 ? above : p.placed.y + p.placed.s}px`;
+  document.body.appendChild(b);
+  if (ms > 0) window.setTimeout(() => b.remove(), ms);
+}
+
+const ready: Promise<unknown>[] = [];
+ready.push(listen<Frame>("overlay", ({ payload }) => {
+  const modeChanged = payload.liveliness !== mode || payload.reduceMotion !== reduceMotion;
+  mode = payload.liveliness;
+  reduceMotion = payload.reduceMotion;
+  setFps(mode === "lively" && !reduceMotion ? 15 : 24);
+  const keep = new Set(payload.pets.map((p) => p.id));
+  [...pets.keys()].filter((id) => !keep.has(id)).forEach(remove);
+  for (const placed of payload.pets) {
+    const p = pets.get(placed.id);
+    if (!p) add(placed);
+    else {
+      p.placed = placed;
+      position(p);
+      if (modeChanged) schedule(p);
+    }
+  }
+}));
+
+// ⌥ held: every pet freezes, and the one under the cursor gets an outline and a tooltip (§7.2, §7.3).
+ready.push(listen<{ id: string | null; held: boolean }>("hover", ({ payload }) => {
+  if (payload.held !== frozen) {
+    frozen = payload.held;
+    pets.forEach(schedule);
+  }
+  document.querySelectorAll(".tooltip").forEach((b) => b.remove());
+  for (const [id, p] of pets) {
+    p.el.classList.toggle("hover", id === payload.id);
+    if (id === payload.id) bubble(id, p.placed.label, 0, "tooltip");
+  }
+}));
+
+ready.push(listen<{ id: string; ok: boolean; text: string }>("feedback", ({ payload }) => bubble(payload.id, payload.text, 2500)));
+
+// Ask for the first frame only once every listener is registered, or it can arrive before them.
+void Promise.all(ready).then(() => invoke("overlay_ready"));

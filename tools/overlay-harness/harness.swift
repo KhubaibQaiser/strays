@@ -5,6 +5,7 @@
 //   harness move X Y                 move the cursor (global points, top-left origin)
 //   harness click X Y [opt]          left click, optionally with ⌥ flag
 //   harness opt down|up              press or release the ⌥ key
+//   harness esc                      press Escape (closes an open menu)
 import AppKit
 
 let args = CommandLine.arguments
@@ -47,7 +48,8 @@ case "move":
     post(CGEvent(mouseEventSource: src, mouseType: .mouseMoved, mouseCursorPosition: point(args[2], args[3]), mouseButton: .left))
 case "click":
     let p = point(args[2], args[3])
-    let flags: CGEventFlags = args.count > 4 && args[4] == "opt" ? .maskAlternate : []
+    let flags: CGEventFlags = args.count > 4 && args[4] == "opt" ? .maskAlternate
+        : args.count > 4 && args[4] == "optshift" ? [.maskAlternate, .maskShift] : []
     for type in [CGEventType.leftMouseDown, .leftMouseUp] {
         let e = CGEvent(mouseEventSource: src, mouseType: type, mouseCursorPosition: p, mouseButton: .left)
         e?.flags = flags
@@ -60,7 +62,9 @@ case "opt":
     e?.type = .flagsChanged // a modifier is a flags change, not a key press; keyDown/keyUp left HID state stale
     e?.flags = down ? .maskAlternate : []
     post(e)
+case "esc":
+    for down in [true, false] { post(CGEvent(keyboardEventSource: src, virtualKey: 53, keyDown: down)) }
 default:
-    FileHandle.standardError.write("usage: harness target|move|click|opt …\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: harness target|move|click|opt|esc …\n".data(using: .utf8)!)
     exit(2)
 }
