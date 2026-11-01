@@ -5,7 +5,7 @@
 > **Status:** pre-alpha, in active development. Private repository. macOS only for now (macOS 14 Sonoma or later). There is no installable release yet.
 
 <p align="center">
-  <img src="art/review/cat-gate0-colours.png" alt="The test cat in four coat colours" width="560">
+  <img src="art/review/pets-in-app.png" alt="A cat, a hamster and a corgi in the Strays overlay" width="560">
 </p>
 
 ## How it works
@@ -23,10 +23,10 @@
 | Input | Action |
 |---|---|
 | ⌥ + hover | Freeze pets, outline this one, show name · repo · mood |
-| ⌥ + click | Open the pet's menu (snooze, sync, release, pause, graduate, let go) |
+| ⌥ + click | Open the pet's info card: mood, activity, goal checklist, and sync, snooze, release, pause, graduate |
 | ⌥⇧ + click | Sync this pet now |
 
-Every action is also in the 🐾 menu-bar menu.
+The modifier key can be changed in Settings. Every action is also in the 🐾 menu-bar menu.
 
 ## Privacy and permissions
 
@@ -44,8 +44,10 @@ Strays is local-first and asks for as little as possible.
 app/core        Rust library: moods, pet states, settings, storage, GitHub client, local git, display rules.
                 No Tauri dependency, so every rule is tested with a fake clock.
 app/src-tauri   Tauri 2 app shell: background sync loop, Keychain, menu-bar menu, overlay window, macOS calls.
-app/src         Overlay page (TypeScript): draws pets with the Rive web runtime and plays their moments.
-art/<species>   Pet rigs authored as text (RML) and compiled with the Rive CLI.
+app/src         Overlay page and windows (TypeScript): draws pets with the Rive web runtime, plus the info card,
+                settings, token setup and adoption screens.
+art/<species>   Pet rigs generated as text (RML) by Python scripts and compiled with the Rive CLI.
+                Shared poses and clips live in art/tools/pet.py; review sheets in art/review/.
 tools/          Fake GitHub API server and an OS-level click-test harness.
 native-overlay  Swift prototype from Gate 0, kept as a performance fallback.
 docs/           Specification and gate reports.
@@ -58,8 +60,8 @@ The Rust side owns all state and decisions. The web view only renders what it's 
 **Prerequisites:** macOS 14+, Xcode Command Line Tools, Rust (stable), Node.js 22, Python 3 (tests only), and the [Rive CLI](https://rive.app) to rebuild art.
 
 ```bash
-# Build the cat art (writes art/cat/build/cat.riv, which the app bundles)
-cd art/cat && rive . --screenshot --advance=1
+# Build the pet art (writes art/<species>/build/<species>.riv, which the app bundles)
+for s in cat dog hamster; do (python3 art/$s/make.py && cd art/$s && rive . --screenshot --advance=1); done
 
 # Install front-end dependencies
 cd app && npm install
@@ -104,9 +106,9 @@ Development runs through gates, each with measurable pass criteria (see [`docs/s
 |---|---|---|
 | 0 | Prove the stack: Rive art authored by an agent, click-through overlay, CPU cost | ✅ Done ([report](docs/gate-0.md)) |
 | 1 | Core logic, GitHub sync, local git | ✅ Done ([report](docs/gate-1.md)) |
-| 2a | App shell, menu bar, sync loop, overlay | ✅ Merged ([report](docs/gate-2.md)); Calm CPU budget still to confirm |
-| 2b | Info card, settings, token setup, first run, local folders, nudges | Next |
-| 3 | All four species, full animation set, sound, writing | Planned |
+| 2a | App shell, menu bar, sync loop, overlay | ✅ Done ([report](docs/gate-2.md)); Calm CPU budget set at ≤ 1.5% |
+| 2b | Info card, settings, token setup, first run, local folders, nudges | ✅ Done ([report](docs/gate-2b.md)) |
+| 3 | All four species, full animation set, sound, writing | In progress ([report](docs/gate-3.md)): cat, corgi and hamster done; parrot next |
 | 4 | Signing, notarisation, packaging, release | Planned |
 
 Windows support and cross-device sync are planned after the macOS release.
