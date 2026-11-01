@@ -29,6 +29,22 @@ pub struct GithubRef {
 pub struct LocalRef {
     pub bookmark_id: Uuid,
     pub display_path: String,
+    /// Absolute path. ponytail: becomes a security-scoped bookmark when the App Sandbox is on (Gate 4).
+    #[serde(default)]
+    pub path: String,
+}
+
+/// "What does done look like?" (§8.2), shown and ticked on the info card.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Goal {
+    pub text: String,
+    pub checklist: Vec<ChecklistItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChecklistItem {
+    pub text: String,
+    pub done: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -110,6 +126,8 @@ pub struct Pet {
     pub activity: Activity,
     pub frozen: Vec<Frozen>,
     pub releases: Vec<Release>,
+    #[serde(default)]
+    pub goal: Goal,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -145,6 +163,7 @@ impl Pet {
             activity,
             frozen: Vec::new(),
             releases: Vec::new(),
+            goal: Goal::default(),
         }
     }
 

@@ -80,6 +80,21 @@ pub struct Github {
     base: String,
     token: String,
     meta: RefCell<Meta>,
+    reason: String,
+    log: RefCell<Vec<NetEntry>>,
+}
+
+/// One line of the network activity log (§8.5). Paths name repos by id only.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NetEntry {
+    pub at: Time,
+    pub method: String,
+    pub host: String,
+    pub path: String,
+    /// HTTP status, or 0 when the request never got an answer.
+    pub status: u16,
+    /// scheduled · manual · validation
+    pub reason: String,
 }
 
 fn host_allowed(base: &str) -> bool {
@@ -100,7 +115,31 @@ impl Github {
             .user_agent(concat!("Strays/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| GhError::Network(e.to_string()))?;
-        Ok(Self { http, base: base.trim_end_matches('/').into(), token: token.into(), meta: Default::default() })
+        Ok(Self {
+            http,
+            base: base.trim_end_matches('/').into(),
+            token: token.into(),
+            meta: Default::default(),
+            reason: "scheduled".into(),
+            log: Default::default(),
+        })
+    }
+
+    /// Labels this client's requests in the network log.
+    pub fn with_reason(mut self, reason: &str) -> Self {
+        self.reason = reason.into();
+        self
+    }
+
+    /// Requests made since the last call, for the network activity log.
+    pub fn take_log(&self) -> Vec<NetEntry> {
+        self.log.take()
+    }
+
+    fn record(&self, url: &str, status: u16) {
+        let host = self.base.split("://").nth(1).unwrap_or(&self.base).to_string();
+        let path = url.strip_prefix(&self.base).unwrap_or(url).to_string();
+        self.log.borrow_mut().push(NetEntry { at: Utc::now(), method: "GET".into(), host, path, status, reason: self.reason.clone() });
     }
 
     pub fn meta(&self) -> Meta {
@@ -122,7 +161,11 @@ impl Github {
         if let Some(tag) = etag {
             req = req.header(IF_NONE_MATCH, tag);
         }
-        let res = req.send().map_err(|e| GhError::Network(e.without_url().to_string()))?;
+        let res = req.send().map_err(|e| {
+            self.record(&url, 0);
+            GhError::Network(e.without_url().to_string())
+        })?;
+        self.record(&url, res.status().as_u16());
         let meta = parse_meta(res.headers(), &self.meta.borrow());
         self.meta.replace(meta);
         let status = res.status();
@@ -469,6 +512,10 @@ mod tests {
         let gh = fake.client();
         let v = gh.validate().unwrap();
         assert_eq!(v, Validation { login: "me".into(), repo_count: 250, expires: Some(t("2026-11-29T13:28:15Z")) });
+        let log = gh.take_log();
+        assert_eq!(log.iter().map(|e| (e.path.as_str(), e.status)).collect::<Vec<_>>()[0], ("/user", 200));
+        assert!(log.iter().all(|e| e.host.starts_with("127.0.0.1:") && e.reason == "scheduled"));
+        assert!(gh.take_log().is_empty(), "taking the log empties it");
 
         let Listing::Changed { repos, etag, complete } = gh.list_repos(None, None).unwrap() else { panic!() };
         assert_eq!((repos.len(), complete), (250, true));
