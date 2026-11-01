@@ -65,12 +65,22 @@ test("sound settings: off by default, a master switch, volume, per-species and a
   await page.screenshot({ path: `${shots}/settings-sound.png` });
 });
 
+test("launch at login: a refusal from macOS unticks the box and says why", async ({ page }) => {
+  await mockApp(page, { set_login_item: "Operation not permitted" });
+  await page.goto("/ui.html#settings/privacy");
+  await page.getByLabel("Open Strays when you log in").click();
+  await expect(page.getByLabel("Open Strays when you log in")).not.toBeChecked();
+  await expect(page.getByText("Operation not permitted")).toBeVisible();
+});
+
 test("privacy page shows what GitHub access can and can't do, and guards delete", async ({ page }) => {
   await mockApp(page);
   await page.goto("/ui.html#settings/privacy");
   await expect(page.getByText("Account: me · sees 96 repos")).toBeVisible();
   await page.getByRole("button", { name: "View activity log" }).click();
   await expect(page.getByText("GET api.github.com/user/repos?sort=pushed")).toBeVisible();
+  await page.getByLabel("Open Strays when you log in").check();
+  expect((await calls(page, "set_login_item")).at(-1)?.args).toEqual({ on: true });
   await page.screenshot({ path: `${shots}/settings-privacy.png`, fullPage: true });
   await page.getByRole("button", { name: "Delete everything" }).click();
   expect((await calls(page, "delete_everything")).at(-1)?.args).toEqual({ confirm: "" });

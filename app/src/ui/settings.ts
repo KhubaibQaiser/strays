@@ -281,7 +281,18 @@ function privacy(state: UiState, s: Settings, save: () => Promise<unknown>, noti
   );
 
   const capture = card("Screen capture", "Pets hidden when sharing", true, el("p", {}, "Pets never appear in screenshots, recordings or screen sharing."));
-  const notYet = card("Launch at login · Focus status", "Not available yet", false, el("p", { class: "muted" }, "Arrives with the signed release (Gate 4)."));
+  const login = (() => {
+    const i = el("input", { type: "checkbox", checked: state.loginItem !== "off", id: "login-item" });
+    i.addEventListener("change", () => void api.setLoginItem(i.checked).then(() => notice("Saved")).catch((e) => { i.checked = !i.checked; notice(String(e), true); }));
+    return card(
+      "Launch at login",
+      { on: "On", off: "Off", needsApproval: "Turned off in System Settings" }[state.loginItem],
+      state.loginItem === "on",
+      el("div", { class: "check" }, i, el("label", { for: "login-item" }, "Open Strays when you log in")),
+      state.loginItem === "needsApproval" ? el("p", { class: "muted small" }, "Allow it in System Settings → General → Login Items.") : el("p", { class: "muted small" }, "Listed in System Settings → General → Login Items."),
+    );
+  })();
+  const notYet = card("Focus status", "Not available yet", false, el("p", { class: "muted" }, "Needs the signed release."));
 
   const confirmBox = el("input", { type: "text", placeholder: "Type DELETE", "aria-label": "Type DELETE to confirm" });
   const data = card(
@@ -300,7 +311,7 @@ function privacy(state: UiState, s: Settings, save: () => Promise<unknown>, noti
     el("div", { class: "row" }, confirmBox, el("button", { class: "danger", onclick: () => void api.deleteEverything(confirmBox.value).catch((e) => notice(String(e), true)) }, "Delete everything")),
   );
 
-  return [el("h1", {}, "Privacy & Permissions"), github, folders, network, capture, notYet, data];
+  return [el("h1", {}, "Privacy & Permissions"), github, folders, network, capture, login, notYet, data];
 }
 
 function volumeSlider(s: Settings, save: () => Promise<void>) {
