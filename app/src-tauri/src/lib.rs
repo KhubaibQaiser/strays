@@ -227,7 +227,9 @@ pub fn run() {
             spawn_test_pets(&mut app);
             let first_run = commands::snapshot(&app).first_run;
             let menu = menu::build(&h, &app)?;
-            TrayIconBuilder::with_id(TRAY).title(menu::tray_title(&app)).tooltip("Strays").menu(&menu).show_menu_on_left_click(true).build(&h)?;
+            // the paw is a template image (black + alpha, 44 px), rendered by art/icons/render.sh
+            let paw = tauri::image::Image::new(include_bytes!("../icons/tray.rgba"), 44, 44);
+            TrayIconBuilder::with_id(TRAY).icon(paw).icon_as_template(true).title(menu::tray_title(&app)).tooltip("Strays").menu(&menu).show_menu_on_left_click(true).build(&h)?;
 
             let overlay = Overlay::create(&h)?;
             overlay.start_poller(h.clone());
