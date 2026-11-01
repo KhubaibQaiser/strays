@@ -1,7 +1,7 @@
 // Adoption flow (§8.2): project, species, colour (with a live preview), name, goal, pace.
 import { Rive, RuntimeLoader } from "@rive-app/canvas";
 import riveWasmUrl from "@rive-app/canvas/rive.wasm?url";
-import catUrl from "../../../art/cat/build/cat.riv?url";
+import { artFor } from "../art";
 import { api, Pace, Species, UiState } from "./api";
 import { PACE_LABEL, SPECIES_ICON, ago, el } from "./dom";
 import { LOOKS, deriveLook, hexToArgb } from "./look";
@@ -59,15 +59,19 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
   const speciesRow = el("div", { class: "choices", role: "group", "aria-label": "Species" });
   const drawSpecies = () =>
     speciesRow.replaceChildren(
-      ...SPECIES.map(([sp, t]) => el("button", { class: "choice", "aria-pressed": sp === species ? "true" : "false", onclick: () => { species = sp; drawSpecies(); } }, `${SPECIES_ICON[sp]} ${t}`)),
+      ...SPECIES.map(([sp, t]) => el("button", { class: "choice", "aria-pressed": sp === species ? "true" : "false", onclick: () => { species = sp; drawSpecies(); loadPreview(); } }, `${SPECIES_ICON[sp]} ${t}`)),
     );
   drawSpecies();
 
   // colour + preview
   const canvas = el("canvas", { class: "preview", width: 320, height: 320, "aria-label": "Preview" });
-  const rive = new Rive({ src: catUrl, canvas, autoplay: true, stateMachines: "Idle", autoBind: true, onLoad: () => paint() });
+  let rive: Rive | null = null;
+  function loadPreview() {
+    rive?.cleanup();
+    rive = new Rive({ src: artFor(species), canvas, autoplay: true, stateMachines: "Idle", autoBind: true, onLoad: () => paint() });
+  }
   const paint = () => {
-    const vmi = rive.viewModelInstance;
+    const vmi = rive?.viewModelInstance;
     for (const [k, v] of Object.entries(colors)) {
       const prop = vmi?.color(k);
       if (prop) prop.value = hexToArgb(v);
@@ -86,6 +90,7 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
     paint();
   });
   drawSwatches();
+  loadPreview();
 
   const goal = el("input", { type: "text", placeholder: "What does done look like? (optional)", style: "width:100%", "aria-label": "Goal" });
   const paceSel = el("select", { "aria-label": "Pace" }, ...Object.entries(PACE_LABEL).map(([v, t]) => el("option", { value: v, selected: v === pace }, t)));
@@ -117,7 +122,7 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
       el("div", { class: "row" }, pickFolder, folderText),
       el("h2", {}, "2. Species"),
       speciesRow,
-      el("p", { class: "muted small" }, "Only the cat is drawn so far; other species show as the cat until their art lands."),
+      el("p", { class: "muted small" }, "The hamster and parrot are still being drawn; they show as the cat for now."),
       el("h2", {}, "3. Colour"),
       el("div", { class: "row" }, canvas, swatches),
       el("h2", {}, "4. Name"),
