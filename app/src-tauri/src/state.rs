@@ -107,6 +107,13 @@ pub enum Action {
     UndoLetGo,
 }
 
+/// Minutes after local midnight now, for quiet hours.
+pub fn local_minute() -> u32 {
+    use strays_core::chrono::Timelike;
+    let t = Local::now();
+    t.hour() * 60 + t.minute()
+}
+
 /// A one-off clip the overlay should play (spec §5.5, §5.6, §7.4). Matches the rig's `action` clips.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -121,6 +128,8 @@ pub enum Cue {
     Wake,
     /// Back from holiday: walk in with a postcard.
     Postcard,
+    /// Just adopted: walk in and say hello.
+    Hello,
     /// Graduated: put on the earned accessory (the rig's `accessory` number, 1-5), celebrate, then leave for good.
     Graduate { accessory: u8 },
 }
@@ -311,6 +320,7 @@ impl App {
         }
         let message = if !into_shelter && self.slot_free() {
             p.adopt(now).expect("new pets start in the shelter");
+            self.cues.push((p.id, Cue::Hello));
             format!("Adopted {}", repo.name)
         } else {
             format!("{} is in the shelter", repo.name)
@@ -338,7 +348,11 @@ impl App {
         let refused = |e: pet::Refused| format!("{e:?}");
         let msg = match action {
             Action::Adopt if !slot_free => return Err("All adoption slots are full".into()),
-            Action::Adopt => p.adopt(now).map(|_| format!("{name} moved in")).map_err(refused)?,
+            Action::Adopt => {
+                p.adopt(now).map_err(refused)?;
+                self.cues.push((id, Cue::Hello));
+                format!("{name} moved in")
+            }
             Action::Snooze(s) => {
                 p.snooze(now, snooze_until(s, now)).map_err(refused)?;
                 self.cues.push((id, Cue::FallAsleep));
@@ -544,6 +558,7 @@ impl App {
         p.goal = Goal { text: req.goal.trim().chars().take(200).collect(), checklist: Vec::new() };
         let message = if self.slot_free() {
             p.adopt(now).expect("new pets start in the shelter");
+            self.cues.push((p.id, Cue::Hello));
             format!("{name} moved in")
         } else {
             format!("All slots are full, so {name} is waiting in the shelter")

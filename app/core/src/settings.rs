@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::mood::{Pace, Thresholds};
+use crate::pet::Species;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,6 +94,11 @@ pub struct Settings {
     pub watched_folders: Vec<String>,
     /// No network at all, GitHub included (§8.5 "Go fully offline").
     pub offline: bool,
+    /// Sound (§8.4): off by default; nothing depends on it.
+    pub sound: bool,
+    /// 0–100.
+    pub volume: u32,
+    pub muted_species: Vec<Species>,
 }
 
 impl Default for Settings {
@@ -127,6 +133,9 @@ impl Default for Settings {
             wake_stagger: 3,
             watched_folders: Vec::new(),
             offline: false,
+            sound: false,
+            volume: 50,
+            muted_species: Vec::new(),
         }
     }
 }
@@ -145,6 +154,7 @@ impl Settings {
         check(self.nudges_per_pet_daily <= 10 && self.nudges_daily <= 20, "nudge caps")?;
         check(self.quiet_start < 1440 && self.quiet_end < 1440, "quiet hours")?;
         check(self.wake_stagger <= 60, "wakeStagger (0–60)")?;
+        check(self.volume <= 100, "volume (0–100)")?;
         Ok(())
     }
 

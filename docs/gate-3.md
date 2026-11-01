@@ -171,3 +171,15 @@ A new `accessory` view-model number (0–5) drives its own state-machine layer, 
 - **Not verified:** what it looks like in the real menu bar. A screen capture from the terminal came back black, because the terminal has no Screen Recording permission.
 
 **Writing (§10.5):** the nudge lines moved from code into one strings file per style, `app/core/strings/gentle.json` and `playful.json`. Each has Hungry lines, separate Gloomy lines (new), and the "taking a break" prompt. A core test checks every line for blaming words and unknown placeholders.
+
+## Sound
+
+**Source:** real recordings from [Freesound](https://freesound.org), all CC0, because synthesized sounds didn't sound real. `assets/audio/CREDITS.md` lists each source; `assets/audio/make.py` trims each to its clearest 0.3–3.75 s, high-passes at 90 Hz, fades, levels to -3 dBFS and writes mono MP3s (15 files, bundled with `include_bytes!`).
+
+**When it plays:** greeting on adopt (the pet now also walks in) and postcard; happy on eat; sad on a hungry or gloomy nudge; a jingle on celebrate and graduate; a bell on wake; a click on ⌥-click.
+
+**Rules (§8.4, §10.2):** off by default. Settings → Sound has on/off, volume, a toggle per species and a Test button. Silent during quiet hours, Presentation mode and full-screen apps. Playback is native (`rodio` 0.23, playback and MP3 only) on a background thread that opens the output device only while something plays.
+
+**Tests:** Rust checks the rules and that every bundled sound decodes and is under 4 s; Playwright covers the Sound settings page. 16/16 Playwright, 44 core and 10 app tests pass; clippy is clean.
+
+**Not verified:** how they sound. They were picked by waveform, not by ear. The least certain is `hamster-sad`.
