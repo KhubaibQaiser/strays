@@ -154,5 +154,5 @@ fn merge_repos(app: &mut App, repos: &[github::Repo]) {
             None => app.repos.push(r.clone()),
         }
     }
-    app.repos.sort_by(|a, b| b.pushed_at.cmp(&a.pushed_at));
+    app.repos.sort_by_key(|r| std::cmp::Reverse(r.pushed_at));
 }

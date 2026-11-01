@@ -127,7 +127,8 @@ pub fn build<Rt: Runtime>(h: &AppHandle<Rt>, app: &App) -> R<Menu<Rt>> {
     }
     items.push(sep(h)?);
     let on_screen: Vec<&Pet> = app.visible.iter().filter_map(|id| app.pets.iter().find(|p| p.id == *id)).collect();
-    let sections: [(&str, Box<dyn Fn(&Pet) -> bool>); 8] = [
+    type Keep<'a> = Box<dyn Fn(&Pet) -> bool + 'a>;
+    let sections: [(&str, Keep); 8] = [
         ("🐾 On screen", Box::new(|p: &Pet| on_screen.iter().any(|v| v.id == p.id))),
         ("🛋 Resting", Box::new(|p: &Pet| p.state.kind == StateKind::Active && !on_screen.iter().any(|v| v.id == p.id))),
         ("🏠 Shelter", Box::new(|p: &Pet| p.state.kind == StateKind::Shelter)),

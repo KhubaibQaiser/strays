@@ -148,6 +148,10 @@ fn main_screen(h: &AppHandle) -> Option<Screen> {
 }
 
 fn front_rect() -> Option<Rect> {
+    // debug-only: measurement runs pin placement so other apps can't move or hide the pets
+    if cfg!(debug_assertions) && std::env::var("STRAYS_IGNORE_FRONT").as_deref() == Ok("1") {
+        return None;
+    }
     platform::frontmost_window().map(|r| Rect { x: r.origin.x, y: r.origin.y, w: r.size.width, h: r.size.height })
 }
 

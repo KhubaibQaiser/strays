@@ -583,7 +583,8 @@ strays/
 |---|---|---|
 | **0: Test** | Rive CLI rig of one cat: breathing, blinking, tail sway with bones, colour data binding in the web runtime inside Tauri. Overlay window prototype A vs B. Cursor/modifier polling without permission prompts. Unsigned `.riv` plays without a watermark. | All pass + contact sheet reviewed + **user approves the look**. Any failure → **pause and decide with the user**. |
 | **1: Core** | Mood engine, state machine, settings, storage, GitHub client, local git, matching | Unit + property tests green; fake-server scenarios green; live test token scenarios green |
-| **2: Overlay** | Windows, placement, modifier interaction, actions, menu bar, displays, Spaces, full screen, capture exclusion, Reduce Motion | Automated OS tests green; performance budgets met |
+| **2a: Overlay** | App shell on the core, sync loop, Keychain, windows, placement, modifier interaction, menu bar, Spaces, full screen, capture exclusion, Reduce Motion | Automated OS tests green; performance budgets met |
+| **2b: Windows** | Info card, settings, token setup, first run and adoption (§8), local folders, drag and home spots, nudges, per-display windows | Front-end tests and OS tests green |
 | **3: Content** | All 4 species, all clips, props, accessories, audio, writing | Contact sheets reviewed, **user sign-off per species**, contrast tests green |
 | **4: Release** | Signing, notarisation, packaging, opt-in updater, docs | Notarised `.dmg` installs and runs on a clean macOS 14 VM and on the latest macOS |
 
