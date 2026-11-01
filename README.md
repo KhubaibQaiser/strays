@@ -86,7 +86,7 @@ Debug builds read a GitHub token from `~/.config/strays/dev-token` when the Keyc
 | `STRAYS_IGNORE_FRONT=1` | Pin placement, for repeatable performance runs |
 
 ```bash
-STRAYS_DATA_DIR=/tmp/strays STRAYS_SPAWN=3 app/src-tauri/target/debug/app
+STRAYS_DATA_DIR=/tmp/strays STRAYS_SPAWN=3 app/src-tauri/target/debug/Strays
 ```
 
 ### OS-level tests
