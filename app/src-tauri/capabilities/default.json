@@ -1,9 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Pet overlay window",
+  "description": "Overlay and app windows: events plus the app's own commands; no plugin access from web content",
   "windows": [
-    "overlay"
+    "overlay",
+    "card",
+    "settings",
+    "setup",
+    "adopt",
+    "welcome"
   ],
   "permissions": [
     "core:event:default"

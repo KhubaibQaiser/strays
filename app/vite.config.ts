@@ -12,7 +12,11 @@ export default defineConfig(() => ({
   clearScreen: false,
   assetsInclude: ["**/*.riv"],
   // never inline assets as data: URLs; the CSP only allows loading from 'self'
-  build: { assetsInlineLimit: 0 },
+  build: {
+    assetsInlineLimit: 0,
+    // two pages: the pet overlay and the app's windows
+    rollupOptions: { input: { overlay: "index.html", ui: "ui.html" } },
+  },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,

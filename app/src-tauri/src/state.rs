@@ -3,10 +3,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use strays_core::chrono::{Duration, Local, NaiveTime, TimeZone};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use strays_core::clock::Time;
 use strays_core::display;
-use strays_core::github::{Repo, SyncState};
+use strays_core::github::{NetEntry, Repo, SyncState};
+use strays_core::localgit;
+use strays_core::mood::Pace;
+use strays_core::pet::{Goal, LocalRef};
 use strays_core::mood::Mood;
 use strays_core::pet::{self, Activity, ActivitySource, GithubRef, Pet, Project, ReleaseOutcome, Species, StateKind};
 use strays_core::settings::Settings;
@@ -14,6 +17,30 @@ use strays_core::store::Store;
 use strays_core::uuid::Uuid;
 
 const SYNC_FILE: &str = "sync-state.json";
+const ACCOUNT_FILE: &str = "accounts.json";
+const NETLOG_FILE: &str = "netlog.jsonl";
+const NETLOG_KEEP: usize = 1000;
+
+/// The connected GitHub account (no secrets; the token itself is in the Keychain).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Account {
+    pub login: String,
+    pub expires: Option<Time>,
+    pub repo_count: u64,
+}
+
+/// Everything the adoption flow (§8.2) collects.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdoptRequest {
+    pub repo_id: Option<u64>,
+    pub folder: Option<String>,
+    pub species: Species,
+    pub colors: std::collections::BTreeMap<String, String>,
+    pub name: String,
+    pub goal: String,
+    pub pace: Pace,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Flags {
@@ -24,6 +51,8 @@ pub struct Flags {
 
 pub struct App {
     store: Store,
+    pub dir: PathBuf,
+    pub account: Option<Account>,
     pub settings: Settings,
     pub pets: Vec<Pet>,
     pub sync: SyncState,
@@ -91,7 +120,7 @@ const LOOKS: [[&str; 4]; 4] = [
 
 impl App {
     pub fn load(dir: PathBuf) -> Result<Self, String> {
-        let store = Store::open(dir).map_err(|e| format!("{e:?}"))?;
+        let store = Store::open(dir.clone()).map_err(|e| format!("{e:?}"))?;
         let settings = store.load_settings().unwrap_or_else(|e| {
             eprintln!("settings unreadable, using defaults (file kept): {e:?}");
             Settings::default()
@@ -101,8 +130,11 @@ impl App {
             eprintln!("pet file skipped: {p:?}");
         }
         let sync: SyncState = store.load(SYNC_FILE).unwrap_or_default();
+        let account: Option<Account> = store.load(ACCOUNT_FILE).unwrap_or_default();
         Ok(Self {
             store,
+            dir,
+            account,
             settings,
             pets,
             sync,
@@ -254,6 +286,125 @@ impl App {
         Ok(msg)
     }
 
+    pub fn set_account(&mut self, account: Option<Account>) {
+        self.account = account;
+        if let Err(e) = self.store.save(ACCOUNT_FILE, &self.account) {
+            eprintln!("could not save account: {e:?}");
+        }
+    }
+
+    pub fn save_settings(&mut self, s: Settings) -> Result<(), String> {
+        self.store.save_settings(&s).map_err(|e| format!("{e:?}"))?;
+        self.settings = s;
+        Ok(())
+    }
+
+    /// Appends to the network activity log, keeping the newest entries (§8.5).
+    pub fn append_netlog(&self, entries: Vec<NetEntry>) {
+        if entries.is_empty() {
+            return;
+        }
+        let mut all = self.netlog();
+        all.extend(entries);
+        let start = all.len().saturating_sub(NETLOG_KEEP);
+        let text: String = all[start..].iter().filter_map(|e| serde_json::to_string(e).ok()).map(|l| l + "\n").collect();
+        if let Err(e) = std::fs::write(self.dir.join(NETLOG_FILE), text) {
+            eprintln!("could not write the network log: {e}");
+        }
+    }
+
+    pub fn netlog(&self) -> Vec<NetEntry> {
+        std::fs::read_to_string(self.dir.join(NETLOG_FILE))
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|l| serde_json::from_str(l).ok())
+            .collect()
+    }
+
+    /// The adoption flow (§8.2): a GitHub repo or a local folder (matched to its GitHub repo when the
+    /// remote is unambiguous). Adopted if a slot is free, otherwise it waits in the shelter.
+    pub fn adopt(&mut self, req: AdoptRequest, now: Time) -> Result<String, String> {
+        let mut project = Project::default();
+        let mut last: Option<Time> = None;
+        let mut source = ActivitySource::Github;
+        if let Some(id) = req.repo_id {
+            if self.tracked(id) {
+                return Err("This repo already has a pet".into());
+            }
+            let repo = self.repos.iter().chain(&self.new_projects).find(|r| r.id == id).cloned().ok_or("Unknown repo")?;
+            project.github = Some(GithubRef { id: repo.id, full_name: repo.full_name.clone(), account: repo.owner.login.clone() });
+            last = Some(repo.pushed_at.unwrap_or(repo.created_at));
+        }
+        if let Some(folder) = &req.folder {
+            if self.pets.iter().any(|p| p.project.local.as_ref().is_some_and(|l| &l.path == folder)) {
+                return Err("This folder already has a pet".into());
+            }
+            let info = localgit::read(std::path::Path::new(folder), &Default::default()).map_err(|e| format!("Not a git repository: {e}"))?;
+            if project.github.is_none()
+                && let localgit::Match::Unique(id) = localgit::match_repo(&info, &self.repos)
+                && !self.tracked(id)
+                && let Some(repo) = self.repos.iter().find(|r| r.id == id)
+            {
+                project.github = Some(GithubRef { id, full_name: repo.full_name.clone(), account: repo.owner.login.clone() });
+                last = repo.pushed_at;
+            }
+            for (t, s) in [(info.last_commit, ActivitySource::LocalCommit), (info.last_remote_ref, ActivitySource::LocalRemoteRef)] {
+                if let Some(t) = t
+                    && last.is_none_or(|l| t > l)
+                {
+                    last = Some(t);
+                    source = s;
+                }
+            }
+            project.local = Some(LocalRef { bookmark_id: Uuid::new_v4(), display_path: tilde(folder), path: folder.clone() });
+        }
+        if project.github.is_none() && project.local.is_none() {
+            return Err("Pick a repo or a folder".into());
+        }
+        let name = if req.name.trim().is_empty() { "Stray".to_string() } else { req.name.trim().chars().take(40).collect() };
+        let mut p = Pet::new(now, &name, req.species, project, Activity { last: last.unwrap_or(now), source }, req.pace);
+        p.colors = req.colors;
+        p.goal = Goal { text: req.goal.trim().chars().take(200).collect(), checklist: Vec::new() };
+        let message = if self.slot_free() {
+            p.adopt(now).expect("new pets start in the shelter");
+            format!("{name} moved in")
+        } else {
+            format!("All slots are full, so {name} is waiting in the shelter")
+        };
+        if let Some(gh) = &p.project.github {
+            let id = gh.id;
+            self.new_projects.retain(|r| r.id != id);
+        }
+        let id = p.id;
+        self.pets.push(p);
+        self.save_pet(id);
+        Ok(message)
+    }
+
+    pub fn set_goal(&mut self, id: Uuid, goal: Goal) -> Result<(), String> {
+        let p = self.pets.iter_mut().find(|p| p.id == id).ok_or("No such pet")?;
+        p.goal = Goal {
+            text: goal.text.chars().take(200).collect(),
+            checklist: goal.checklist.into_iter().take(30).map(|mut c| {
+                c.text = c.text.chars().take(120).collect();
+                c
+            }).collect(),
+        };
+        self.save_pet(id);
+        Ok(())
+    }
+
+    /// Pet settings: name and pace.
+    pub fn set_pet(&mut self, id: Uuid, name: String, pace: Pace) -> Result<(), String> {
+        let p = self.pets.iter_mut().find(|p| p.id == id).ok_or("No such pet")?;
+        if !name.trim().is_empty() {
+            p.name = name.trim().chars().take(40).collect();
+        }
+        p.pace = pace;
+        self.save_pet(id);
+        Ok(())
+    }
+
     /// Vacation mode pauses everyone (§5.10) and resumes exactly the pets it paused.
     pub fn set_vacation(&mut self, on: bool, now: Time) {
         self.flags.vacation = on;
@@ -280,5 +431,13 @@ pub fn snooze_until(s: Snooze, now: Time) -> Option<Time> {
             let nine = day.and_time(NaiveTime::from_hms_opt(9, 0, 0).unwrap());
             Local.from_local_datetime(&nine).earliest().map(|t| t.to_utc()).or(Some(now + Duration::hours(24)))
         }
+    }
+}
+
+/// `/Users/me/Code/x` → `~/Code/x` for display.
+pub fn tilde(path: &str) -> String {
+    match std::env::var("HOME") {
+        Ok(home) if path.starts_with(&home) => format!("~{}", &path[home.len()..]),
+        _ => path.to_string(),
     }
 }

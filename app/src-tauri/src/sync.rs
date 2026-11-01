@@ -60,6 +60,7 @@ pub fn run(shared: Arc<Mutex<App>>, rx: Receiver<Cmd>, on_change: impl Fn(&App, 
         on_change(&app, None);
     }
     let mut changed = true;
+    let mut manual = false;
     loop {
         let now = Utc::now();
         // A pass far later than the longest wait means the Mac slept.
@@ -77,7 +78,12 @@ pub fn run(shared: Arc<Mutex<App>>, rx: Receiver<Cmd>, on_change: impl Fn(&App, 
             && !(app.settings.sync_pause_on_low_power && crate::platform::low_power_mode());
         let allowed = not_before.is_none_or(|t| now >= t);
         let mut outcome = None;
-        if (forced.is_some() || scheduled) && allowed {
+        if app.settings.offline {
+            if forced.take().is_some() || app.sync_error.is_none() {
+                app.sync_error = Some("Offline mode is on".into());
+                changed = true;
+            }
+        } else if (forced.is_some() || scheduled) && allowed {
             let for_pet = forced.take().flatten();
             match crate::token::load() {
                 None => {
@@ -90,8 +96,13 @@ pub fn run(shared: Arc<Mutex<App>>, rx: Receiver<Cmd>, on_change: impl Fn(&App, 
                     let tracked = github::tracked_ids(&app.pets);
                     drop(app);
                     // network, without holding the state
-                    let result = github_client(&token).and_then(|gh| github::fetch(&gh, &snapshot, &tracked, full).map(|f| (f, gh.meta())));
+                    let reason = if for_pet.is_some() || manual { "manual" } else { "scheduled" };
+                    let gh = github_client(&token).map(|g| g.with_reason(reason));
+                    let result = gh.as_ref().map_err(Clone::clone).and_then(|gh| github::fetch(gh, &snapshot, &tracked, full).map(|f| (f, gh.meta())));
                     app = shared.lock().unwrap();
+                    if let Ok(gh) = &gh {
+                        app.append_netlog(gh.take_log());
+                    }
                     let (fetched, meta) = match result {
                         Ok((f, m)) => (Ok(f), m),
                         Err(e) => (Err(e), Default::default()),
@@ -124,6 +135,7 @@ pub fn run(shared: Arc<Mutex<App>>, rx: Receiver<Cmd>, on_change: impl Fn(&App, 
                     }
                     app.save_all();
                     outcome = Some(SyncOutcome { ok: result.is_ok(), for_pet });
+                    manual = false;
                 }
             }
             changed = true;
@@ -137,7 +149,10 @@ pub fn run(shared: Arc<Mutex<App>>, rx: Receiver<Cmd>, on_change: impl Fn(&App, 
         drop(app);
         let timeout = until_deadline.map_or(MAX_WAIT, |d| d.min(MAX_WAIT)).max(StdDuration::from_millis(200));
         match rx.recv_timeout(timeout) {
-            Ok(Cmd::SyncNow(pet)) => forced = Some(pet),
+            Ok(Cmd::SyncNow(pet)) => {
+                forced = Some(pet);
+                manual = true;
+            }
             Ok(Cmd::Changed) => changed = true,
             // moods drift with time even when nothing happens
             Err(RecvTimeoutError::Timeout) => changed = true,

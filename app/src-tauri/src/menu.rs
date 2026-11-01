@@ -184,19 +184,15 @@ pub fn build<Rt: Runtime>(h: &AppHandle<Rt>, app: &App) -> R<Menu<Rt>> {
     items.push(MenuItemKind::Check(CheckMenuItem::with_id(h, "vacation", "Vacation mode", true, app.flags.vacation, None::<&str>)?));
     items.push(MenuItemKind::Check(CheckMenuItem::with_id(h, "hide-all", "Hide all pets", true, app.flags.hide_all, None::<&str>)?));
     items.push(sep(h)?);
+    items.push(item(h, "adopt", "Adopt a pet…")?);
+    if app.account.is_none() {
+        items.push(item(h, "setup", "Connect GitHub…")?);
+    }
+    items.push(item(h, "settings", "Settings…")?);
+    items.push(sep(h)?);
     items.push(item(h, "quit", "Quit Strays")?);
     let refs: Vec<&dyn IsMenuItem<Rt>> = items.iter().map(|i| i as &dyn IsMenuItem<Rt>).collect();
     Menu::with_items(h, &refs)
-}
-
-/// The ⌥-click menu for one pet.
-pub fn pet_menu<Rt: Runtime>(h: &AppHandle<Rt>, app: &App, id: Uuid) -> R<Option<Menu<Rt>>> {
-    let Some(p) = app.pets.iter().find(|p| p.id == id) else { return Ok(None) };
-    let now = Utc::now();
-    let mut items = vec![label(h, &pet_title(app, p, now))?];
-    items.extend(pet_entries(h, app, p, now)?);
-    let refs: Vec<&dyn IsMenuItem<Rt>> = items.iter().map(|i| i as &dyn IsMenuItem<Rt>).collect();
-    Menu::with_items(h, &refs).map(Some)
 }
 
 pub enum Event {
@@ -208,6 +204,9 @@ pub enum Event {
     Presentation,
     Vacation,
     HideAll,
+    Settings,
+    Setup,
+    AdoptWindow,
     Quit,
 }
 
@@ -219,6 +218,9 @@ pub fn parse(id: &str) -> Option<Event> {
         ["vacation"] => Event::Vacation,
         ["hide-all"] => Event::HideAll,
         ["quit"] => Event::Quit,
+        ["settings"] => Event::Settings,
+        ["setup"] => Event::Setup,
+        ["adopt"] => Event::AdoptWindow,
         ["pet", pet, action] => {
             let pet: Uuid = pet.parse().ok()?;
             let action = match *action {
