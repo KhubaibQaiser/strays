@@ -1,5 +1,5 @@
 // Settings window (§8.4) including Privacy & Permissions (§8.5). Every change saves straight away.
-import { api, Settings, UiState } from "./api";
+import { api, Settings, Species, UiState } from "./api";
 import { PACE_LABEL, confirmButton, date, el, row } from "./dom";
 
 const SECTIONS: [string, string][] = [
@@ -7,11 +7,14 @@ const SECTIONS: [string, string][] = [
   ["moods", "Moods"],
   ["display", "Display"],
   ["nudges", "Nudges"],
+  ["sound", "Sound"],
   ["interaction", "Interaction"],
   ["syncing", "Syncing"],
   ["privacy", "Privacy & Permissions"],
   ["about", "About"],
 ];
+
+const SPECIES: [Species, string][] = [["cat", "Cats"], ["dog", "Dogs"], ["hamster", "Hamsters"], ["parrot", "Parrots"]];
 
 const DEFAULT_THRESHOLDS: Settings["thresholds"] = [2, 5, 10, 20];
 
@@ -113,6 +116,21 @@ export function renderSettings(root: HTMLElement, state: UiState, section: strin
       toggle("quietHours", "Quiet hours"),
       row("Quiet from", time("quietStart"), "to", time("quietEnd")),
       row("Pets waking together come back", num("wakeStagger", 0, 60), "minutes apart"),
+    ],
+    sound: () => [
+      el("h1", {}, "Sound"),
+      el("p", { class: "muted" }, "Pets make a small sound when they greet you, eat, celebrate, feel low or wake up. Never during quiet hours, Presentation mode or a full-screen app, and never for snoozed or paused pets."),
+      toggle("sound", "Play sounds"),
+      row("Volume", volumeSlider(s, save), el("button", { onclick: () => void api.testSound().catch((e) => notice(String(e), true)) }, "Test")),
+      el("h2", {}, "Species"),
+      ...SPECIES.map(([sp, label]) => {
+        const i = el("input", { type: "checkbox", checked: !s.mutedSpecies.includes(sp), id: `sound-${sp}` });
+        i.addEventListener("change", () => {
+          s.mutedSpecies = i.checked ? s.mutedSpecies.filter((m) => m !== sp) : [...s.mutedSpecies, sp];
+          void save();
+        });
+        return el("div", { class: "check" }, i, el("label", { for: `sound-${sp}` }, label));
+      }),
     ],
     interaction: () => [
       el("h1", {}, "Interaction"),
@@ -283,4 +301,13 @@ function privacy(state: UiState, s: Settings, save: () => Promise<unknown>, noti
   );
 
   return [el("h1", {}, "Privacy & Permissions"), github, folders, network, capture, notYet, data];
+}
+
+function volumeSlider(s: Settings, save: () => Promise<void>) {
+  const i = el("input", { type: "range", min: 0, max: 100, step: 5, value: s.volume, "aria-label": "Volume" });
+  i.addEventListener("change", () => {
+    s.volume = Number(i.value);
+    void save();
+  });
+  return i;
 }

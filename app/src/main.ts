@@ -20,7 +20,7 @@ log(`BOOT ${location.href}`);
 RuntimeLoader.setWasmUrl(riveWasmUrl);
 
 type Pet = { el: HTMLCanvasElement; rive: Rive; placed: Placed; timer?: number; playing: boolean; busy: boolean; leaving: boolean };
-type Cue = "eat" | "fallAsleep" | "wake" | "postcard" | { celebrate: { leave: boolean } } | { graduate: { accessory: number } };
+type Cue = "eat" | "fallAsleep" | "wake" | "postcard" | "hello" | { celebrate: { leave: boolean } } | { graduate: { accessory: number } };
 
 // The rig's `mood` and `action` view-model numbers (art/STYLE.md).
 const MOOD: Record<string, number> = { joyful: 1, content: 2, peckish: 3, hungry: 4, gloomy: 5 };
@@ -102,6 +102,8 @@ function cue(p: Pet, c: Cue) {
       return void play(p, [[ACT.sleep, ASLEEP_BEFORE_WAKE_S], [ACT.wake, CLIP_S[ACT.wake]]]);
     case "postcard":
       return void play(p, [[ACT.postcard, CLIP_S[ACT.postcard]]]);
+    case "hello":
+      return void play(p, [[ACT.enter, CLIP_S[ACT.enter]]]);
   }
 }
 

@@ -49,6 +49,22 @@ test("settings save each change and reject thresholds that don't increase", asyn
   await page.screenshot({ path: `${shots}/settings-display.png` });
 });
 
+test("sound settings: off by default, a master switch, volume, per-species and a test button", async ({ page }) => {
+  await mockApp(page);
+  await page.goto("/ui.html#settings/sound");
+  await expect(page.getByLabel("Play sounds")).not.toBeChecked();
+  await page.getByLabel("Play sounds").check();
+  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ sound: true });
+  await page.getByLabel("Cats").uncheck();
+  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ mutedSpecies: ["cat"] });
+  await page.getByLabel("Volume").fill("80");
+  await page.getByLabel("Volume").dispatchEvent("change");
+  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ volume: 80 });
+  await page.getByRole("button", { name: "Test" }).click();
+  expect(await calls(page, "test_sound")).toHaveLength(1);
+  await page.screenshot({ path: `${shots}/settings-sound.png` });
+});
+
 test("privacy page shows what GitHub access can and can't do, and guards delete", async ({ page }) => {
   await mockApp(page);
   await page.goto("/ui.html#settings/privacy");

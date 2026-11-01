@@ -226,6 +226,14 @@ pub fn set_flag(name: String, on: bool, shared: State<'_, Shared>) -> Res<()> {
     Ok(())
 }
 
+/// Settings → Sound → Test: plays a greeting at the chosen volume, even with sound off.
+#[tauri::command]
+pub fn test_sound(shared: State<'_, Shared>) -> Res<()> {
+    let volume = shared.app.lock().map_err(|_| "busy")?.settings.volume;
+    shared.audio.play(crate::audio::Sound::Greeting(strays_core::pet::Species::Cat), volume);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn sync_now(shared: State<'_, Shared>) {
     let _ = shared.tx.send(Cmd::SyncNow(None));

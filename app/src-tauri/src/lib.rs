@@ -4,6 +4,7 @@ mod macos;
 #[cfg(target_os = "macos")]
 use macos as platform;
 
+mod audio;
 mod commands;
 mod menu;
 mod overlay;
@@ -30,6 +31,7 @@ struct Shared {
     app: Arc<Mutex<App>>,
     tx: Sender<Cmd>,
     overlay: Overlay,
+    audio: audio::Player,
 }
 
 const TRAY: &str = "strays";
@@ -56,6 +58,10 @@ fn pet_click(id: Uuid, shift: bool, shared: State<'_, Shared>, h: AppHandle) {
         let _ = shared.tx.send(Cmd::SyncNow(Some(id)));
         return;
     }
+    if let Ok(app) = shared.app.lock()
+        && audio::allowed(&app.settings, None, app.flags.presentation, shared.overlay.is_full_screen(), state::local_minute()) {
+            shared.audio.play(audio::Sound::Tick, app.settings.volume);
+        }
     if let Err(e) = windows::open_card(&h, &id.to_string(), shared.overlay.pet_rect(id)) {
         eprintln!("could not open the info card: {e}");
     }
@@ -200,6 +206,7 @@ pub fn run() {
             commands::save_settings,
             commands::set_flag,
             commands::sync_now,
+            commands::test_sound,
             commands::token_check,
             commands::token_save,
             commands::token_disconnect,
@@ -235,14 +242,21 @@ pub fn run() {
             overlay.start_poller(h.clone());
             let app = Arc::new(Mutex::new(app));
             let (tx, rx) = mpsc::channel();
-            h.manage(Shared { app: app.clone(), tx: tx.clone(), overlay: overlay.clone() });
+            let player = audio::Player::start();
+            h.manage(Shared { app: app.clone(), tx: tx.clone(), overlay: overlay.clone(), audio: player.clone() });
 
             let ui = h.clone();
             std::thread::spawn(move || {
                 let fs = overlay.clone();
                 sync::run(app, tx, rx, move || fs.is_full_screen(), move |app, outcome, nudge, cues| {
                     // cues go first: a pet that's leaving must start its clip before the frame removes it
+                    let quiet_ok = |sp| audio::allowed(&app.settings, Some(sp), app.flags.presentation, overlay.is_full_screen(), state::local_minute());
+                    let species = |id| app.pets.iter().find(|p| p.id == id).map(|p| p.species);
                     for (id, cue) in cues {
+                        if let Some(sp) = species(id)
+                            && let Some(sound) = audio::for_cue(cue, sp).filter(|_| quiet_ok(sp)) {
+                                player.play(sound, app.settings.volume);
+                            }
                         let _ = ui.emit("cue", Cue { id, cue });
                     }
                     let s = &app.settings;
@@ -260,6 +274,10 @@ pub fn run() {
                             let _ = tray.set_menu(Some(m));
                         }
                     }
+                    if let Some(strays_core::nudge::Nudge::Pet { id, .. }) = &nudge
+                        && let Some(sp) = species(*id).filter(|&sp| quiet_ok(sp)) {
+                            player.play(audio::Sound::Sad(sp), app.settings.volume);
+                        }
                     if let Some(n) = nudge {
                         let (id, text) = match n {
                             strays_core::nudge::Nudge::Pet { id, text } | strays_core::nudge::Nudge::TakingABreak { id, text } => (id, text),

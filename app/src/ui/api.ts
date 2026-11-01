@@ -60,6 +60,9 @@ export type Settings = {
   wakeStagger: number;
   watchedFolders: string[];
   offline: boolean;
+  sound: boolean;
+  volume: number;
+  mutedSpecies: Species[];
 };
 
 export type UiState = {
@@ -106,6 +109,7 @@ export const api = {
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setFlag: (name: "presentation" | "hideAll" | "vacation", on: boolean) => invoke<void>("set_flag", { name, on }),
   syncNow: () => invoke<void>("sync_now"),
+  testSound: () => invoke<void>("test_sound"),
   tokenCheck: (token: string) => invoke<TokenCheck>("token_check", { token }),
   tokenSave: (token: string) => invoke<void>("token_save", { token }),
   tokenDisconnect: () => invoke<void>("token_disconnect"),
