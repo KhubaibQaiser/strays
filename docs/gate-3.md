@@ -80,7 +80,7 @@ Gate 3 lands one species per PR (user decision). Each one needs the user's sign-
 
 **Tests:** the overlay test draws a cat and a corgi together, and both rigs load. Playwright passes 14/14. The app build bundles both `.riv` files.
 
-## Hamster (Syrian)
+## Hamster (Syrian) — signed off by the user, 2026-11-01
 
 **Rig:** `art/hamster/make.py` writes `art/hamster/scene.rml`, using the shared `art/tools/pet.py`.
 
