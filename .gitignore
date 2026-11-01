@@ -3,7 +3,9 @@ target/
 dist/
 .DS_Store
 *.local
-art/**/build/
+art/**/build/*
+# the pet rigs ship in the app and CI has no Rive CLI to build them, so they are committed (rebuild with each make.py)
+!art/*/build/*.riv
 tools/overlay-harness/harness
 native-overlay/.build/
 test-results/

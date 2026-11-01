@@ -61,7 +61,7 @@ The Rust side owns all state and decisions. The web view only renders what it's 
 
 ```bash
 # Build the pet art (writes art/<species>/build/<species>.riv, which the app bundles)
-for s in cat dog hamster; do (python3 art/$s/make.py && cd art/$s && rive . --screenshot --advance=1); done
+for s in cat dog hamster parrot; do (python3 art/$s/make.py && cd art/$s && rive . --screenshot --advance=1); done
 
 # Install front-end dependencies
 cd app && npm install
