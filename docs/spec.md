@@ -478,7 +478,7 @@ One card per capability. Each card shows **status · what it can do · what it c
   - shade: L −0.12
   - highlight: L +0.10
   - outline: L −0.35, clamped
-  - if the coat's L < 0.3, the outline flips to a lighter tone
+  - on dark coats the outline goes lighter: whichever of L −0.35 / L +0.35 reaches 3:1 is used, pushed further if neither does (Gate 3; a fixed L < 0.3 threshold failed the contrast test for coats just above 0.3)
 - **Contrast test:** outline vs coat ≥ 3:1 for every curated colour and for 500 random colours.
 
 ### 10.5 Writing
