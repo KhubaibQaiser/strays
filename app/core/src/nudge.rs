@@ -67,7 +67,7 @@ pub fn pick(on_screen: &[Candidate], all_active: &[Mood], log: &mut NudgeLog, s:
     let break_due = log.last_break_prompt.is_none_or(|t| cx.now - t >= Duration::days(BREAK_PROMPT_EVERY_DAYS));
     let nudge = if everyone_hungry && break_due {
         log.last_break_prompt = Some(cx.now);
-        Nudge::TakingABreak { id: speaker.id, text: "Taking a break? You can pause everyone from the menu bar.".into() }
+        Nudge::TakingABreak { id: speaker.id, text: strings(s.nudge_style).take_a_break.clone() }
     } else {
         Nudge::Pet { id: speaker.id, text: line(speaker, s.nudge_style, cx.now) }
     };
@@ -77,21 +77,31 @@ pub fn pick(on_screen: &[Candidate], all_active: &[Mood], log: &mut NudgeLog, s:
     Some(nudge)
 }
 
-/// Never guilt-tripping (§10.5): an invitation, not a reproach.
+/// The bubble text for one nudge style (§10.5), from `strings/<style>.json`.
+#[derive(serde::Deserialize)]
+struct Strings {
+    hungry: Vec<String>,
+    gloomy: Vec<String>,
+    #[serde(rename = "break")]
+    take_a_break: String,
+}
+
+fn strings(style: NudgeStyle) -> &'static Strings {
+    static GENTLE: std::sync::OnceLock<Strings> = std::sync::OnceLock::new();
+    static PLAYFUL: std::sync::OnceLock<Strings> = std::sync::OnceLock::new();
+    let parse = |json: &str| serde_json::from_str(json).expect("strings file is valid (tested)");
+    match style {
+        NudgeStyle::Playful => PLAYFUL.get_or_init(|| parse(include_str!("../strings/playful.json"))),
+        _ => GENTLE.get_or_init(|| parse(include_str!("../strings/gentle.json"))),
+    }
+}
+
+/// Never guilt-tripping (§10.5): an invitation, not a reproach. Gloomy pets get their own lines.
 fn line(c: &Candidate, style: NudgeStyle, now: Time) -> String {
     let project = c.repo.map(|r| r.rsplit('/').next().unwrap_or(r)).unwrap_or("our project");
-    let gentle = [
-        format!("Shall we look at {project} today?"),
-        format!("A tiny commit on {project} would make my day."),
-        format!("I've been thinking about {project}."),
-    ];
-    let playful = [
-        format!("*nudges {project} towards you*"),
-        format!("{project} misses you. So do I. Mostly {project}."),
-        format!("Five minutes on {project}? I'll keep watch."),
-    ];
-    let lines = if style == NudgeStyle::Playful { &playful } else { &gentle };
-    lines[(now.timestamp() as usize / 60) % lines.len()].clone()
+    let s = strings(style);
+    let lines = if c.mood >= Mood::Gloomy { &s.gloomy } else { &s.hungry };
+    lines[(now.timestamp() as usize / 60) % lines.len()].replace("{repo}", project)
 }
 
 #[cfg(test)]
@@ -157,5 +167,25 @@ mod tests {
         assert!(matches!(pick(&pets, &moods, &mut log, &s, &cx("2026-11-01T10:00:00Z", 600)), Some(Nudge::TakingABreak { .. })));
         assert!(matches!(pick(&pets, &moods, &mut log, &s, &cx("2026-11-01T12:00:00Z", 720)), Some(Nudge::Pet { .. })));
         assert!(matches!(pick(&pets, &moods, &mut log, &s, &cx("2026-11-08T12:00:00Z", 720)), Some(Nudge::TakingABreak { .. })));
+    }
+
+    #[test]
+    fn strings_files_are_complete_and_kind() {
+        for style in [NudgeStyle::Gentle, NudgeStyle::Playful] {
+            let s = strings(style);
+            assert!(!s.hungry.is_empty() && !s.gloomy.is_empty() && !s.take_a_break.is_empty());
+            for l in s.hungry.iter().chain(&s.gloomy).chain([&s.take_a_break]) {
+                let lower = l.to_lowercase();
+                for word in ["lazy", "abandon", "neglect", "guilt", "shame", "disappoint", "forgot", "forgiv", "fault", "should have"] {
+                    assert!(!lower.contains(word), "{l:?} sounds like blame");
+                }
+                assert!(!l.replace("{repo}", "").contains('{'), "{l:?} has an unknown placeholder");
+            }
+        }
+        let c = Candidate { id: Uuid::nil(), repo: Some("me/strays"), mood: Mood::Gloomy };
+        let now = t("2026-10-10T10:00:00Z");
+        let said = line(&c, NudgeStyle::Gentle, now);
+        assert!(strings(NudgeStyle::Gentle).gloomy.iter().any(|g| g.replace("{repo}", "strays") == said));
+        assert!(!said.contains("{repo}"));
     }
 }

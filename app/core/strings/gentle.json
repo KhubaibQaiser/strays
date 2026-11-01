@@ -1,0 +1,17 @@
+{
+  "_about": "Nudge bubbles in the Gentle style (spec §10.5). Warm, never shaming. {repo} is the project's name.",
+  "hungry": [
+    "I miss {repo}. Even a tiny commit would make my day.",
+    "Shall we look at {repo} today?",
+    "I've been thinking about {repo}.",
+    "No rush. {repo} will be glad to see you whenever you're ready.",
+    "A small step on {repo} still counts."
+  ],
+  "gloomy": [
+    "Still here, still waiting by the window.",
+    "I kept {repo} warm for you.",
+    "Whenever you're ready, {repo} and I will be here.",
+    "Even one line on {repo} would cheer me up."
+  ],
+  "break": "Taking a break? You can pause everyone from the menu bar."
+}

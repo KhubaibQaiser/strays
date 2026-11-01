@@ -126,12 +126,12 @@ pub fn status_line(app: &App) -> String {
     }
 }
 
-/// The badge next to the menu-bar icon: hidden needy pets, or a warning when syncing fails.
+/// The badge next to the menu-bar paw icon: hidden needy pets, or a warning when syncing fails.
 pub fn tray_title(app: &App) -> String {
     match (app.sync_error.is_some(), app.hidden_needy) {
-        (true, _) => "🐾⚠".into(),
-        (false, 0) => "🐾".into(),
-        (false, n) => format!("🐾{n}"),
+        (true, _) => "⚠".into(),
+        (false, 0) => String::new(),
+        (false, n) => n.to_string(),
     }
 }
 

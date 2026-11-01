@@ -1,0 +1,17 @@
+{
+  "_about": "Nudge bubbles in the Playful style (spec §10.5). Warm, never shaming. {repo} is the project's name.",
+  "hungry": [
+    "*nudges {repo} towards you*",
+    "{repo} misses you. So do I. Mostly {repo}.",
+    "Five minutes on {repo}? I'll keep watch.",
+    "I hid a snack in {repo}. You'll have to open it to find out.",
+    "Psst. {repo}. You. Me. A commit?"
+  ],
+  "gloomy": [
+    "I started a book club. So far it's just me and {repo}.",
+    "*sighs dramatically in the direction of {repo}*",
+    "One commit and I do a happy dance. Promise.",
+    "{repo} and I are practising our happy faces for when you're back."
+  ],
+  "break": "Everyone's dozing. Want to pause us all from the menu bar?"
+}

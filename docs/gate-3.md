@@ -162,3 +162,12 @@ A new `accessory` view-model number (0–5) drives its own state-machine layer, 
 **Tests:**
 - Rust: a core test checks the accessory is set and stays the same for the same pet; an app test checks the cue's accessory number and JSON shape.
 - Playwright: a graduate puts on its accessory, celebrates and leaves (`art/review/graduate-in-app.png`). 15/15 pass.
+
+## Icons and writing
+
+**Icons (§10.2 UI):** drawn in RML like the pets (`art/icons/make.py`) and rendered by `art/icons/render.sh`. `rive --screenshot` always writes an opaque background, so the script turns brightness into alpha with ffmpeg.
+- **App icon:** a ginger cat face on a teal rounded square, on the macOS 824/1024 grid. `npx tauri icon` turned it into `app/src-tauri/icons/*`; the generated Android and iOS sets were removed. Preview: `art/review/app-icon.png`.
+- **Menu-bar icon:** a paw template image (`icons/tray.rgba`, 44 px raw RGBA, so no extra Tauri feature is needed), so macOS tints it for light and dark menu bars. The badge text next to it is now just the number of hidden needy pets, or ⚠ when syncing fails. Preview: `art/review/menu-bar-icon.png`.
+- **Not verified:** what it looks like in the real menu bar. A screen capture from the terminal came back black, because the terminal has no Screen Recording permission.
+
+**Writing (§10.5):** the nudge lines moved from code into one strings file per style, `app/core/strings/gentle.json` and `playful.json`. Each has Hungry lines, separate Gloomy lines (new), and the "taking a break" prompt. A core test checks every line for blaming words and unknown placeholders.
