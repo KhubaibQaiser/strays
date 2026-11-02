@@ -189,6 +189,8 @@ impl App {
         let known_folders: KnownFolders = store.load(FOLDERS_FILE).unwrap_or_default();
         let nudge_log = store.load(NUDGE_FILE).unwrap_or_default();
         let bookmarks = store.load(BOOKMARKS_FILE).unwrap_or_default();
+        // vacation lives in the pets it paused, so it survives a restart without a file of its own
+        let vacation = pets.iter().any(|p| p.state.kind == StateKind::Paused && p.state.reason == "vacation");
         Ok(Self {
             store,
             dir,
@@ -196,7 +198,7 @@ impl App {
             settings,
             pets,
             sync,
-            flags: Flags::default(),
+            flags: Flags { vacation, ..Flags::default() },
             repos: Vec::new(),
             new_projects: Vec::new(),
             visible: Vec::new(),
@@ -735,6 +737,21 @@ mod tests {
         again.open_bookmarks(|_| Some((path.clone(), Some(vec![1, 2, 3]))));
         assert_eq!(App::load(root.join("data")).unwrap().bookmarks[&path], vec![1, 2, 3], "the fresh bookmark is saved");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn vacation_is_still_on_after_a_restart() {
+        let dir = std::env::temp_dir().join(format!("strays-vac-{}", Uuid::new_v4()));
+        let now = strays_core::chrono::Utc::now();
+        let mut app = App::load(dir.clone()).unwrap();
+        let mut p = Pet::new(now, "Miso", Species::Cat, Project { github: None, local: None }, Activity { last: now, source: ActivitySource::LocalCommit }, Pace::Normal);
+        p.adopt(now).unwrap();
+        app.pets.push(p);
+        app.set_vacation(true, now);
+        assert!(App::load(dir.clone()).unwrap().flags.vacation);
+        app.set_vacation(false, now);
+        assert!(!App::load(dir.clone()).unwrap().flags.vacation);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
