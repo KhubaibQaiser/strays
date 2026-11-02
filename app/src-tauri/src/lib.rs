@@ -155,8 +155,10 @@ fn handle_menu(h: &AppHandle, id: &str) {
             app.flags.hide_all = !app.flags.hide_all;
             Ok(None)
         }
-        menu::Event::NewFolder(i, adopt) => {
-            let Some(path) = app.new_folders.get(i).cloned() else { return };
+        menu::Event::NewFolder(path, adopt) => {
+            if !app.new_folders.contains(&path) {
+                return;
+            }
             if adopt {
                 drop(app);
                 let _ = windows::adopt(h, &format!("folder={}", windows::encode(&path)));
