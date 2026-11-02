@@ -15,9 +15,16 @@ for key in $(plutil -convert xml1 -o - "$PLIST" | sed -n 's#.*<key>\(NS[A-Za-z]*
   [ "$key" = NSFocusStatusUsageDescription ] || bad "asks for a permission: $key"
 done
 
+ENT=$(mktemp)
+trap 'rm -f "$ENT"' EXIT
+codesign -d --entitlements - --xml "$APP" > "$ENT" 2>/dev/null && [ -s "$ENT" ] || bad "can't read the entitlements"
 ALLOWED="com.apple.security.app-sandbox com.apple.security.network.client com.apple.security.files.user-selected.read-only com.apple.security.files.bookmarks.app-scope com.apple.developer.focus-status"
-for key in $(codesign -d --entitlements - --xml "$APP" 2>/dev/null | plutil -convert xml1 -o - - 2>/dev/null | sed -n 's#.*<key>\([^<]*\)</key>.*#\1#p'); do
+for key in $(plutil -convert xml1 -o - "$ENT" 2>/dev/null | sed -n 's#.*<key>\([^<]*\)</key>.*#\1#p'); do
   case " $ALLOWED " in *" $key "*) ;; *) bad "entitlement not on the allowlist: $key" ;; esac
+done
+# an app without these would still pass the allowlist, so require them
+for key in com.apple.security.app-sandbox com.apple.security.network.client; do
+  [ "$(/usr/libexec/PlistBuddy -c "Print :$key" "$ENT" 2>/dev/null)" = true ] || bad "required entitlement missing: $key"
 done
 
 [ $fail = 0 ] && echo "permissions audit: ok"
