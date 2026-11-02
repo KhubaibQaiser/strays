@@ -6,7 +6,7 @@
 # Pets are throwaway (STRAYS_SPAWN, temp data folder). Syncs go to the fake GitHub server.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
-APP="$HERE/../../app/src-tauri/target/debug/app"
+APP="$HERE/../../app/src-tauri/target/debug/Strays"
 H="$HERE/harness"
 OUT=$(mktemp -d)
 trap 'pkill -f "$APP" 2>/dev/null || true; kill $TPID $FPID 2>/dev/null || true; "$H" opt up' EXIT
