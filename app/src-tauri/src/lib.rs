@@ -304,10 +304,14 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_, event| {
+        .run(|h, event| match event {
             // a menu-bar app keeps running with no windows open
-            if let tauri::RunEvent::ExitRequested { api, code: None, .. } = event {
-                api.prevent_exit();
+            tauri::RunEvent::ExitRequested { api, code: None, .. } => api.prevent_exit(),
+            // opening the app again (Finder, Spotlight) shows Settings, the way in when the notch hides the icon
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => {
+                let _ = windows::settings(h, "pets");
             }
+            _ => {}
         });
 }

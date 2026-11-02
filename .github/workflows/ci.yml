@@ -75,7 +75,9 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
         working-directory: app/src-tauri
       # CI=true skips the Finder AppleScript that lays out the .dmg window (it times out without a GUI session)
+      # Apple Silicon only (docs/gate-4.md says why); the runner is arm64, so this builds arm64
       - run: npx tauri build --bundles app,dmg
         env:
           CI: true
       - run: ../tools/permissions-audit.sh src-tauri/target/release/bundle/macos/Strays.app
+      - run: lipo src-tauri/target/release/bundle/macos/Strays.app/Contents/MacOS/Strays -verify_arch arm64
