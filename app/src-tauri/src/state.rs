@@ -582,6 +582,12 @@ impl App {
     /// The adoption flow (§8.2): a GitHub repo or a local folder (matched to its GitHub repo when the
     /// remote is unambiguous). Adopted if a slot is free, otherwise it waits in the shelter.
     pub fn adopt(&mut self, req: AdoptRequest, now: Time) -> Result<String, String> {
+        // colours come from the webview and are saved in the pet file: Rive property names and #RRGGBB only
+        let hex = |v: &str| v.len() == 7 && v.starts_with('#') && v[1..].bytes().all(|b| b.is_ascii_hexdigit());
+        let name_ok = |k: &str| (1..=32).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_alphanumeric());
+        if req.colors.len() > 16 || !req.colors.iter().all(|(k, v)| name_ok(k) && hex(v)) {
+            return Err("Those colours aren't valid".into());
+        }
         let mut project = Project::default();
         let mut last: Option<Time> = None;
         let mut source = ActivitySource::Github;
@@ -832,6 +838,18 @@ mod tests {
         assert!(app.tracked(7), "still undoable");
         app.pets[0].state.since = now - Duration::days(31);
         assert!(!app.tracked(7));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn adoption_refuses_colours_that_arent_hex() {
+        let dir = std::env::temp_dir().join(format!("strays-col-{}", Uuid::new_v4()));
+        let mut app = App::load(dir.clone()).unwrap();
+        let req = |k: &str, v: &str| AdoptRequest { repo_id: None, folder: None, species: Species::Cat, colors: [(k.to_string(), v.to_string())].into(), name: String::new(), goal: String::new(), pace: Pace::Normal };
+        let now = strays_core::chrono::Utc::now();
+        assert_eq!(app.adopt(req("coatBase", "red;x"), now), Err("Those colours aren't valid".into()));
+        assert_eq!(app.adopt(req("coat base", "#EFE1CC"), now), Err("Those colours aren't valid".into()));
+        assert_eq!(app.adopt(req("coatBase", "#EFE1CC"), now), Err("Pick a repo or a folder".into()), "valid colours pass");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
