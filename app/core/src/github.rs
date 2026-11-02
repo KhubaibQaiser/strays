@@ -61,6 +61,22 @@ pub struct Repo {
     pub pushed_at: Option<Time>,
 }
 
+/// The newest published release (§16 update check). Serialized into `sync-state.json`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Release {
+    pub tag_name: String,
+    pub html_url: String,
+}
+
+/// Where releases are published; update checks ask only this repo.
+pub const RELEASES_REPO: &str = "KhubaibQaiser/strays";
+
+/// True when `tag` (e.g. `v1.2.0`) is a later version than `current` (e.g. `1.1.3`). Unparseable tags never are.
+pub fn is_newer(tag: &str, current: &str) -> bool {
+    let parse = |v: &str| -> Option<Vec<u64>> { v.trim_start_matches('v').split('.').map(|p| p.parse().ok()).collect() };
+    matches!((parse(tag), parse(current)), (Some(t), Some(c)) if t > c)
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Validation {
     pub login: String,
@@ -125,6 +141,13 @@ impl Github {
         })
     }
 
+    /// A client without a token, for public endpoints only (the update check): the token never leaves for them.
+    pub fn anonymous(base: &str) -> Result<Self, GhError> {
+        let mut gh = Self::new("github_pat_", base)?;
+        gh.token.clear();
+        Ok(gh)
+    }
+
     /// Labels this client's requests in the network log.
     pub fn with_reason(mut self, reason: &str) -> Self {
         self.reason = reason.into();
@@ -152,12 +175,11 @@ impl Github {
         if !url.starts_with(&format!("{}/", self.base)) {
             return Err(GhError::HostNotAllowed(url));
         }
-        let mut req = self
-            .http
-            .get(&url)
-            .bearer_auth(&self.token)
-            .header("Accept", "application/vnd.github+json")
+        let mut req = self.http.get(&url).header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28");
+        if !self.token.is_empty() {
+            req = req.bearer_auth(&self.token);
+        }
         if let Some(tag) = etag {
             req = req.header(IF_NONE_MATCH, tag);
         }
@@ -225,6 +247,15 @@ impl Github {
     /// One repo by its stable id, so renames and transfers still resolve. `None` = gone (404).
     pub fn repo_by_id(&self, id: u64) -> Result<Option<Repo>, GhError> {
         let res = self.get(&format!("/repositories/{id}"), None)?;
+        if res.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        res.json().map(Some).map_err(|e| GhError::Parse(e.to_string()))
+    }
+
+    /// The newest published release of `repo`. `None` = nothing published yet (404).
+    pub fn latest_release(&self, repo: &str) -> Result<Option<Release>, GhError> {
+        let res = self.get(&format!("/repos/{repo}/releases/latest"), None)?;
         if res.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -304,6 +335,9 @@ pub struct SyncState {
     pub rate_remaining: Option<u32>,
     pub rate_reset: Option<Time>,
     pub known_repo_ids: BTreeSet<u64>,
+    /// Last update check (weekly while the opt-in setting is on) and a newer release it found.
+    pub update_checked: Option<Time>,
+    pub update: Option<Release>,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -544,6 +578,34 @@ mod tests {
         let wrong = Github::new("github_pat_wrong", &fake.base).unwrap();
         fake.scenario("ok");
         assert_eq!(wrong.validate(), Err(GhError::Unauthorized));
+    }
+
+    #[test]
+    fn versions_compare_numerically() {
+        assert!(is_newer("v0.2.0", "0.1.9"));
+        assert!(is_newer("v0.10.0", "0.9.0"));
+        assert!(is_newer("v1.0.0", "0.99.99"));
+        assert!(!is_newer("v0.1.0", "0.1.0"));
+        assert!(!is_newer("v0.1.0", "0.2.0"));
+        assert!(!is_newer("v1.0.0-beta", "0.1.0"));
+        assert!(!is_newer("nightly", "0.1.0"));
+    }
+
+    #[test]
+    fn fake_update_check_is_anonymous_and_logged() {
+        let fake = Fake::start();
+        let gh = Github::anonymous(&fake.base).unwrap().with_reason("update check");
+        // the fake answers 400 if a token is sent
+        let r = gh.latest_release(RELEASES_REPO).unwrap().unwrap();
+        assert_eq!(r.tag_name, "v9.9.9");
+        assert!(r.html_url.starts_with("https://github.com/KhubaibQaiser/strays/releases/"));
+        let log = gh.take_log();
+        assert_eq!(log.len(), 1);
+        assert_eq!((log[0].path.as_str(), log[0].status, log[0].reason.as_str()), ("/repos/KhubaibQaiser/strays/releases/latest", 200, "update check"));
+        fake.scenario("no_release");
+        assert_eq!(gh.latest_release(RELEASES_REPO).unwrap(), None);
+        // the anonymous client is still limited to the allowed host
+        assert!(Github::anonymous("https://evil.example").is_err());
     }
 
     #[test]

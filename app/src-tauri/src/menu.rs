@@ -208,6 +208,9 @@ pub fn build<Rt: Runtime>(h: &AppHandle<Rt>, app: &App) -> R<Menu<Rt>> {
     if app.account.is_none() {
         items.push(item(h, "setup", "Connect GitHub…")?);
     }
+    if let Some(r) = &app.sync.update {
+        items.push(item(h, "update", &format!("⬆ Strays {} is out…", r.tag_name))?);
+    }
     items.push(item(h, "settings", "Settings…")?);
     items.push(sep(h)?);
     items.push(item(h, "quit", "Quit Strays")?);
@@ -226,6 +229,7 @@ pub enum Event {
     HideAll,
     NewFolder(usize, bool),
     Settings,
+    Update,
     Setup,
     AdoptWindow,
     Quit,
@@ -240,6 +244,7 @@ pub fn parse(id: &str) -> Option<Event> {
         ["hide-all"] => Event::HideAll,
         ["quit"] => Event::Quit,
         ["settings"] => Event::Settings,
+        ["update"] => Event::Update,
         ["newfolder", i, choice] => Event::NewFolder(i.parse().ok()?, *choice == "adopt"),
         ["setup"] => Event::Setup,
         ["adopt"] => Event::AdoptWindow,

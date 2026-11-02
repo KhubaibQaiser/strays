@@ -159,6 +159,11 @@ fn handle_menu(h: &AppHandle, id: &str) {
             let _ = windows::settings(h, "pets");
             return;
         }
+        menu::Event::Update => {
+            drop(app);
+            let _ = windows::settings(h, "about");
+            return;
+        }
         menu::Event::Setup => {
             drop(app);
             let _ = windows::setup(h);

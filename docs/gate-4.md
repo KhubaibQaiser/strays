@@ -34,6 +34,7 @@ Spec §14.1: a notarised `.dmg` installs and runs on a clean macOS 14 VM and on 
 - **Apple Silicon only (decided 2026-11-02):** Strays ships for Apple Silicon (M1 and later) and does not run on Intel Macs. On an Intel Mac, macOS refuses to open it and says it isn't supported on this Mac. CI checks the binary is arm64 with `lipo`. See [Intel Macs](#intel-macs).
 - **Launch at login, checked 2026-11-02:** the sandboxed debug bundle, copied to `/Applications`, turned it on from Settings: Settings showed On and macOS listed Strays in Login Items as enabled and allowed. Turning it off showed Off. The copy was then removed.
 - **Release workflow:** `.github/workflows/release.yml` runs on a `v*` tag. It checks the tag matches the app version, runs the tests, builds the `.dmg`, runs the permissions audit and attaches the `.dmg` to a **draft** release. With the Apple secrets (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_API_ISSUER`, `APPLE_API_KEY`, `APPLE_API_KEY_P8`) it also signs, notarises and checks the result with `codesign`, `stapler` and `spctl`. Not run yet. Unverified: that `APPLE_SIGNING_IDENTITY` overrides the ad-hoc `signingIdentity: "-"` in `tauri.conf.json`.
+- **Update check (notify only, decided 2026-11-02):** Settings → About → "Tell me when a new version is out", off by default. While on, the background loop asks `api.github.com/repos/KhubaibQaiser/strays/releases/latest` once a week, with no token and no redirects, and logs it as "update check". A newer tag shows "Strays vX is out" with a Download button in About and a "⬆ Strays vX is out…" menu item. Download opens only this repo's release pages. A failed check retries after a day. Turning the setting off forgets the result. Nothing is installed: the sandboxed app can't replace its own bundle, which is why Tauri's updater was not used. Checked against the fake GitHub: found v9.9.9 without sending the token, logged it, and made no request with the setting off.
 - **Not checked:** saving a token in the Keychain from the sandboxed app (needs a real token).
 
 ## Not done yet
@@ -42,7 +43,6 @@ Spec §14.1: a notarised `.dmg` installs and runs on a clean macOS 14 VM and on 
 |---|---|
 | Focus status | a Developer ID signed app (the entitlement needs a provisioning profile) |
 | Signing and notarisation | Apple Developer Program enrolment, a Developer ID certificate and a notarisation key |
-| Opt-in updater | signing (the update manifests are signed); then `tauri-plugin-updater` |
 
 **Skipped (decided 2026-11-02):** the clean macOS 14 VM test from spec §16. Release checks cover this Mac's macOS only, so a problem that shows only on a fresh macOS 14 install would not be caught before release.
 

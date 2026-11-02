@@ -151,9 +151,16 @@ export function renderSettings(root: HTMLElement, state: UiState, section: strin
     about: () => [
       el("h1", {}, "About Strays"),
       el("p", {}, `Version ${state.version} (pre-release)`),
+      toggle("checkUpdates", "Tell me when a new version is out"),
+      el("p", { class: "muted small" }, "Off by default. When on, Strays asks GitHub once a week for the latest release, without your token. Shown in the activity log. Updates are never installed for you."),
+      state.update
+        ? el("div", { class: "buttons" }, el("span", {}, `Strays ${state.update.tag_name} is out.`), el("button", { class: "primary", onclick: () => void api.openLink("release").catch((e) => notice(String(e), true)) }, "Download…"))
+        : s.checkUpdates && state.updateChecked
+          ? el("p", { class: "muted small" }, `Up to date · checked ${new Date(state.updateChecked).toLocaleDateString()}`)
+          : null,
       el("p", { class: "muted" }, "A pet for every unfinished project. Local-first: nothing leaves this Mac except read-only requests to GitHub, and only once you connect it."),
       el("p", { class: "muted small" }, `Data folder: ${state.dataDir}`),
-      el("p", { class: "muted small" }, "Not yet licensed. All rights reserved."),
+      el("p", { class: "muted small" }, "MIT licence. Sounds are CC0 recordings from Freesound."),
     ],
   };
 

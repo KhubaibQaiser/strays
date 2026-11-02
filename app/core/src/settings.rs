@@ -99,6 +99,8 @@ pub struct Settings {
     /// 0–100.
     pub volume: u32,
     pub muted_species: Vec<Species>,
+    /// Opt-in update check (§16): off by default; weekly while on, anonymous, to api.github.com only.
+    pub check_updates: bool,
 }
 
 impl Default for Settings {
@@ -136,6 +138,7 @@ impl Default for Settings {
             sound: false,
             volume: 50,
             muted_species: Vec::new(),
+            check_updates: false,
         }
     }
 }
