@@ -42,12 +42,15 @@ test("a graduate puts on its accessory, celebrates and leaves", async ({ page })
   await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.some((c) => c.cmd === "overlay_ready"));
   await emit(page, "overlay", { pets: [pet("grad", "content", 0)], liveliness: "calm", reduceMotion: false });
   await expect(page.locator("canvas")).toHaveCount(1);
-  await page.waitForTimeout(1000);
+  // cue while the load-time pose blend is still running: the farewell must not be cut short by it
+  await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string; args: { msg?: string } }[] }).__calls.some((c) => c.args?.msg?.startsWith("LOADED")));
   await emit(page, "cue", { id: "grad", cue: { graduate: { accessory: 1 } } });
   await emit(page, "overlay", { pets: [], liveliness: "calm", reduceMotion: false });
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${shots}/overlay-graduate.png` });
-  await expect(page.locator('canvas[data-id="grad"]')).toHaveCount(1);
+  // celebrate + exit last ~8 s; the old bug faded it out ~1.7 s after the cue
+  await page.waitForTimeout(2500);
+  await expect(page.locator('canvas[data-id="grad"]')).toHaveCount(1, { timeout: 100 });
   await expect(page.locator('canvas[data-id="grad"]')).toHaveCount(0, { timeout: 14000 });
 });
 

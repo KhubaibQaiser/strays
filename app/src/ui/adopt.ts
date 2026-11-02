@@ -69,7 +69,7 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
   let rive: Rive | null = null;
   function loadPreview() {
     rive?.cleanup();
-    rive = new Rive({ src: artFor(species), canvas, autoplay: true, stateMachines: "Idle", autoBind: true, onLoad: () => paint() });
+    rive = new Rive({ src: artFor(species), canvas, autoplay: true, stateMachine: "Idle", autoBind: true, onLoad: () => paint() });
   }
   const paint = () => {
     const vmi = rive?.viewModelInstance;
