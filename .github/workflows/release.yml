@@ -1,0 +1,69 @@
+# Release (spec §16): pushing a tag like v0.1.0 builds the Apple Silicon .dmg and attaches it to a draft
+# GitHub release, which is published by hand. With the Apple secrets set, Tauri signs with the Developer ID
+# and notarises; without them the build is ad-hoc signed and the release says it is a test build.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tag matches the app version
+        run: |
+          v=$(node -p 'require("./src-tauri/tauri.conf.json").version')
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME but tauri.conf.json says $v"; exit 1; }
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: cargo test --locked
+        working-directory: app/src-tauri
+      # Tauri reads the notarisation key from a file
+      - name: Notarisation key
+        if: env.APPLE_API_KEY != ''
+        env:
+          P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          printf '%s\n' "$P8" > "$RUNNER_TEMP/notary.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+      # CI=true skips the Finder AppleScript that lays out the .dmg window (it times out without a GUI session)
+      - run: npx tauri build --bundles app,dmg
+        env:
+          CI: true
+      - run: ../tools/permissions-audit.sh src-tauri/target/release/bundle/macos/Strays.app
+      - run: lipo src-tauri/target/release/bundle/macos/Strays.app/Contents/MacOS/Strays -verify_arch arm64
+      - name: Check the signature
+        if: env.APPLE_CERTIFICATE != ''
+        run: |
+          codesign --verify --deep --strict src-tauri/target/release/bundle/macos/Strays.app
+          xcrun stapler validate src-tauri/target/release/bundle/dmg/*.dmg
+          spctl --assess --type open --context context:primary-signature -v src-tauri/target/release/bundle/dmg/*.dmg
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ]; then note="Signed and notarised. Apple Silicon, macOS 14 or later."
+          else note="Test build: ad-hoc signed, not notarised, so macOS blocks it on first open. Apple Silicon, macOS 14 or later."; fi
+          gh release create "$GITHUB_REF_NAME" src-tauri/target/release/bundle/dmg/*.dmg \
+            --draft --title "Strays $GITHUB_REF_NAME" --notes "$note See docs/user-guide.md."
