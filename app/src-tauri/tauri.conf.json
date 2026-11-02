@@ -34,7 +34,9 @@
     "category": "public.app-category.productivity",
     "shortDescription": "Pets for your unfinished projects",
     "macOS": {
-      "minimumSystemVersion": "14.0"
+      "minimumSystemVersion": "14.0",
+      "entitlements": "Entitlements.plist",
+      "signingIdentity": "-"
     }
   }
 }

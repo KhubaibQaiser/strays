@@ -80,6 +80,7 @@ export const STATE = {
   hideAll: false,
   dataDir: "/Users/me/Library/Application Support/com.khubaibqaiser.strays",
   version: "0.1.0",
+  loginItem: "off",
   firstRun: false,
 };
 

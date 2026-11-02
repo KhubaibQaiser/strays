@@ -22,6 +22,7 @@ const NETLOG_FILE: &str = "netlog.jsonl";
 const NETLOG_KEEP: usize = 1000;
 const FOLDERS_FILE: &str = "folders.json";
 const NUDGE_FILE: &str = "nudges.json";
+const BOOKMARKS_FILE: &str = "bookmarks.json";
 
 /// Git folders already seen inside watched folders, so only ones that appear later count as new (§5.9).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -81,6 +82,8 @@ pub struct App {
     pub new_folders: Vec<String>,
     known_folders: KnownFolders,
     nudge_log: strays_core::nudge::NudgeLog,
+    /// Security-scoped bookmarks for folders the user picked, by path (§9): the sandbox's way back in after a restart.
+    bookmarks: std::collections::BTreeMap<String, Vec<u8>>,
     pub load_problems: usize,
     /// Clips waiting to be played; `Eat` waits until its pet is on screen.
     pub cues: Vec<(Uuid, Cue)>,
@@ -185,6 +188,7 @@ impl App {
         let account: Option<Account> = store.load(ACCOUNT_FILE).unwrap_or_default();
         let known_folders: KnownFolders = store.load(FOLDERS_FILE).unwrap_or_default();
         let nudge_log = store.load(NUDGE_FILE).unwrap_or_default();
+        let bookmarks = store.load(BOOKMARKS_FILE).unwrap_or_default();
         Ok(Self {
             store,
             dir,
@@ -206,7 +210,42 @@ impl App {
             new_folders: Vec::new(),
             known_folders,
             nudge_log,
+            bookmarks,
         })
+    }
+
+    pub fn remember_bookmark(&mut self, path: String, data: Vec<u8>) {
+        self.bookmarks.insert(path, data);
+        self.save_bookmarks();
+    }
+
+    /// Opens every saved bookmark (`open` resolves one and starts access), replacing stale ones.
+    /// ponytail: a folder that moved keeps working only under its old path; pets and watched folders aren't renamed.
+    pub fn open_bookmarks(&mut self, open: impl Fn(&[u8]) -> Option<(String, Option<Vec<u8>>)>) {
+        let mut changed = false;
+        for (path, data) in self.bookmarks.iter_mut() {
+            match open(data) {
+                Some((now_at, fresh)) => {
+                    if &now_at != path {
+                        eprintln!("folder {path} moved to {now_at}");
+                    }
+                    if let Some(fresh) = fresh {
+                        *data = fresh;
+                        changed = true;
+                    }
+                }
+                None => eprintln!("no access to {path} any more; add it again"),
+            }
+        }
+        if changed {
+            self.save_bookmarks();
+        }
+    }
+
+    fn save_bookmarks(&self) {
+        if let Err(e) = self.store.save(BOOKMARKS_FILE, &self.bookmarks) {
+            eprintln!("could not save folder bookmarks: {e:?}");
+        }
     }
 
     pub fn save_pet(&self, id: Uuid) {
@@ -631,8 +670,11 @@ pub fn snooze_until(s: Snooze, now: Time) -> Option<Time> {
 
 /// `/Users/me/Code/x` → `~/Code/x` for display.
 pub fn tilde(path: &str) -> String {
-    match std::env::var("HOME") {
-        Ok(home) if path.starts_with(&home) => format!("~{}", &path[home.len()..]),
+    let Ok(home) = std::env::var("HOME") else { return path.to_string() };
+    // in the App Sandbox HOME is the app's container (~/Library/Containers/<id>/Data)
+    let home = home.split("/Library/Containers/").next().unwrap_or(&home);
+    match path.strip_prefix(home) {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("~{rest}"),
         _ => path.to_string(),
     }
 }
@@ -664,6 +706,34 @@ mod tests {
         again.settings.watched_folders = app.settings.watched_folders.clone();
         again.scan_folders();
         assert!(again.new_folders.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn tilde_uses_the_real_home_inside_the_sandbox() {
+        let home = std::env::var("HOME").unwrap();
+        let real = home.split("/Library/Containers/").next().unwrap().to_string();
+        assert_eq!(tilde(&format!("{real}/Code/x")), "~/Code/x");
+        assert_eq!(tilde(&format!("{real}x/Code")), format!("{real}x/Code"), "a sibling folder isn't home");
+        assert_eq!(tilde("/opt/x"), "/opt/x");
+    }
+
+    #[test]
+    fn folder_bookmarks_survive_a_restart_and_stale_ones_are_replaced() {
+        let root = std::env::temp_dir().join(format!("strays-bm-{}", Uuid::new_v4()));
+        let code = root.join("code");
+        std::fs::create_dir_all(&code).unwrap();
+        let path = code.display().to_string();
+        let mut app = App::load(root.join("data")).unwrap();
+        let data = crate::platform::bookmark(&path).expect("macOS makes a bookmark");
+        app.remember_bookmark(path.clone(), data);
+
+        let mut again = App::load(root.join("data")).unwrap();
+        let (opened, _) = crate::platform::open_bookmark(&again.bookmarks[&path]).expect("it resolves");
+        assert_eq!(std::fs::canonicalize(opened).unwrap(), std::fs::canonicalize(&code).unwrap());
+
+        again.open_bookmarks(|_| Some((path.clone(), Some(vec![1, 2, 3]))));
+        assert_eq!(App::load(root.join("data")).unwrap().bookmarks[&path], vec![1, 2, 3], "the fresh bookmark is saved");
         std::fs::remove_dir_all(root).unwrap();
     }
 

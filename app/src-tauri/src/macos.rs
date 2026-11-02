@@ -1,11 +1,13 @@
-//! macOS calls the overlay needs. None of them needs a permission prompt.
+//! macOS calls: the overlay's, folder bookmarks and the login item. None of them needs a permission prompt.
 use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSWindow, NSWindowCollectionBehavior, NSWindowSharingType, NSWorkspace};
 use objc2_core_foundation::{CFArray, CFDictionary, CFNumber, CFRetained, CFString, CFType, CGRect};
 use objc2_core_graphics::{
     CGRectMakeWithDictionaryRepresentation, CGWindowListCopyWindowInfo, CGWindowListOption, kCGNullWindowID, kCGWindowBounds,
     kCGWindowLayer, kCGWindowOwnerPID,
 };
-use objc2_foundation::NSProcessInfo;
+use objc2::runtime::Bool;
+use objc2_foundation::{NSData, NSProcessInfo, NSString, NSURL, NSURLBookmarkCreationOptions, NSURLBookmarkResolutionOptions};
+use objc2_service_management::{SMAppService, SMAppServiceStatus};
 
 /// Pass-through overlay rules (spec §7.1): every Space, still in Mission Control, kept out of ⌘-Tab,
 /// over full-screen apps, and excluded from screen capture and sharing.
@@ -71,4 +73,58 @@ pub fn frontmost_window() -> Option<CGRect> {
         }
     }
     None
+}
+
+/// A read-only security-scoped bookmark for a folder the user picked (§9), so the sandboxed app can open it again after a restart.
+pub fn bookmark(path: &str) -> Option<Vec<u8>> {
+    let url = NSURL::fileURLWithPath(&NSString::from_str(path));
+    let options = NSURLBookmarkCreationOptions::WithSecurityScope | NSURLBookmarkCreationOptions::SecurityScopeAllowOnlyReadAccess;
+    url.bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(options, None, None)
+        .inspect_err(|e| eprintln!("could not bookmark {path}: {e:?}"))
+        .ok()
+        .map(|d| d.to_vec())
+}
+
+/// Resolves a bookmark and starts access for the rest of the run. Returns the folder's current path and,
+/// when macOS says the bookmark is stale (the folder moved), a fresh one.
+pub fn open_bookmark(data: &[u8]) -> Option<(String, Option<Vec<u8>>)> {
+    let mut stale = Bool::NO;
+    // SAFETY: `stale` is a valid out-pointer for the duration of the call.
+    let url = unsafe {
+        NSURL::URLByResolvingBookmarkData_options_relativeToURL_bookmarkDataIsStale_error(&NSData::with_bytes(data), NSURLBookmarkResolutionOptions::WithSecurityScope, None, &mut stale)
+    }
+    .inspect_err(|e| eprintln!("bookmark unusable: {e:?}"))
+    .ok()?;
+    // SAFETY: plain Foundation call; access is kept until the app quits, as the pets watch these folders all the time.
+    unsafe { url.startAccessingSecurityScopedResource() };
+    let path = url.path()?.to_string();
+    let fresh = if stale.as_bool() { bookmark(&path) } else { None };
+    Some((path, fresh))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LoginItem {
+    On,
+    Off,
+    /// Registered, but the user turned it off in System Settings → Login Items.
+    NeedsApproval,
+}
+
+/// Launch at login (§9) through `SMAppService`; it shows up in System Settings → Login Items.
+pub fn login_item() -> LoginItem {
+    // SAFETY: plain ServiceManagement calls.
+    match unsafe { SMAppService::mainAppService().status() } {
+        SMAppServiceStatus::Enabled => LoginItem::On,
+        SMAppServiceStatus::RequiresApproval => LoginItem::NeedsApproval,
+        _ => LoginItem::Off,
+    }
+}
+
+pub fn set_login_item(on: bool) -> Result<LoginItem, String> {
+    // SAFETY: plain ServiceManagement calls.
+    let service = unsafe { SMAppService::mainAppService() };
+    let result = if on { unsafe { service.registerAndReturnError() } } else { unsafe { service.unregisterAndReturnError() } };
+    result.map_err(|e| e.localizedDescription().to_string())?;
+    Ok(login_item())
 }

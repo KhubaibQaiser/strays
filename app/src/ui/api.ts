@@ -84,6 +84,7 @@ export type UiState = {
   hideAll: boolean;
   dataDir: string;
   version: string;
+  loginItem: "on" | "off" | "needsApproval";
   firstRun: boolean;
 };
 
@@ -114,6 +115,7 @@ export const api = {
   tokenSave: (token: string) => invoke<void>("token_save", { token }),
   tokenDisconnect: () => invoke<void>("token_disconnect"),
   pickFolder: () => invoke<string | null>("pick_folder"),
+  setLoginItem: (on: boolean) => invoke<UiState["loginItem"]>("set_login_item", { on }),
   openGithub: (id: string) => invoke<void>("open_github", { id }),
   reveal: (id: string) => invoke<void>("reveal", { id }),
   openLink: (which: "token-page") => invoke<void>("open_link", { which }),

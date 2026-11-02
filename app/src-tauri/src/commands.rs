@@ -75,6 +75,7 @@ pub struct UiState {
     hide_all: bool,
     data_dir: String,
     version: &'static str,
+    login_item: crate::platform::LoginItem,
     pub first_run: bool,
 }
 
@@ -140,6 +141,7 @@ pub fn snapshot(app: &App) -> UiState {
         hide_all: app.flags.hide_all,
         data_dir: app.dir.display().to_string(),
         version: env!("CARGO_PKG_VERSION"),
+        login_item: crate::platform::login_item(),
         first_run: app.pets.is_empty() && app.account.is_none() && app.settings.watched_folders.is_empty(),
     }
 }
@@ -234,6 +236,14 @@ pub fn test_sound(shared: State<'_, Shared>) -> Res<()> {
     Ok(())
 }
 
+/// Settings → Privacy → Launch at login. macOS keeps the state (System Settings → Login Items), so nothing is saved here.
+#[tauri::command]
+pub fn set_login_item(on: bool, h: AppHandle) -> Res<crate::platform::LoginItem> {
+    let state = crate::platform::set_login_item(on)?;
+    emit_changed(&h);
+    Ok(state)
+}
+
 #[tauri::command]
 pub fn sync_now(shared: State<'_, Shared>) {
     let _ = shared.tx.send(Cmd::SyncNow(None));
@@ -319,7 +329,13 @@ pub fn token_disconnect(shared: State<'_, Shared>) {
 
 #[tauri::command]
 pub async fn pick_folder(h: AppHandle) -> Option<String> {
-    h.dialog().file().set_title("Choose a project folder").blocking_pick_folder().and_then(|p| p.into_path().ok()).map(|p| p.display().to_string())
+    let path = h.dialog().file().set_title("Choose a project folder").blocking_pick_folder().and_then(|p| p.into_path().ok()).map(|p| p.display().to_string())?;
+    // picking is the only moment the sandbox grants access; the bookmark keeps it across restarts
+    #[cfg(target_os = "macos")]
+    if let Some(data) = crate::platform::bookmark(&path) {
+        h.state::<Shared>().app.lock().unwrap().remember_bookmark(path.clone(), data);
+    }
+    Some(path)
 }
 
 #[tauri::command]

@@ -207,6 +207,7 @@ pub fn run() {
             commands::set_flag,
             commands::sync_now,
             commands::test_sound,
+            commands::set_login_item,
             commands::token_check,
             commands::token_save,
             commands::token_disconnect,
@@ -230,6 +231,8 @@ pub fn run() {
 
             #[allow(unused_mut)]
             let mut app = App::load(data_dir(&h)).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            #[cfg(target_os = "macos")]
+            app.open_bookmarks(platform::open_bookmark);
             #[cfg(debug_assertions)]
             spawn_test_pets(&mut app);
             let first_run = commands::snapshot(&app).first_run;

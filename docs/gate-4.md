@@ -20,12 +20,20 @@ Spec §14.1: a notarised `.dmg` installs and runs on a clean macOS 14 VM and on 
 
 `tools/permissions-audit.sh path/to/Strays.app` fails if the minimum OS isn't 14.0, `LSUIElement` is missing, any permission-prompt key other than Focus status is present, or any entitlement is outside the allowlist (sandbox, network client, user-selected read-only files, app-scope bookmarks, Focus status). Checked against a copy with a camera prompt, an audio-input entitlement and 10.13 planted: all three caught.
 
+## App Sandbox, folder bookmarks and launch at login
+
+- **Sandbox (§9):** `app/src-tauri/Entitlements.plist` turns on the App Sandbox with only network client, user-selected read-only files and app-scoped bookmarks. Bundles are signed ad hoc (`signingIdentity: "-"`) with the hardened runtime until a Developer ID exists. The permissions audit passes on the release bundle.
+- **Folder bookmarks:** picking a folder (welcome, Settings or adoption) saves a read-only security-scoped bookmark in `bookmarks.json`, keyed by path. At launch every bookmark is opened and access kept for the run; a stale one is replaced. A watched folder's bookmark also covers the repos inside it. A folder that moved keeps working under its old path only (logged).
+- **Data moves into the container:** sandboxed, the data folder is `~/Library/Containers/com.khubaibqaiser.strays/Data/Library/Application Support/…`. Earlier unsandboxed test data isn't migrated, and folders added before this change need adding again.
+- **Paths still show as `~/…`:** in the sandbox `HOME` is the container, so `tilde` cuts it back to the real home.
+- **Launch at login:** Settings → Privacy & Permissions has a toggle using `SMAppService.mainApp`. macOS keeps the state (System Settings → General → Login Items), so nothing is stored, and "turned off in System Settings" is shown when the user disabled it there. If macOS refuses, the box unticks and the error shows.
+- **Checked:** a sandboxed debug bundle starts, draws pets and writes its data in the container, with no sandbox denials in the system log. Tests: a real bookmark resolves after a restart and stale ones are replaced and saved; `tilde` inside the container; Playwright for the toggle and a refusal. 12 app, 44 core, 17 Playwright; clippy clean.
+- **Not checked:** picking a folder through the real dialog in the sandboxed app, then restarting (needs someone at the dialog); launch at login from an installed `/Applications/Strays.app`; saving a token in the Keychain from the sandboxed app.
+
 ## Not done yet
 
 | Item | Blocked on |
 |---|---|
-| App Sandbox + security-scoped bookmarks for local folders | adding `NSURL`/`NSData` to `objc2-foundation` (a dependency change). The sandbox can't be switched on before bookmarks, or watched folders stop working after a restart. |
-| Launch at login (`SMAppService`) | adding `objc2-service-management` |
 | Focus status | a Developer ID signed app (the entitlement needs a provisioning profile) |
 | Signing and notarisation | Apple Developer Program enrolment, a Developer ID certificate and a notarisation key |
 | Opt-in updater | signing (the update manifests are signed); then `tauri-plugin-updater` |
