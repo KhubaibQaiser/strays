@@ -30,6 +30,7 @@ Spec §14.1: a notarised `.dmg` installs and runs on a clean macOS 14 VM and on 
 - **Checked:** a sandboxed debug bundle starts, draws pets and writes its data in the container, with no sandbox denials in the system log. Tests: a real bookmark resolves after a restart and stale ones are replaced and saved; `tilde` inside the container; Playwright for the toggle and a refusal. 12 app, 44 core, 17 Playwright; clippy clean.
 - **Folder dialog, checked 2026-11-02:** in the sandboxed debug bundle, Settings → Add folder… opened the real dialog; the picked folder's two repos were found and the bookmark saved. After a restart a repo added while the app was closed was found. With `bookmarks.json` removed, a newly added repo was not found; with it restored, it was. No sandbox denials logged.
 - **Reopen:** opening Strays again (Finder, Spotlight) shows Settings. On a full menu bar the notch hides the status icon, and this was the only way in.
+- **User guide:** `docs/user-guide.md` covers install, first run, the GitHub token, folders, everyday use, the hidden-icon case, privacy and removal. Its UI labels were checked against the code.
 - **Not checked:** launch at login from an installed `/Applications/Strays.app`; saving a token in the Keychain from the sandboxed app.
 
 ## Not done yet

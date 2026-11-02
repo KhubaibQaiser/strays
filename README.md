@@ -28,6 +28,8 @@
 
 The modifier key can be changed in Settings. Every action is also in the 🐾 menu-bar menu.
 
+See the [user guide](docs/user-guide.md) for setup, connecting GitHub, folders and removing the app.
+
 ## Privacy and permissions
 
 Strays is local-first and asks for as little as possible.
