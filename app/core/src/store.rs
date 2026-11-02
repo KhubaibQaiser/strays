@@ -24,6 +24,16 @@ pub enum StoreError {
     TooNew { path: PathBuf, version: u32 },
 }
 
+impl std::fmt::Display for StoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StoreError::Io(e) => write!(f, "Couldn't read or write the data folder: {e}"),
+            StoreError::Corrupt { path, .. } => write!(f, "{} can't be read; it was left untouched", path.display()),
+            StoreError::TooNew { path, .. } => write!(f, "{} was written by a newer Strays; update Strays to use it", path.display()),
+        }
+    }
+}
+
 impl From<io::Error> for StoreError {
     fn from(e: io::Error) -> Self {
         Self::Io(e)

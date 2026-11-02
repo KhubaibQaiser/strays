@@ -34,6 +34,22 @@ pub enum GhError {
     Parse(String),
 }
 
+impl std::fmt::Display for GhError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GhError::WrongTokenType => f.write_str("Only fine-grained tokens are accepted"),
+            GhError::HostNotAllowed(h) => write!(f, "Strays only talks to api.github.com, not {h}"),
+            GhError::Unauthorized => f.write_str("Token expired or revoked"),
+            GhError::RateLimited { .. } => f.write_str("GitHub rate limit; waiting"),
+            GhError::Forbidden => f.write_str("GitHub refused access (403)"),
+            GhError::Http(code) if *code >= 500 => write!(f, "GitHub is having trouble ({code})"),
+            GhError::Http(code) => write!(f, "GitHub answered with an error ({code})"),
+            GhError::Network(_) => f.write_str("Offline"),
+            GhError::Parse(_) => f.write_str("GitHub sent something Strays didn't understand"),
+        }
+    }
+}
+
 /// Response metadata worth keeping from every reply.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Meta {

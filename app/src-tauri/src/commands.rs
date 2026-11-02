@@ -265,11 +265,11 @@ pub struct TokenCheck {
 fn client(token: &str) -> Res<Github> {
     #[cfg(debug_assertions)]
     if let Ok(base) = std::env::var("STRAYS_FAKE_GITHUB") {
-        return Github::new(token, &base).map(|g| g.with_reason("validation")).map_err(|e| format!("{e:?}"));
+        return Github::new(token, &base).map(|g| g.with_reason("validation")).map_err(|e| e.to_string());
     }
     Github::new(token.trim(), github::API).map(|g| g.with_reason("validation")).map_err(|e| match e {
         github::GhError::WrongTokenType => "That isn't a fine-grained token. It should start with github_pat_".into(),
-        other => format!("{other:?}"),
+        other => other.to_string(),
     })
 }
 
@@ -278,7 +278,7 @@ fn describe(e: github::GhError) -> String {
         github::GhError::Unauthorized => "GitHub didn't accept this token. Check it was copied in full and hasn't expired.".into(),
         github::GhError::Network(_) => "Couldn't reach GitHub. Check your connection.".into(),
         github::GhError::RateLimited { .. } => "GitHub's rate limit was hit. Try again in a few minutes.".into(),
-        other => format!("GitHub said no: {other:?}"),
+        other => other.to_string(),
     }
 }
 

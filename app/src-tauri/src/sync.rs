@@ -47,16 +47,6 @@ fn update_client() -> Result<Github, GhError> {
 
 const UPDATE_EVERY: i64 = 7; // days
 
-fn error_text(e: &GhError) -> String {
-    match e {
-        GhError::Unauthorized => "Token expired or revoked".into(),
-        GhError::RateLimited { .. } => "GitHub rate limit; waiting".into(),
-        GhError::Network(_) => "Offline".into(),
-        GhError::WrongTokenType => "Only fine-grained tokens are accepted".into(),
-        other => format!("{other:?}"),
-    }
-}
-
 /// `on_change` runs after every loop pass that changed something, and after every sync.
 const RESCAN_EVERY: i64 = 6; // hours; FSEvents covers the time in between (§5.9)
 
@@ -192,7 +182,7 @@ pub fn run(
                             app.new_projects.extend(fresh);
                         }
                         Err(e) => {
-                            app.sync_error = Some(error_text(e));
+                            app.sync_error = Some(e.to_string());
                             if let GhError::RateLimited { retry_after, reset_at } = e {
                                 not_before = retry_after.map(|d| now + d).max(*reset_at);
                             }
