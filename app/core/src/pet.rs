@@ -29,7 +29,7 @@ pub struct GithubRef {
 pub struct LocalRef {
     pub bookmark_id: Uuid,
     pub display_path: String,
-    /// Absolute path. ponytail: becomes a security-scoped bookmark when the App Sandbox is on (Gate 4).
+    /// Absolute path. In the sandbox, access to it comes from the folder bookmark the app keeps by path.
     #[serde(default)]
     pub path: String,
 }
