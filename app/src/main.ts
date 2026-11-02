@@ -19,7 +19,7 @@ log(`BOOT ${location.href}`);
 // Bundled locally: the runtime must never fetch its WASM from a CDN.
 RuntimeLoader.setWasmUrl(riveWasmUrl);
 
-type Pet = { el: HTMLCanvasElement; rive: Rive; placed: Placed; timer?: number; playing: boolean; busy: boolean; leaving: boolean };
+type Pet = { el: HTMLCanvasElement; rive: Rive; placed: Placed; timer?: number; playing: boolean; busy: boolean; leaving: boolean; run: number };
 type Cue = "eat" | "fallAsleep" | "wake" | "postcard" | "hello" | { celebrate: { leave: boolean } } | { graduate: { accessory: number } };
 
 // The rig's `mood` and `action` view-model numbers (art/STYLE.md).
@@ -56,17 +56,21 @@ function setNumber(p: Pet, name: string, value: number) {
 
 const wait = (s: number) => new Promise((r) => setTimeout(r, s * 1000));
 
-/** Plays clips in order (`[action, seconds]`), keeping the renderer running until they finish. */
+/** Plays clips in order (`[action, seconds]`), keeping the renderer running until they finish.
+ *  A newer call takes over: the older one stops without touching the pet. */
 async function play(p: Pet, steps: [number, number][]) {
   window.clearTimeout(p.timer);
+  const run = ++p.run;
   p.busy = true;
   setPlaying(p, true);
   for (const [action, secs] of steps) {
     setNumber(p, "action", action);
     await wait(secs);
+    if (run !== p.run) return;
   }
   setNumber(p, "action", 0);
   await wait(0.9); // let the pose blend (≤ 400 ms in the rig) finish before rendering stops
+  if (run !== p.run || !pets.has(p.placed.id)) return;
   p.busy = false;
   if (p.leaving) fadeOut(p);
   else schedule(p);
@@ -141,7 +145,7 @@ function add(placed: Placed) {
     src: artFor(placed.species),
     canvas: el,
     autoplay: true,
-    stateMachines: "Idle",
+    stateMachine: "Idle",
     autoBind: true,
     onLoadError: (e) => log(`LOADERROR pet=${placed.id} ${JSON.stringify(e.data)}`),
     onLoad: () => {
@@ -161,7 +165,7 @@ function add(placed: Placed) {
       void play(p, []);
     },
   });
-  const p: Pet = { el, rive, placed, playing: true, busy: false, leaving: false };
+  const p: Pet = { el, rive, placed, playing: true, busy: false, leaving: false, run: 0 };
   pets.set(placed.id, p);
   position(p);
   el.addEventListener("mousedown", (e) => {
