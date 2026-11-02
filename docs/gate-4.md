@@ -28,7 +28,9 @@ Spec §14.1: a notarised `.dmg` installs and runs on a clean macOS 14 VM and on 
 - **Paths still show as `~/…`:** in the sandbox `HOME` is the container, so `tilde` cuts it back to the real home.
 - **Launch at login:** Settings → Privacy & Permissions has a toggle using `SMAppService.mainApp`. macOS keeps the state (System Settings → General → Login Items), so nothing is stored, and "turned off in System Settings" is shown when the user disabled it there. If macOS refuses, the box unticks and the error shows.
 - **Checked:** a sandboxed debug bundle starts, draws pets and writes its data in the container, with no sandbox denials in the system log. Tests: a real bookmark resolves after a restart and stale ones are replaced and saved; `tilde` inside the container; Playwright for the toggle and a refusal. 12 app, 44 core, 17 Playwright; clippy clean.
-- **Not checked:** picking a folder through the real dialog in the sandboxed app, then restarting (needs someone at the dialog); launch at login from an installed `/Applications/Strays.app`; saving a token in the Keychain from the sandboxed app.
+- **Folder dialog, checked 2026-11-02:** in the sandboxed debug bundle, Settings → Add folder… opened the real dialog; the picked folder's two repos were found and the bookmark saved. After a restart a repo added while the app was closed was found. With `bookmarks.json` removed, a newly added repo was not found; with it restored, it was. No sandbox denials logged.
+- **Reopen:** opening Strays again (Finder, Spotlight) shows Settings. On a full menu bar the notch hides the status icon, and this was the only way in.
+- **Not checked:** launch at login from an installed `/Applications/Strays.app`; saving a token in the Keychain from the sandboxed app.
 
 ## Not done yet
 
