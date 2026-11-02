@@ -282,6 +282,14 @@ impl App {
     /// Ends due snoozes, holidays and scheduled resumes. Returns whether anything changed.
     pub fn tick(&mut self, now: Time) -> bool {
         let mut changed = Vec::new();
+        // pets whose snoozes end together come back `wake_stagger` minutes apart (§5.6)
+        let gap = Duration::minutes(self.settings.wake_stagger.into());
+        let mut due: Vec<&mut Pet> = self.pets.iter_mut().filter(|p| p.state.kind == StateKind::Snoozed && p.state.until.is_some_and(|u| u <= now)).collect();
+        due.sort_by_key(|p| (p.state.until, p.created_at));
+        for (i, p) in due.into_iter().enumerate().skip(1).filter(|_| gap > Duration::zero()) {
+            p.state.until = Some(now + gap * i as i32);
+            changed.push(p.id);
+        }
         for p in &mut self.pets {
             let was = p.state.kind;
             if p.tick(now) {
@@ -323,7 +331,7 @@ impl App {
             self.rotation_started = Some(now);
         }
         let moods: HashMap<Uuid, Mood> = self.pets.iter().map(|p| (p.id, self.mood(p, now))).collect();
-        let sel = display::choose(&self.pets, &moods, &self.last_shown, self.settings.max_visible as usize);
+        let sel = display::choose(&self.pets, &moods, &self.last_shown, self.settings.min_visible as usize, self.settings.max_visible as usize);
         self.hidden_needy = sel.hidden_needy;
         self.visible = if self.flags.hide_all { Vec::new() } else { sel.visible };
     }
@@ -751,6 +759,27 @@ mod tests {
         assert!(App::load(dir.clone()).unwrap().flags.vacation);
         app.set_vacation(false, now);
         assert!(!App::load(dir.clone()).unwrap().flags.vacation);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn pets_waking_together_come_back_minutes_apart() {
+        let dir = std::env::temp_dir().join(format!("strays-wake-{}", Uuid::new_v4()));
+        let now = strays_core::chrono::Utc::now();
+        let mut app = App::load(dir.clone()).unwrap();
+        for _ in 0..3 {
+            let mut p = Pet::new(now, "Miso", Species::Cat, Project { github: None, local: None }, Activity { last: now, source: ActivitySource::LocalCommit }, Pace::Normal);
+            p.adopt(now).unwrap();
+            p.snooze(now, Some(now + Duration::hours(1))).unwrap();
+            app.pets.push(p);
+        }
+        let at = now + Duration::hours(1);
+        assert!(app.tick(at));
+        let kinds: Vec<_> = app.pets.iter().map(|p| (p.state.kind, p.state.until)).collect();
+        assert_eq!(kinds, vec![(StateKind::Active, None), (StateKind::Snoozed, Some(at + Duration::minutes(3))), (StateKind::Snoozed, Some(at + Duration::minutes(6)))]);
+        assert!(app.tick(at + Duration::minutes(3)));
+        assert_eq!(app.pets[1].state.kind, StateKind::Active);
+        assert_eq!(app.pets[2].state.kind, StateKind::Snoozed);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
