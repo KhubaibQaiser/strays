@@ -2,6 +2,7 @@
 name = "strays-core"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [features]
 # Debug-only tools (spec §14.3): allows a local fake GitHub server. Never on in release builds.

@@ -1,6 +1,4 @@
 # Tests (spec §14.2, §15.3). Actions are pinned to commit SHAs (§9 hardening).
-# The repo is private, where macOS runner minutes cost more, so the macOS job runs on main and on demand;
-# pull requests get the Linux jobs (core logic and the window UI).
 name: CI
 
 on:
@@ -49,7 +47,6 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
 
   app:
-    if: github.event_name != 'pull_request'
     runs-on: macos-latest
     defaults:
       run:
