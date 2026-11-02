@@ -24,6 +24,7 @@ jobs:
         with:
           toolchain: stable
           components: clippy
+          targets: x86_64-apple-darwin
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: app/core
@@ -60,6 +61,7 @@ jobs:
         with:
           toolchain: stable
           components: clippy
+          targets: x86_64-apple-darwin
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: app/src-tauri
@@ -75,7 +77,9 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
         working-directory: app/src-tauri
       # CI=true skips the Finder AppleScript that lays out the .dmg window (it times out without a GUI session)
-      - run: npx tauri build --bundles app,dmg
+      # one universal app for Intel and Apple Silicon
+      - run: npx tauri build --target universal-apple-darwin --bundles app,dmg
         env:
           CI: true
-      - run: ../tools/permissions-audit.sh src-tauri/target/release/bundle/macos/Strays.app
+      - run: ../tools/permissions-audit.sh src-tauri/target/universal-apple-darwin/release/bundle/macos/Strays.app
+      - run: lipo src-tauri/target/universal-apple-darwin/release/bundle/macos/Strays.app/Contents/MacOS/Strays -verify_arch x86_64 arm64

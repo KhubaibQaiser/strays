@@ -31,6 +31,7 @@ Spec §14.1: a notarised `.dmg` installs and runs on a clean macOS 14 VM and on 
 - **Folder dialog, checked 2026-11-02:** in the sandboxed debug bundle, Settings → Add folder… opened the real dialog; the picked folder's two repos were found and the bookmark saved. After a restart a repo added while the app was closed was found. With `bookmarks.json` removed, a newly added repo was not found; with it restored, it was. No sandbox denials logged.
 - **Reopen:** opening Strays again (Finder, Spotlight) shows Settings. On a full menu bar the notch hides the status icon, and this was the only way in.
 - **User guide:** `docs/user-guide.md` covers install, first run, the GitHub token, folders, everyday use, the hidden-icon case, privacy and removal. Its UI labels were checked against the code.
+- **Universal binary:** `npx tauri build --target universal-apple-darwin` (needs `rustup target add x86_64-apple-darwin`) makes one app for Intel and Apple Silicon: 20.7 MiB app, 9.6 MiB DMG. It passes the permissions audit, and the Intel slice starts under Rosetta. CI's app job builds it on main and checks both slices with `lipo`. Not run on a real Intel Mac.
 - **Not checked:** launch at login from an installed `/Applications/Strays.app`; saving a token in the Keychain from the sandboxed app.
 
 ## Not done yet
@@ -40,5 +41,4 @@ Spec §14.1: a notarised `.dmg` installs and runs on a clean macOS 14 VM and on 
 | Focus status | a Developer ID signed app (the entitlement needs a provisioning profile) |
 | Signing and notarisation | Apple Developer Program enrolment, a Developer ID certificate and a notarisation key |
 | Opt-in updater | signing (the update manifests are signed); then `tauri-plugin-updater` |
-| Universal binary (Intel) | installing the `x86_64-apple-darwin` Rust target |
 | Clean macOS 14 VM test | UTM and a macOS 14 restore image (spec §16) |
