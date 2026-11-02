@@ -2,7 +2,7 @@
 
 Strays gives each unfinished project a small animated pet on the edge of your screen. This guide covers installing it, connecting your projects, day-to-day use, privacy and removing it. The [README](../README.md) explains how moods work.
 
-Needs macOS 14 Sonoma or later.
+Needs a Mac with **Apple Silicon** (M1 or later) and macOS 14 Sonoma or later. **Intel Macs are not supported**: Apple is ending macOS for Intel, and there is no Intel Mac to test on. See [Intel Macs](gate-4.md#intel-macs) for details and what adding support would take.
 
 ## Install
 

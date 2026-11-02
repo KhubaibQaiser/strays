@@ -31,7 +31,7 @@ Spec §14.1: a notarised `.dmg` installs and runs on a clean macOS 14 VM and on 
 - **Folder dialog, checked 2026-11-02:** in the sandboxed debug bundle, Settings → Add folder… opened the real dialog; the picked folder's two repos were found and the bookmark saved. After a restart a repo added while the app was closed was found. With `bookmarks.json` removed, a newly added repo was not found; with it restored, it was. No sandbox denials logged.
 - **Reopen:** opening Strays again (Finder, Spotlight) shows Settings. On a full menu bar the notch hides the status icon, and this was the only way in.
 - **User guide:** `docs/user-guide.md` covers install, first run, the GitHub token, folders, everyday use, the hidden-icon case, privacy and removal. Its UI labels were checked against the code.
-- **Universal binary:** `npx tauri build --target universal-apple-darwin` (needs `rustup target add x86_64-apple-darwin`) makes one app for Intel and Apple Silicon: 20.7 MiB app, 9.6 MiB DMG. It passes the permissions audit, and the Intel slice starts under Rosetta. CI's app job builds it on main and checks both slices with `lipo`. Not run on a real Intel Mac.
+- **Apple Silicon only (decided 2026-11-02):** Strays ships for Apple Silicon (M1 and later) and does not run on Intel Macs. On an Intel Mac, macOS refuses to open it and says it isn't supported on this Mac. CI checks the binary is arm64 with `lipo`. See [Intel Macs](#intel-macs).
 - **Not checked:** launch at login from an installed `/Applications/Strays.app`; saving a token in the Keychain from the sandboxed app.
 
 ## Not done yet
@@ -42,3 +42,27 @@ Spec §14.1: a notarised `.dmg` installs and runs on a clean macOS 14 VM and on 
 | Signing and notarisation | Apple Developer Program enrolment, a Developer ID certificate and a notarisation key |
 | Opt-in updater | signing (the update manifests are signed); then `tauri-plugin-updater` |
 | Clean macOS 14 VM test | UTM and a macOS 14 restore image (spec §16) |
+
+## Intel Macs
+
+**Not supported.** Strays is built for Apple Silicon only.
+
+**Why:**
+- **Apple is phasing Intel out.** At WWDC 2025 Apple said macOS 26 Tahoe is the last macOS for Intel Macs. The Intel audience is shrinking and will stop getting new macOS releases.
+- **It can't be tested here.** There is no Intel Mac to test on, and an Apple Silicon Mac can't run Intel macOS in a VM at a usable speed. Shipping an Intel build that was never run would be guessing.
+- **Smaller download.** A universal build carries both versions and roughly doubles the size.
+
+**Can it be added later?** Yes. The code has nothing Apple Silicon-specific, and a universal build was made and checked on 2026-11-02: it built, passed the permissions audit, and its Intel half started under Rosetta. To add it back:
+1. `rustup target add x86_64-apple-darwin`.
+2. Build with `npx tauri build --target universal-apple-darwin` (in CI: add `targets: x86_64-apple-darwin` to the Rust toolchain step, point the audit at `target/universal-apple-darwin/release/bundle/…`, and check `lipo -verify_arch x86_64 arm64`).
+
+**What it costs:**
+
+| | Apple Silicon only | Universal (measured 2026-11-02, v0.1.0) |
+|---|---|---|
+| App | 9.9 MiB | 20.7 MiB |
+| DMG download | 4.9 MiB | 9.6 MiB |
+| Release build time | one compile | two compiles, then merged (roughly double; not timed) |
+| Testing | this Mac | also needs a real Intel Mac, borrowed or bought |
+| Signing and notarisation | covered by the Developer Program | same, no extra fee |
+
