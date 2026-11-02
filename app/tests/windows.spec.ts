@@ -164,3 +164,21 @@ test("welcome walks three steps and saves the comfort settings", async ({ page }
   expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ watchedFolders: ["/Users/me/Code"] });
   expect((await calls(page, "open_window")).at(-1)?.args).toEqual({ kind: "adopt" });
 });
+
+test("a refresh keeps what's being typed and the scroll position", async ({ page }) => {
+  await mockApp(page);
+  await page.setViewportSize({ width: 600, height: 300 });
+  await page.goto("/ui.html#settings/privacy");
+  const box = page.getByLabel("Type DELETE to confirm");
+  await box.fill("DEL");
+  await page.locator("main").evaluate((m) => (m.scrollTop = 120));
+  await page.evaluate(() => (window as unknown as { __emit: (e: string, p: unknown) => void }).__emit("state-changed", null));
+  await expect.poll(() => calls(page, "ui_state").then((c) => c.length)).toBe(2);
+  await expect(box).toHaveValue("DEL");
+  await expect(box).toBeFocused();
+  // out of the field, a refresh redraws but stays where the user scrolled
+  await page.locator("main").click({ position: { x: 5, y: 5 } });
+  await page.evaluate(() => (window as unknown as { __emit: (e: string, p: unknown) => void }).__emit("state-changed", null));
+  await expect.poll(() => calls(page, "ui_state").then((c) => c.length)).toBe(3);
+  expect(await page.locator("main").evaluate((m) => m.scrollTop)).toBeGreaterThan(100);
+});

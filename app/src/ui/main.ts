@@ -42,11 +42,19 @@ function go(next: string) {
   render();
 }
 
+const SCROLLERS = "main, .infocard";
+// a text field the user is in; fields save on change, so skipping redraws there loses nothing
+const typing = () => root.contains(document.activeElement) && !!document.activeElement?.matches("textarea, input:not([type=checkbox], [type=radio], [type=range], [type=button])");
+
 async function refresh() {
   state = await api.state();
   // forms keep what the user is typing; only views that just display state redraw on changes
   const live = route.startsWith("card") || route.startsWith("settings");
-  if (live || !root.firstChild) render();
+  if (!root.firstChild) return render();
+  if (!live || typing()) return;
+  const tops = [...root.querySelectorAll(SCROLLERS)].map((e) => e.scrollTop);
+  render();
+  root.querySelectorAll(SCROLLERS).forEach((e, i) => (e.scrollTop = tops[i] ?? 0));
 }
 
 if (route.startsWith("card")) cardChrome();
