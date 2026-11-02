@@ -388,7 +388,8 @@ pub fn apply(result: Result<Fetched, GhError>, meta: &Meta, st: &mut SyncState, 
         Ok(f) => f,
         Err(e) => {
             st.failures += 1;
-            st.disconnected = e == GhError::Unauthorized;
+            // only a 401 disconnects and only a success reconnects; a network blip says nothing about the token
+            st.disconnected |= e == GhError::Unauthorized;
             return Err(e);
         }
     };
@@ -682,5 +683,14 @@ mod tests {
         assert_eq!(gh.list_repos(None, etag.as_deref()).unwrap(), Listing::NotModified);
         assert_eq!(gh.repo_by_id(repos[0].id).unwrap().map(|r| r.id), Some(repos[0].id));
         println!("listed={} first_pushed={:?} etag_304=ok", repos.len(), repos[0].pushed_at);
+    }
+
+    #[test]
+    fn a_network_error_after_a_401_stays_disconnected() {
+        let mut st = SyncState { disconnected: true, ..Default::default() };
+        let now = t("2026-10-30T13:00:00Z");
+        let r = apply(Err(GhError::Network("offline".into())), &Meta::default(), &mut st, &mut [], &Settings::default(), now);
+        assert!(r.is_err());
+        assert!(st.disconnected);
     }
 }
