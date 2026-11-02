@@ -188,7 +188,16 @@ impl App {
         let account: Option<Account> = store.load(ACCOUNT_FILE).unwrap_or_default();
         let known_folders: KnownFolders = store.load(FOLDERS_FILE).unwrap_or_default();
         let nudge_log = store.load(NUDGE_FILE).unwrap_or_default();
-        let bookmarks = store.load(BOOKMARKS_FILE).unwrap_or_default();
+        let mut bookmarks: std::collections::BTreeMap<String, Vec<u8>> = store.load(BOOKMARKS_FILE).unwrap_or_default();
+        // a bookmark no watched folder or pet still needs is dropped, so the sandbox stops granting that folder
+        let needed = needed_folders(&settings, &pets, strays_core::chrono::Utc::now());
+        let before = bookmarks.len();
+        bookmarks.retain(|b, _| needed.iter().any(|n| std::path::Path::new(n).starts_with(b)));
+        if bookmarks.len() != before
+            && let Err(e) = store.save(BOOKMARKS_FILE, &bookmarks)
+        {
+            eprintln!("could not save folder bookmarks: {e:?}");
+        }
         // vacation lives in the pets it paused, so it survives a restart without a file of its own
         let vacation = pets.iter().any(|p| p.state.kind == StateKind::Paused && p.state.reason == "vacation");
         Ok(Self {
@@ -664,6 +673,18 @@ impl App {
     }
 }
 
+/// Folders the app still reads: watched folders, and those of pets that aren't finished or past their let-go undo.
+fn needed_folders<'a>(settings: &'a Settings, pets: &'a [Pet], now: Time) -> Vec<&'a str> {
+    let undo = Duration::days(settings.let_go_undo_days.into());
+    let alive = |p: &&Pet| match p.state.kind {
+        StateKind::Graduated => false,
+        StateKind::LetGo => now - p.state.since <= undo,
+        _ => true,
+    };
+    let pet_folders = pets.iter().filter(alive).filter_map(|p| p.project.local.as_ref().map(|l| l.path.as_str()));
+    settings.watched_folders.iter().map(String::as_str).chain(pet_folders).collect()
+}
+
 /// "Until tomorrow" means 09:00 local the next day (§5.6).
 pub fn snooze_until(s: Snooze, now: Time) -> Option<Time> {
     match s {
@@ -735,6 +756,7 @@ mod tests {
         std::fs::create_dir_all(&code).unwrap();
         let path = code.display().to_string();
         let mut app = App::load(root.join("data")).unwrap();
+        app.save_settings(Settings { watched_folders: vec![path.clone()], ..Settings::default() }).unwrap();
         let data = crate::platform::bookmark(&path).expect("macOS makes a bookmark");
         app.remember_bookmark(path.clone(), data);
 
@@ -744,6 +766,10 @@ mod tests {
 
         again.open_bookmarks(|_| Some((path.clone(), Some(vec![1, 2, 3]))));
         assert_eq!(App::load(root.join("data")).unwrap().bookmarks[&path], vec![1, 2, 3], "the fresh bookmark is saved");
+
+        // once nothing reads the folder, the next launch drops its bookmark
+        again.save_settings(Settings::default()).unwrap();
+        assert!(App::load(root.join("data")).unwrap().bookmarks.is_empty());
         std::fs::remove_dir_all(root).unwrap();
     }
 
