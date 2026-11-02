@@ -183,3 +183,9 @@ A new `accessory` view-model number (0–5) drives its own state-machine layer, 
 **Tests:** Rust checks the rules and that every bundled sound decodes and is under 4 s; Playwright covers the Sound settings page. 16/16 Playwright, 44 core and 10 app tests pass; clippy is clean.
 
 **Not verified:** how they sound. They were picked by waveform, not by ear. The least certain is `hamster-sad`.
+
+## Budgie colours
+
+Adopting a parrot now offers four real budgie colourings (green wild type, sky blue, lutino yellow, violet) in place of the mammal coats; the shade, highlight and outline are derived in OKLCH like a custom colour, and the contrast test covers them (`looksFor` in `app/src/ui/look.ts`). Switching species to or from the parrot picks a new colour from that species' set. Preview: `art/review/adopt-budgie.png`.
+
+Graduates' accessories show in the menu's Graduates list. The info card isn't reachable for a graduate (it has left the screen) and Settings has no pet list, so nothing else shows them.

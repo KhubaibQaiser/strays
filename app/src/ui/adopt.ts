@@ -4,7 +4,7 @@ import riveWasmUrl from "@rive-app/canvas/rive.wasm?url";
 import { artFor } from "../art";
 import { api, Pace, Species, UiState } from "./api";
 import { PACE_LABEL, SPECIES_ICON, ago, el } from "./dom";
-import { LOOKS, deriveLook, hexToArgb } from "./look";
+import { deriveLook, hexToArgb, looksFor } from "./look";
 
 RuntimeLoader.setWasmUrl(riveWasmUrl);
 
@@ -15,7 +15,8 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
   let repoId: number | null = query.get("repo") ? Number(query.get("repo")) : null;
   let folder: string | null = query.get("folder");
   let species: Species = "cat";
-  let colors = { ...LOOKS[Math.floor(Math.random() * LOOKS.length)] };
+  const randomLook = () => { const looks = looksFor(species); return { ...looks[Math.floor(Math.random() * looks.length)] }; };
+  let colors = randomLook();
   let pace: Pace = state.settings.defaultPace;
 
   // project
@@ -59,7 +60,7 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
   const speciesRow = el("div", { class: "choices", role: "group", "aria-label": "Species" });
   const drawSpecies = () =>
     speciesRow.replaceChildren(
-      ...SPECIES.map(([sp, t]) => el("button", { class: "choice", "aria-pressed": sp === species ? "true" : "false", onclick: () => { species = sp; drawSpecies(); loadPreview(); } }, `${SPECIES_ICON[sp]} ${t}`)),
+      ...SPECIES.map(([sp, t]) => el("button", { class: "choice", "aria-pressed": sp === species ? "true" : "false", onclick: () => { const swap = (sp === "parrot") !== (species === "parrot"); species = sp; if (swap) { colors = randomLook(); drawSwatches(); } drawSpecies(); loadPreview(); } }, `${SPECIES_ICON[sp]} ${t}`)),
     );
   drawSpecies();
 
@@ -79,11 +80,13 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
   };
   const swatches = el("div", { class: "choices", role: "group", "aria-label": "Colour" });
   const picker = el("input", { type: "color", value: colors.coatBase.toLowerCase(), "aria-label": "Any colour" });
-  const drawSwatches = () =>
+  const drawSwatches = () => {
+    picker.value = colors.coatBase.toLowerCase();
     swatches.replaceChildren(
-      ...LOOKS.map((look, i) => el("button", { class: "swatch", style: `background:${look.coatBase}`, "aria-label": `Colour ${i + 1}`, "aria-pressed": look.coatBase === colors.coatBase ? "true" : "false", onclick: () => { colors = { ...look }; drawSwatches(); paint(); } })),
+      ...looksFor(species).map((look, i) => el("button", { class: "swatch", style: `background:${look.coatBase}`, "aria-label": `Colour ${i + 1}`, "aria-pressed": look.coatBase === colors.coatBase ? "true" : "false", onclick: () => { colors = { ...look }; drawSwatches(); paint(); } })),
       picker,
     );
+  };
   picker.addEventListener("input", () => {
     colors = deriveLook(picker.value);
     drawSwatches();
