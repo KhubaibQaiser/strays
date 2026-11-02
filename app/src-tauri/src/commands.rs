@@ -402,8 +402,18 @@ pub fn delete_everything(confirm: String, shared: State<'_, Shared>, h: AppHandl
         return Err("Type DELETE to confirm".into());
     }
     crate::token::delete();
+    let _ = crate::platform::set_login_item(false);
     let dir = shared.app.lock().unwrap().dir.clone();
     std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    // inside the sandbox, home is the app's own container, so its web view data is Strays' alone
+    if std::env::var_os("APP_SANDBOX_CONTAINER_ID").is_some()
+        && let Some(home) = std::env::var_os("HOME")
+    {
+        let lib = std::path::Path::new(&home).join("Library");
+        for d in ["WebKit", "Caches/WebKit"] {
+            let _ = std::fs::remove_dir_all(lib.join(d));
+        }
+    }
     h.exit(0);
     Ok(())
 }

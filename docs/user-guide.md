@@ -87,5 +87,5 @@ On a MacBook with a full menu bar, macOS hides icons behind the notch. Open **St
 
 ## Remove Strays
 
-1. **Settings → Privacy & Permissions → Delete everything** and type `DELETE`. This removes the GitHub token from the Keychain and all Strays data, then quits.
+1. **Settings → Privacy & Permissions → Delete everything** and type `DELETE`. This removes the GitHub token from the Keychain, all Strays data, folder access and launch at login, then quits.
 2. Drag **Strays** from Applications to the Bin.

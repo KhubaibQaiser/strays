@@ -314,7 +314,7 @@ function privacy(state: UiState, s: Settings, save: () => Promise<unknown>, noti
       el("button", { onclick: () => void api.openDataFolder() }, "Open data folder"),
     ),
     el("h2", {}, "Delete everything"),
-    el("p", { class: "muted small" }, "Removes the token from the Keychain and every data file and log, then quits. This can't be undone."),
+    el("p", { class: "muted small" }, "Removes the token from the Keychain, every data file and log, folder access and launch at login, then quits. This can't be undone."),
     el("div", { class: "row" }, confirmBox, el("button", { class: "danger", onclick: () => void api.deleteEverything(confirmBox.value).catch((e) => notice(String(e), true)) }, "Delete everything")),
   );
 
