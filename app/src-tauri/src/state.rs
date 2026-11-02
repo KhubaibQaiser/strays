@@ -280,8 +280,17 @@ impl App {
         p.mood(now, self.sync.last_successful_check, &self.settings, &Local)
     }
 
+    /// A pet keeps its project until it graduates or its let-go can no longer be undone; then the project can be adopted again.
+    fn holds_project(&self, p: &Pet) -> bool {
+        match p.state.kind {
+            StateKind::Graduated => false,
+            StateKind::LetGo => strays_core::chrono::Utc::now() - p.state.since <= Duration::days(self.settings.let_go_undo_days.into()),
+            _ => true,
+        }
+    }
+
     pub fn tracked(&self, repo_id: u64) -> bool {
-        self.pets.iter().any(|p| p.project.github.as_ref().is_some_and(|g| g.id == repo_id))
+        self.pets.iter().any(|p| self.holds_project(p) && p.project.github.as_ref().is_some_and(|g| g.id == repo_id))
     }
 
     pub fn slot_free(&self) -> bool {
@@ -442,7 +451,7 @@ impl App {
     }
 
     pub fn tracked_folder(&self, path: &str) -> bool {
-        self.pets.iter().any(|p| p.project.local.as_ref().is_some_and(|l| l.path == path))
+        self.pets.iter().any(|p| self.holds_project(p) && p.project.local.as_ref().is_some_and(|l| l.path == path))
     }
 
     /// Lists git repos directly inside each watched folder. Repos that appear in a folder already
@@ -585,7 +594,7 @@ impl App {
             last = Some(repo.pushed_at.unwrap_or(repo.created_at));
         }
         if let Some(folder) = &req.folder {
-            if self.pets.iter().any(|p| p.project.local.as_ref().is_some_and(|l| &l.path == folder)) {
+            if self.tracked_folder(folder) {
                 return Err("This folder already has a pet".into());
             }
             let info = localgit::read(std::path::Path::new(folder), &Default::default()).map_err(|e| format!("Not a git repository: {e}"))?;
@@ -806,6 +815,23 @@ mod tests {
         assert!(app.tick(at + Duration::minutes(3)));
         assert_eq!(app.pets[1].state.kind, StateKind::Active);
         assert_eq!(app.pets[2].state.kind, StateKind::Snoozed);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_project_can_be_adopted_again_once_its_pet_is_gone_for_good() {
+        let dir = std::env::temp_dir().join(format!("strays-again-{}", Uuid::new_v4()));
+        let now = strays_core::chrono::Utc::now();
+        let mut app = App::load(dir.clone()).unwrap();
+        let gh = GithubRef { id: 7, full_name: "me/x".into(), account: "me".into() };
+        let mut p = Pet::new(now, "Miso", Species::Cat, Project { github: Some(gh), local: None }, Activity { last: now, source: ActivitySource::LocalCommit }, Pace::Normal);
+        p.adopt(now).unwrap();
+        app.pets.push(p);
+        assert!(app.tracked(7));
+        app.pets[0].let_go(now, "").unwrap();
+        assert!(app.tracked(7), "still undoable");
+        app.pets[0].state.since = now - Duration::days(31);
+        assert!(!app.tracked(7));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
