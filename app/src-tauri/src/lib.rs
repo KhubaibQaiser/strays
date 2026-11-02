@@ -111,6 +111,17 @@ fn spawn_test_pets(app: &mut App) {
     }
 }
 
+/// Main thread only: rebuilds the menu-bar title and menu from the current state.
+fn refresh_tray(h: &AppHandle) {
+    let Some(tray) = h.tray_by_id(TRAY) else { return };
+    let shared = h.state::<Shared>();
+    let app = shared.app.lock().unwrap();
+    let _ = tray.set_title(Some(menu::tray_title(&app)));
+    if let Ok(m) = menu::build(h, &app) {
+        let _ = tray.set_menu(Some(m));
+    }
+}
+
 fn handle_menu(h: &AppHandle, id: &str) {
     let shared = h.state::<Shared>();
     let Some(event) = menu::parse(id) else { return };
@@ -276,12 +287,9 @@ pub fn run() {
                     };
                     overlay.set_pets(app.views(Utc::now()), config);
                     commands::emit_changed(&ui);
-                    if let Some(tray) = ui.tray_by_id(TRAY) {
-                        let _ = tray.set_title(Some(menu::tray_title(app)));
-                        if let Ok(m) = menu::build(&ui, app) {
-                            let _ = tray.set_menu(Some(m));
-                        }
-                    }
+                    // menu calls wait for the main thread, which may itself be waiting for the lock this thread holds
+                    let main = ui.clone();
+                    let _ = ui.run_on_main_thread(move || refresh_tray(&main));
                     if let Some(strays_core::nudge::Nudge::Pet { id, .. }) = &nudge
                         && let Some(sp) = species(*id).filter(|&sp| quiet_ok(sp)) {
                             player.play(audio::Sound::Sad(sp), app.settings.volume);

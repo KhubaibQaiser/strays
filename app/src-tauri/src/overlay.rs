@@ -265,13 +265,18 @@ impl Overlay {
                     let screen = main_screen(&h);
                     let front = front_rect();
                     let rm = platform::reduce_motion();
+                    let (old, w) = {
+                        let o = me.0.lock().unwrap();
+                        (o.screen, o.window.clone())
+                    };
+                    let screen = screen.unwrap_or(old);
+                    // resizing waits for the main thread, so not under the lock pet_click takes there
+                    if screen != old {
+                        let _ = w.set_size(LogicalSize::new(screen.frame.w, screen.frame.h));
+                        let _ = w.set_position(LogicalPosition::new(screen.frame.x, screen.frame.y));
+                    }
                     let mut o = me.0.lock().unwrap();
-                    let screen = screen.unwrap_or(o.screen);
                     if screen != o.screen || front != o.front || rm != o.reduce_motion {
-                        if screen != o.screen {
-                            let _ = o.window.set_size(LogicalSize::new(screen.frame.w, screen.frame.h));
-                            let _ = o.window.set_position(LogicalPosition::new(screen.frame.x, screen.frame.y));
-                        }
                         let moved = place(&o.views, &screen, effective_front(front, &screen, o.hide_full), o.pet_height).iter().map(|p| (p.x, p.y)).ne(o.placed.iter().map(|p| (p.x, p.y)));
                         o.screen = screen;
                         o.front = front;
