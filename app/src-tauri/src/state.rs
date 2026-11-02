@@ -175,12 +175,12 @@ const LOOKS: [[&str; 4]; 4] = [
 
 impl App {
     pub fn load(dir: PathBuf) -> Result<Self, String> {
-        let store = Store::open(dir.clone()).map_err(|e| format!("{e:?}"))?;
+        let store = Store::open(dir.clone()).map_err(|e| e.to_string())?;
         let settings = store.load_settings().unwrap_or_else(|e| {
             eprintln!("settings unreadable, using defaults (file kept): {e:?}");
             Settings::default()
         });
-        let (pets, problems) = store.load_pets().map_err(|e| format!("{e:?}"))?;
+        let (pets, problems) = store.load_pets().map_err(|e| e.to_string())?;
         for p in &problems {
             eprintln!("pet file skipped: {p:?}");
         }
@@ -403,7 +403,7 @@ impl App {
         let settings = self.settings.clone();
         let p = self.pets.iter_mut().find(|p| p.id == id).ok_or("No such pet")?;
         let name = p.name.clone();
-        let refused = |e: pet::Refused| format!("{e:?}");
+        let refused = |e: pet::Refused| e.to_string();
         let msg = match action {
             Action::Adopt if !slot_free => return Err("All adoption slots are full".into()),
             Action::Adopt => {
@@ -543,7 +543,7 @@ impl App {
     }
 
     pub fn save_settings(&mut self, s: Settings) -> Result<(), String> {
-        self.store.save_settings(&s).map_err(|e| format!("{e:?}"))?;
+        self.store.save_settings(&s).map_err(|e| e.to_string())?;
         self.settings = s;
         Ok(())
     }

@@ -137,6 +137,26 @@ pub enum Refused {
     UndoWindowPassed,
 }
 
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Refused::WrongState(k) => {
+                let now = match k {
+                    StateKind::Shelter => "in the shelter",
+                    StateKind::Active => "awake",
+                    StateKind::Snoozed => "snoozing",
+                    StateKind::Paused => "paused",
+                    StateKind::Holiday => "on holiday",
+                    StateKind::Graduated => "graduated",
+                    StateKind::LetGo => "let go",
+                };
+                write!(f, "Not while the pet is {now}")
+            }
+            Refused::UndoWindowPassed => f.write_str("Too late to undo: the undo period has passed"),
+        }
+    }
+}
+
 /// What a release did: a holiday, or only a celebration (§5.5).
 #[derive(Debug, PartialEq, Eq)]
 pub enum ReleaseOutcome {
@@ -490,5 +510,11 @@ mod tests {
         assert_eq!(json["project"]["github"]["fullName"], "me/app");
         assert_eq!(json["schemaVersion"], 1);
         assert_eq!(serde_json::from_value::<Pet>(json).unwrap(), p);
+    }
+
+    #[test]
+    fn refusals_read_as_sentences() {
+        assert_eq!(Refused::WrongState(StateKind::Holiday).to_string(), "Not while the pet is on holiday");
+        assert_eq!(crate::github::GhError::Http(502).to_string(), "GitHub is having trouble (502)");
     }
 }
