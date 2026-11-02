@@ -6,7 +6,7 @@ set -euo pipefail
 MODE=${1:-A}
 SECS=${2:-60}
 HERE=$(cd "$(dirname "$0")" && pwd)
-APP=${APP:-"$HERE/../../app/src-tauri/target/release/app"}
+APP=${APP:-"$HERE/../../app/src-tauri/target/release/Strays"}
 WS=$(pgrep -x WindowServer)
 webkit() { pgrep -f 'com.apple.WebKit' | sort; }
 

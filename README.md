@@ -61,7 +61,7 @@ The Rust side owns all state and decisions. The web view only renders what it's 
 
 ```bash
 # Build the pet art (writes art/<species>/build/<species>.riv, which the app bundles)
-for s in cat dog hamster; do (python3 art/$s/make.py && cd art/$s && rive . --screenshot --advance=1); done
+for s in cat dog hamster parrot; do (python3 art/$s/make.py && cd art/$s && rive . --screenshot --advance=1); done
 
 # Install front-end dependencies
 cd app && npm install
@@ -86,7 +86,7 @@ Debug builds read a GitHub token from `~/.config/strays/dev-token` when the Keyc
 | `STRAYS_IGNORE_FRONT=1` | Pin placement, for repeatable performance runs |
 
 ```bash
-STRAYS_DATA_DIR=/tmp/strays STRAYS_SPAWN=3 app/src-tauri/target/debug/app
+STRAYS_DATA_DIR=/tmp/strays STRAYS_SPAWN=3 app/src-tauri/target/debug/Strays
 ```
 
 ### OS-level tests
