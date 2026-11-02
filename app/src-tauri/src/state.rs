@@ -76,6 +76,8 @@ pub struct App {
     last_shown: HashMap<Uuid, Time>,
     rotation_started: Option<Time>,
     pub sync_error: Option<String>,
+    /// Whether the Keychain holds a token, as last seen by the sync thread or the setup flow; the UI reads this, not the Keychain.
+    pub has_token: bool,
     /// Git repos found directly inside the watched folders.
     pub local_repos: Vec<String>,
     /// Ones that appeared after their folder was first watched, waiting for the user's decision.
@@ -215,6 +217,7 @@ impl App {
             last_shown: HashMap::new(),
             rotation_started: None,
             sync_error: None,
+            has_token: false,
             load_problems: problems.len(),
             cues: Vec::new(),
             local_repos: Vec::new(),

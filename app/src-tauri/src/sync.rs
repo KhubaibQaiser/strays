@@ -86,9 +86,12 @@ pub fn run(
         let app = shared.lock().unwrap();
         app.settings.sync_on_launch.then_some(None)
     };
+    // the Keychain is read here, off the main thread, rather than on every UI refresh
+    let has_token = crate::token::load().is_some();
     // show pets straight away; the first sync may take a while on a slow network
     {
         let mut app = shared.lock().unwrap();
+        app.has_token = has_token;
         app.tick(Utc::now());
         app.refresh_visible(Utc::now());
         on_change(&app, None, None, Vec::new());
@@ -124,7 +127,9 @@ pub fn run(
         }
         let interval = app.settings.sync_interval.0.map(|m| Duration::minutes(m.into()));
         let wait = if app.sync.failures > 0 { interval.map(|i| i.min(github::backoff(app.sync.failures))) } else { interval };
-        let scheduled = !app.sync.disconnected
+        // without a token only a manual sync reads the Keychain again; setup sends one after saving
+        let scheduled = app.has_token
+            && !app.sync.disconnected
             && wait.is_some_and(|w| app.sync.last_attempt.is_none_or(|a| now - a >= w))
             && !(app.settings.sync_pause_on_low_power && crate::platform::low_power_mode());
         let allowed = not_before.is_none_or(|t| now >= t);
@@ -136,7 +141,9 @@ pub fn run(
             }
         } else if (forced.is_some() || scheduled) && allowed {
             let for_pet = forced.take().flatten();
-            match crate::token::load() {
+            let token = crate::token::load();
+            app.has_token = token.is_some();
+            match token {
                 None => {
                     app.sync_error = Some("No GitHub token yet".into());
                     outcome = Some(SyncOutcome { ok: false, for_pet });
