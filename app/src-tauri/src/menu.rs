@@ -1,5 +1,5 @@
 //! Menu-bar menu (§7.5) and the per-pet menu shared with the overlay's ⌥-click (§7.3).
-use strays_core::chrono::{Local, Utc};
+use strays_core::chrono::{Duration, Local, Utc};
 use strays_core::clock::Time;
 use strays_core::pet::{Pet, Species, StateKind};
 use strays_core::uuid::Uuid;
@@ -126,18 +126,39 @@ pub fn status_line(app: &App) -> String {
     }
 }
 
-/// The badge next to the menu-bar paw icon: hidden needy pets, or a warning when syncing fails.
-pub fn tray_title(app: &App) -> String {
-    match (app.sync_error.is_some(), app.hidden_needy) {
-        (true, _) => "⚠".into(),
-        (false, 0) => String::new(),
-        (false, n) => n.to_string(),
+/// Days left on a connected token that expires within a week (§6.4: remind from 7 days before).
+pub fn token_days_left(app: &App, now: Time) -> Option<i64> {
+    let expires = app.sync.token_expires.or(app.account.as_ref()?.expires)?;
+    let left = expires - now;
+    // counted in calendar days, so "tomorrow" means tomorrow's date
+    let days = (expires.with_timezone(&Local).date_naive() - now.with_timezone(&Local).date_naive()).num_days();
+    (left > Duration::zero() && left <= Duration::days(7)).then_some(days)
+}
+
+fn token_reminder(days: i64) -> String {
+    match days {
+        0 => "⏳ GitHub token expires today. Paste a new one…".into(),
+        1 => "⏳ GitHub token expires tomorrow. Paste a new one…".into(),
+        n => format!("⏳ GitHub token expires in {n} days. Paste a new one…"),
     }
+}
+
+/// The badge next to the menu-bar paw icon: hidden needy pets and a soon-expiring token, or a warning when syncing fails.
+pub fn tray_title(app: &App) -> String {
+    if app.sync_error.is_some() {
+        return "⚠".into();
+    }
+    let needy = (app.hidden_needy > 0).then(|| app.hidden_needy.to_string());
+    let token = token_days_left(app, Utc::now()).map(|_| "⏳".to_string());
+    [needy, token].into_iter().flatten().collect::<Vec<_>>().join(" ")
 }
 
 pub fn build<Rt: Runtime>(h: &AppHandle<Rt>, app: &App) -> R<Menu<Rt>> {
     let now = Utc::now();
     let mut items = vec![label(h, &status_line(app))?, item(h, "sync", "Sync now")?];
+    if let Some(days) = token_days_left(app, now) {
+        items.push(item(h, "setup", &token_reminder(days))?);
+    }
     if app.load_problems > 0 {
         items.push(label(h, &format!("⚠ {} pet file(s) couldn't be read and were left untouched", app.load_problems))?);
     }
@@ -299,5 +320,24 @@ mod tests {
         assert!(parse("pet/not-a-uuid/wake").is_none());
         assert!(parse("pet/x").is_none());
         assert!(matches!(parse("quit"), Some(Event::Quit)));
+    }
+
+    #[test]
+    fn token_reminder_shows_in_the_last_week_only() {
+        let dir = std::env::temp_dir().join(format!("strays-exp-{}", Uuid::new_v4()));
+        let mut app = App::load(dir.clone()).unwrap();
+        let now = Utc::now();
+        let at = |d: i64| Some(crate::state::Account { login: "me".into(), expires: Some(now + Duration::days(d) + Duration::hours(1)), repo_count: 1 });
+        app.account = at(8);
+        assert_eq!(token_days_left(&app, now), None);
+        app.account = at(6);
+        assert!(matches!(token_days_left(&app, now), Some(6 | 7)));
+        assert_eq!(tray_title(&app), "⏳");
+        assert_eq!(token_reminder(1), "⏳ GitHub token expires tomorrow. Paste a new one…");
+        app.account = at(-1);
+        assert_eq!(token_days_left(&app, now), None, "expired: the 401 warning takes over");
+        app.account = None;
+        assert_eq!(token_days_left(&app, now), None);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
