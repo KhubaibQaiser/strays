@@ -129,7 +129,7 @@ pub fn snapshot(app: &App) -> UiState {
         pets: app.pets.iter().map(|p| ui_pet(app, p, now)).collect(),
         settings: app.settings.clone(),
         account: app.account.clone(),
-        has_token: crate::token::load().is_some(),
+        has_token: app.has_token,
         last_sync: app.sync.last_successful_check,
         sync_error: app.sync_error.clone(),
         rate_remaining: app.sync.rate_remaining,
@@ -309,6 +309,7 @@ pub async fn token_save(token: String, shared: State<'_, Shared>) -> Res<()> {
         app.append_netlog(gh.take_log());
         let v = v.map_err(describe)?;
         crate::token::save(token.trim())?;
+        app.has_token = true;
         app.set_account(Some(Account { login: v.login, expires: v.expires, repo_count: v.repo_count }));
         app.sync.disconnected = false;
         app.sync.failures = 0;
@@ -326,6 +327,7 @@ pub async fn token_save(token: String, shared: State<'_, Shared>) -> Res<()> {
 pub fn token_disconnect(shared: State<'_, Shared>) {
     crate::token::delete();
     let mut app = shared.app.lock().unwrap();
+    app.has_token = false;
     app.set_account(None);
     app.sync_error = Some("Not connected to GitHub".into());
     drop(app);
