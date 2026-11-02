@@ -16,12 +16,6 @@ jobs:
     defaults:
       run:
         working-directory: app
-    env:
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Tag matches the app version
@@ -39,14 +33,25 @@ jobs:
       - run: npm ci
       - run: cargo test --locked
         working-directory: app/src-tauri
-      # Tauri reads the notarisation key from a file
-      - name: Notarisation key
-        if: env.APPLE_API_KEY != ''
+      # Tauri signs whenever these variables exist, even empty, so only set the ones that have a value.
+      # It reads the notarisation key from a file.
+      - name: Signing secrets
         env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           P8: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
-          printf '%s\n' "$P8" > "$RUNNER_TEMP/notary.p8"
-          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+          for n in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY; do
+            [ -n "${!n}" ] && printf '%s<<EOV\n%s\nEOV\n' "$n" "${!n}" >> "$GITHUB_ENV"
+          done
+          if [ -n "$P8" ]; then
+            printf '%s\n' "$P8" > "$RUNNER_TEMP/notary.p8"
+            echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+          fi
+          true
       # CI=true skips the Finder AppleScript that lays out the .dmg window (it times out without a GUI session)
       - run: npx tauri build --bundles app,dmg
         env:
