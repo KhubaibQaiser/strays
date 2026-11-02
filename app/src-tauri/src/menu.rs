@@ -200,8 +200,9 @@ pub fn build<Rt: Runtime>(h: &AppHandle<Rt>, app: &App) -> R<Menu<Rt>> {
     };
     if !app.new_projects.is_empty() || !app.new_folders.is_empty() {
         let mut list = Vec::new();
-        for (i, f) in app.new_folders.iter().enumerate() {
-            let choices = vec![item(h, &format!("newfolder/{i}/adopt"), "Adopt…")?, item(h, &format!("newfolder/{i}/ignore"), "Ignore")?];
+        for f in &app.new_folders {
+            // by path, not position: the list can change between building the menu and the click
+            let choices = vec![item(h, &format!("newfolder/adopt/{f}"), "Adopt…")?, item(h, &format!("newfolder/ignore/{f}"), "Ignore")?];
             list.push(sub(h, &format!("📁 {}", crate::state::tilde(f)), choices)?);
         }
         for r in &app.new_projects {
@@ -248,7 +249,7 @@ pub enum Event {
     Presentation,
     Vacation,
     HideAll,
-    NewFolder(usize, bool),
+    NewFolder(String, bool),
     Settings,
     Update,
     Setup,
@@ -257,6 +258,9 @@ pub enum Event {
 }
 
 pub fn parse(id: &str) -> Option<Event> {
+    if let Some((choice, path)) = id.strip_prefix("newfolder/").and_then(|r| r.split_once('/')) {
+        return Some(Event::NewFolder(path.to_string(), choice == "adopt"));
+    }
     let parts: Vec<&str> = id.split('/').collect();
     Some(match parts.as_slice() {
         ["sync"] => Event::Sync,
@@ -266,7 +270,6 @@ pub fn parse(id: &str) -> Option<Event> {
         ["quit"] => Event::Quit,
         ["settings"] => Event::Settings,
         ["update"] => Event::Update,
-        ["newfolder", i, choice] => Event::NewFolder(i.parse().ok()?, *choice == "adopt"),
         ["setup"] => Event::Setup,
         ["adopt"] => Event::AdoptWindow,
         ["pet", pet, action] => {
@@ -320,6 +323,7 @@ mod tests {
         assert!(parse("pet/not-a-uuid/wake").is_none());
         assert!(parse("pet/x").is_none());
         assert!(matches!(parse("quit"), Some(Event::Quit)));
+        assert!(matches!(parse("newfolder/adopt//Users/me/Code/a b"), Some(Event::NewFolder(p, true)) if p == "/Users/me/Code/a b"));
     }
 
     #[test]
