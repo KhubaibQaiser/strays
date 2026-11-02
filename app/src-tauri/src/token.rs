@@ -2,7 +2,7 @@
 //! Debug builds fall back to `~/.config/strays/dev-token` so the agent can test without the setup UI.
 
 const SERVICE: &str = "com.khubaibqaiser.strays.github";
-// ponytail: one token for the personal account; per-owner tokens (§6.1) arrive with the setup screen.
+// ponytail: one token for the personal account; per-owner tokens (§6.1) aren't built yet.
 const ACCOUNT: &str = "personal";
 
 pub fn load() -> Option<String> {
@@ -24,7 +24,6 @@ pub fn load() -> Option<String> {
     None
 }
 
-#[allow(dead_code)] // used by the setup screen (Gate 2b)
 pub fn save(token: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     return security_framework::passwords::set_generic_password(SERVICE, ACCOUNT, token.as_bytes()).map_err(|e| e.to_string());
@@ -32,7 +31,6 @@ pub fn save(token: &str) -> Result<(), String> {
     Err("no secure store on this platform yet".into())
 }
 
-#[allow(dead_code)] // used by the setup screen (Gate 2b)
 pub fn delete() {
     #[cfg(target_os = "macos")]
     let _ = security_framework::passwords::delete_generic_password(SERVICE, ACCOUNT);
