@@ -610,9 +610,9 @@ strays/
 ## 15. Release and distribution (macOS)
 
 1. **Testing yourself:** local builds (`npm run tauri build`).
-2. **Beta and public:** signed with a Developer ID and **notarised**. Distributed as a `.dmg` on GitHub Releases, with SHA-256 checksums. A universal binary (Apple Silicon + Intel) if size allows; otherwise two builds.
+2. **Beta and public:** signed with a Developer ID and **notarised**. Distributed as a `.dmg` on GitHub Releases, with SHA-256 checksums. **Decided (user, 2026-11-02): Apple Silicon only**; see `docs/gate-4.md` § Intel Macs.
 3. **CI:** GitHub Actions on a macOS runner: test → build `.riv` → build app → sign → notarise → draft release. Note: macOS runner minutes on private repos count at a higher rate (check the current GitHub pricing).
-4. **Updates:** Tauri updater with signed update manifests. **Opt-in**, off by default; checks weekly when on, logged in the network log. Adds the GitHub release hosts to the allowlist only while it's on.
+4. **Updates:** ~~Tauri updater with signed update manifests~~. **Decided (user, 2026-11-02): notify only.** The sandboxed app can't replace its own bundle, so it never installs updates. **Opt-in**, off by default; checks weekly when on, logged in the network log. It asks `api.github.com` (already allowed) for this repo's latest release, without the token, and offers a Download button that opens the release page.
 5. **Later:** Homebrew cask. No Mac App Store in v1.
 
 ---

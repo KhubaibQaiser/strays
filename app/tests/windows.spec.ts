@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { PET_ID, calls, mockApp } from "./mock";
+import { PET_ID, STATE, calls, mockApp } from "./mock";
 import { looksFor } from "../src/ui/look";
 
 const shots = "test-results/screens";
@@ -72,6 +72,21 @@ test("launch at login: a refusal from macOS unticks the box and says why", async
   await page.getByLabel("Open Strays when you log in").click();
   await expect(page.getByLabel("Open Strays when you log in")).not.toBeChecked();
   await expect(page.getByText("Operation not permitted")).toBeVisible();
+});
+
+test("update check: off by default, opt-in saves, a newer release offers a download", async ({ page }) => {
+  await mockApp(page);
+  await page.goto("/ui.html#settings/about");
+  await expect(page.getByLabel("Tell me when a new version is out")).not.toBeChecked();
+  await page.getByLabel("Tell me when a new version is out").check();
+  const saved = (await calls(page, "save_settings")).at(-1)?.args as { settings: { checkUpdates: boolean } };
+  expect(saved.settings.checkUpdates).toBe(true);
+
+  await mockApp(page, {}, { settings: { ...STATE.settings, checkUpdates: true }, update: { tag_name: "v0.2.0", html_url: "https://github.com/KhubaibQaiser/strays/releases/tag/v0.2.0" } });
+  await page.reload();
+  await expect(page.getByText("Strays v0.2.0 is out.")).toBeVisible();
+  await page.getByRole("button", { name: "Download…" }).click();
+  expect((await calls(page, "open_link")).at(-1)?.args).toEqual({ which: "release" });
 });
 
 test("privacy page shows what GitHub access can and can't do, and guards delete", async ({ page }) => {

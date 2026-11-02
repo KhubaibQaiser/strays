@@ -60,6 +60,7 @@ export const STATE = {
     sound: false,
     volume: 50,
     mutedSpecies: [],
+    checkUpdates: false,
   },
   account: { login: "me", expires: "2026-11-29T13:28:15Z", repoCount: 96 },
   hasToken: true,
@@ -81,13 +82,15 @@ export const STATE = {
   dataDir: "/Users/me/Library/Application Support/com.khubaibqaiser.strays",
   version: "0.1.0",
   loginItem: "off",
+  update: null as { tag_name: string; html_url: string } | null,
+  updateChecked: null as string | null,
   firstRun: false,
 };
 
 export type Call = { cmd: string; args: Record<string, unknown> };
 
-/** Installs the mock before the page loads. `fail` makes those commands reject with the given text. */
-export async function mockApp(page: Page, fail: Record<string, string> = {}) {
+/** Installs the mock before the page loads. `fail` makes those commands reject with the given text; `patch` changes the state. */
+export async function mockApp(page: Page, fail: Record<string, string> = {}, patch: Partial<typeof STATE> = {}) {
   await page.addInitScript(
     ({ state, fail }) => {
       const calls: { cmd: string; args: unknown }[] = [];
@@ -124,7 +127,7 @@ export async function mockApp(page: Page, fail: Record<string, string> = {}) {
       };
       (window as unknown as { __TAURI_EVENT_PLUGIN_INTERNALS__: unknown }).__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
     },
-    { state: STATE, fail },
+    { state: { ...STATE, ...patch }, fail },
   );
 }
 

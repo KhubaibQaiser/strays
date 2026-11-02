@@ -36,6 +36,17 @@ fn github_client(token: &str) -> Result<Github, GhError> {
     Github::new(token, github::API)
 }
 
+/// Update checks need no token; the fake server stands in for GitHub in dev runs.
+fn update_client() -> Result<Github, GhError> {
+    #[cfg(debug_assertions)]
+    if let Ok(base) = std::env::var("STRAYS_FAKE_GITHUB") {
+        return Github::anonymous(&base);
+    }
+    Github::anonymous(github::API)
+}
+
+const UPDATE_EVERY: i64 = 7; // days
+
 fn error_text(e: &GhError) -> String {
     match e {
         GhError::Unauthorized => "Token expired or revoked".into(),
@@ -192,6 +203,33 @@ pub fn run(
                     manual = false;
                 }
             }
+            changed = true;
+        }
+        if !app.settings.check_updates {
+            // turning it off forgets the last check, so turning it on again checks straight away
+            if app.sync.update_checked.is_some() || app.sync.update.is_some() {
+                app.sync.update_checked = None;
+                app.sync.update = None;
+                app.save_all();
+                changed = true;
+            }
+        } else if !app.settings.offline && app.sync.update_checked.is_none_or(|t| now - t >= Duration::days(UPDATE_EVERY)) {
+            drop(app);
+            let gh = update_client().map(|g| g.with_reason("update check"));
+            let found = gh.as_ref().map_err(Clone::clone).and_then(|g| g.latest_release(github::RELEASES_REPO));
+            app = shared.lock().unwrap();
+            if let Ok(gh) = &gh {
+                app.append_netlog(gh.take_log());
+            }
+            match found {
+                Ok(release) => {
+                    app.sync.update_checked = Some(now);
+                    app.sync.update = release.filter(|r| github::is_newer(&r.tag_name, env!("CARGO_PKG_VERSION")));
+                }
+                // try again in a day rather than a week
+                Err(_) => app.sync.update_checked = Some(now - Duration::days(UPDATE_EVERY - 1)),
+            }
+            app.save_all();
             changed = true;
         }
         let nudge = app.next_nudge(now, full_screen());

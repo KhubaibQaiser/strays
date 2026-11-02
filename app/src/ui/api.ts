@@ -63,6 +63,7 @@ export type Settings = {
   sound: boolean;
   volume: number;
   mutedSpecies: Species[];
+  checkUpdates: boolean;
 };
 
 export type UiState = {
@@ -85,6 +86,8 @@ export type UiState = {
   dataDir: string;
   version: string;
   loginItem: "on" | "off" | "needsApproval";
+  update: { tag_name: string; html_url: string } | null;
+  updateChecked: string | null;
   firstRun: boolean;
 };
 
@@ -118,7 +121,7 @@ export const api = {
   setLoginItem: (on: boolean) => invoke<UiState["loginItem"]>("set_login_item", { on }),
   openGithub: (id: string) => invoke<void>("open_github", { id }),
   reveal: (id: string) => invoke<void>("reveal", { id }),
-  openLink: (which: "token-page") => invoke<void>("open_link", { which }),
+  openLink: (which: "token-page" | "release") => invoke<void>("open_link", { which }),
   netlog: () => invoke<NetEntry[]>("netlog"),
   openDataFolder: () => invoke<void>("open_data_folder"),
   exportData: () => invoke<string>("export_data"),

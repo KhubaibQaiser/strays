@@ -74,6 +74,10 @@ On a MacBook with a full menu bar, macOS hides icons behind the notch. Open **St
 
 **Settings → Privacy & Permissions → Launch at login.** If macOS asks for approval, allow Strays in **System Settings → General → Login Items**.
 
+## Updates
+
+**Settings → About → Tell me when a new version is out.** It's off by default. When it's on, Strays asks GitHub once a week for the latest release, without your token, and tells you in About and the menu bar when a new version is out. **Download…** opens the release page; install the new `.dmg` the same way as the first. Strays never installs anything by itself.
+
 ## Privacy
 
 - No network until you connect GitHub, and then only `api.github.com`.

@@ -76,6 +76,9 @@ pub struct UiState {
     data_dir: String,
     version: &'static str,
     login_item: crate::platform::LoginItem,
+    /// A newer release found by the opt-in update check, and when it last ran.
+    update: Option<strays_core::github::Release>,
+    update_checked: Option<Time>,
     pub first_run: bool,
 }
 
@@ -142,6 +145,8 @@ pub fn snapshot(app: &App) -> UiState {
         data_dir: app.dir.display().to_string(),
         version: env!("CARGO_PKG_VERSION"),
         login_item: crate::platform::login_item(),
+        update: app.sync.update.clone(),
+        update_checked: app.sync.update_checked,
         first_run: app.pets.is_empty() && app.account.is_none() && app.settings.watched_folders.is_empty(),
     }
 }
@@ -354,9 +359,13 @@ pub fn reveal(id: Uuid, shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
 
 /// Opens one of a fixed set of pages in the browser; the web view can't name arbitrary URLs.
 #[tauri::command]
-pub fn open_link(which: String, h: AppHandle) -> Res<()> {
+pub fn open_link(which: String, shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
     let url = match which.as_str() {
-        "token-page" => "https://github.com/settings/personal-access-tokens/new",
+        "token-page" => "https://github.com/settings/personal-access-tokens/new".to_string(),
+        // the page comes from GitHub's answer, so only this repo's release pages are opened
+        "release" => shared.app.lock().unwrap().sync.update.as_ref().map(|r| r.html_url.clone())
+            .filter(|u| u.starts_with(&format!("https://github.com/{}/releases/", strays_core::github::RELEASES_REPO)))
+            .ok_or("No update to download")?,
         _ => return Err("Unknown link".into()),
     };
     h.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())

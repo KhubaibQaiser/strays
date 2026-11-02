@@ -8,7 +8,9 @@ Pick a scenario with  POST /_scenario  {"name": "..."}  (default "ok"). Scenario
   rate_limit    403 with x-ratelimit-remaining: 0 and a reset time
   secondary     403 secondary rate limit with Retry-After: 60
   too_many      429 with Retry-After: 30
+  no_release    /releases/latest is 404 (nothing published yet)
 Fixed repos for /repositories/{id}: 1 normal, 2 deleted (404), 3 archived, 4 renamed to me/renamed.
+/repos/{owner}/{repo}/releases/latest answers v9.9.9 and must come without a token (update checks are anonymous).
 """
 import json
 import sys
@@ -78,6 +80,12 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/_requests":
             return self.send(200, state["requests"])
         state["requests"].append(self.path)
+        if url.path.endswith("/releases/latest"):
+            if self.headers.get("Authorization"):
+                return self.send(400, {"message": "update checks must not send the token"})
+            if state["scenario"] == "no_release":
+                return self.send(404, {"message": "Not Found"})
+            return self.send(200, {"tag_name": "v9.9.9", "html_url": "https://github.com" + url.path.removeprefix("/repos").removesuffix("/latest") + "/tag/v9.9.9"})
         if self.headers.get("Authorization") != f"Bearer {TOKEN}":
             return self.send(401, {"message": "Bad credentials"})
         sc = state["scenario"]
