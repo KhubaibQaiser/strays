@@ -2,7 +2,7 @@
 
 **A desktop companion for your unfinished projects.** Each project you're working on gets a small animated pet that lives along the edge of your screen. Pushing commits feeds it. Leave a project alone and its pet gets hungry, then gloomy. Ship a release and it goes on holiday. Pets never die or age; only their mood changes.
 
-> **Status:** pre-alpha, in active development. Private repository. macOS only for now (macOS 14 Sonoma or later). There is no installable release yet.
+> **Status:** pre-alpha, in active development. Private repository. macOS only for now: Apple Silicon Macs with macOS 14 Sonoma or later. **Intel Macs are not supported** ([why, and what adding them would cost](docs/gate-4.md#intel-macs)). There is no installable release yet.
 
 <p align="center">
   <img src="art/review/pets-in-app.png" alt="A cat, a hamster and a corgi in the Strays overlay" width="560">
@@ -27,6 +27,8 @@
 | ⌥⇧ + click | Sync this pet now |
 
 The modifier key can be changed in Settings. Every action is also in the 🐾 menu-bar menu.
+
+See the [user guide](docs/user-guide.md) for setup, connecting GitHub, folders and removing the app.
 
 ## Privacy and permissions
 

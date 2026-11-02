@@ -7,6 +7,12 @@ export const LOOKS: Record<string, string>[] = [
   { coatBase: "#B9C0CC", coatShade: "#9AA2B0", coatHighlight: "#E3E7EE", outline: "#4E5563" },
 ];
 
+// real budgie colourings (green wild type, sky blue, lutino yellow, violet), derived so they pass the same contrast rule
+const BUDGIE = ["#7DC44E", "#6FB7E0", "#F2D64B", "#B9A3E0"];
+
+/** The swatches offered when adopting a pet of this species. */
+export const looksFor = (species: string): Record<string, string>[] => (species === "parrot" ? BUDGIE.map(deriveLook) : LOOKS);
+
 type Lch = [number, number, number];
 
 const toLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);

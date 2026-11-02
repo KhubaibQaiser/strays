@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { PET_ID, calls, mockApp } from "./mock";
+import { looksFor } from "../src/ui/look";
 
 const shots = "test-results/screens";
 
@@ -128,7 +129,7 @@ test("adoption needs a project, then sends every choice", async ({ page }) => {
     repoId: 2,
     folder: null,
     species: "parrot",
-    colors: { coatBase: "#E8A15C", coatShade: "#CB8240", coatHighlight: "#FBE3C6", outline: "#7A4520" },
+    colors: looksFor("parrot")[2], // budgies get their own swatches
     name: "Biscuit",
     goal: "Launch it",
     pace: "slowBurn",
