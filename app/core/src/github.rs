@@ -462,7 +462,9 @@ fn apply_repos(pets: &mut [Pet], repos: &[Repo], st: &mut SyncState, settings: &
                 gh.account = repo.owner.login.clone();
                 report.renamed.push(pet.id);
             }
-            if let Some(pushed) = repo.pushed_at.filter(|&p| p > pet.activity.last) {
+            // a finished pet doesn't eat; its repo may have a new pet now
+            let gone = matches!(pet.state.kind, StateKind::Graduated | StateKind::LetGo);
+            if let Some(pushed) = repo.pushed_at.filter(|&p| p > pet.activity.last && !gone) {
                 pet.record_activity(pushed, ActivitySource::Github);
                 report.updated.push(pet.id);
             }
