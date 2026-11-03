@@ -197,9 +197,9 @@ pub fn run(
                         Err(e) => (Err(e), Default::default()),
                     };
                     if let Ok(f) = &fetched
-                        && let Listing::Changed { repos, .. } = &f.listing
+                        && let Listing::Changed { repos, complete, .. } = &f.listing
                     {
-                        merge_repos(&mut app, repos);
+                        app.merge_repos(repos, *complete);
                     }
                     let mut pets = std::mem::take(&mut app.pets);
                     let settings = app.settings.clone();
@@ -329,17 +329,6 @@ pub fn run(
 
 fn now_day() -> strays_core::chrono::NaiveDate {
     Utc::now().date_naive()
-}
-
-/// Keeps `app.repos` as the latest view of every repo, newest push first.
-fn merge_repos(app: &mut App, repos: &[github::Repo]) {
-    for r in repos {
-        match app.repos.iter_mut().find(|x| x.id == r.id) {
-            Some(x) => *x = r.clone(),
-            None => app.repos.push(r.clone()),
-        }
-    }
-    app.repos.sort_by_key(|r| std::cmp::Reverse(r.pushed_at));
 }
 
 #[cfg(test)]
