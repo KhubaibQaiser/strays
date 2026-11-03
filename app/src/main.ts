@@ -170,8 +170,10 @@ function add(placed: Placed) {
   const p: Pet = { el, rive, placed, playing: true, busy: false, leaving: false, run: 0 };
   pets.set(placed.id, p);
   position(p);
+  // the window only takes clicks while the user's chosen modifier is held (Rust decides, and says so
+  // through "hover"), so any click that arrives here is meant for the pet, whichever modifier that is
   el.addEventListener("mousedown", (e) => {
-    if (!e.altKey) return;
+    if (!frozen) return;
     e.preventDefault();
     void invoke("pet_click", { id: placed.id, shift: e.shiftKey });
   });

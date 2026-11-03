@@ -85,3 +85,22 @@ test("a pet whose repo GitHub can't find keeps asking until it's answered", asyn
   await emit(page, "overlay", frame(false));
   await expect(page.getByText("❓ Where did my repo go?")).toHaveCount(0);
 });
+
+test("a click counts whenever the chosen modifier is held, whichever key that is", async ({ page }) => {
+  await mockApp(page);
+  await page.setViewportSize({ width: 440, height: 240 });
+  await page.goto("/index.html");
+  await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.some((c) => c.cmd === "overlay_ready"));
+  await emit(page, "overlay", { pets: [pet("p", "content", 220)], liveliness: "calm", reduceMotion: false });
+  await expect(page.locator("canvas")).toHaveCount(1);
+  const clicks = () => page.evaluate(() => (window as unknown as { __calls: { cmd: string; args: unknown }[] }).__calls.filter((c) => c.cmd === "pet_click"));
+  // not held: the window is click-through anyway, and a stray event does nothing
+  await page.mouse.click(320, 120);
+  expect(await clicks()).toHaveLength(0);
+  // Control chosen and held (no ⌥ involved): Rust reports it through "hover"
+  await emit(page, "hover", { id: "p", held: true });
+  await page.keyboard.down("Control");
+  await page.mouse.click(320, 120);
+  await page.keyboard.up("Control");
+  expect(await clicks()).toEqual([{ cmd: "pet_click", args: { id: "p", shift: false } }]);
+});
