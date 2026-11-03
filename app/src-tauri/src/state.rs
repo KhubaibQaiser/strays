@@ -782,12 +782,22 @@ impl App {
         }
     }
 
+    /// The network activity log. Unreadable lines are skipped (and logged): one bad line mustn't hide the rest.
     pub fn netlog(&self) -> Vec<NetEntry> {
-        std::fs::read_to_string(self.dir.join(NETLOG_FILE))
-            .unwrap_or_default()
-            .lines()
-            .filter_map(|l| serde_json::from_str(l).ok())
-            .collect()
+        let text = match std::fs::read_to_string(self.dir.join(NETLOG_FILE)) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+            Err(e) => {
+                crate::log::warn(&format!("could not read the network log: {e}"));
+                return Vec::new();
+            }
+        };
+        let mut bad = 0;
+        let entries = text.lines().filter_map(|l| serde_json::from_str(l).inspect_err(|_| bad += 1).ok()).collect();
+        if bad > 0 {
+            crate::log::warn(&format!("{bad} unreadable line(s) in the network log were skipped"));
+        }
+        entries
     }
 
     /// The adoption flow (§8.2): a GitHub repo or a local folder (matched to its GitHub repo when the
@@ -1089,6 +1099,22 @@ mod tests {
         assert_eq!(snooze_until(Snooze::Tomorrow, at(4, 59)), Some(nine_today));
         let evening = snooze_until(Snooze::Tomorrow, at(22, 0)).unwrap();
         assert!(evening > nine_today && evening - nine_today <= Duration::hours(25), "the next morning");
+    }
+
+    #[test]
+    fn one_bad_line_doesnt_hide_the_rest_of_the_network_log() {
+        let dir = std::env::temp_dir().join(format!("strays-netlog-{}", Uuid::new_v4()));
+        let mut app = App::load(dir.clone()).unwrap();
+        let entry = NetEntry { at: strays_core::chrono::Utc::now(), method: "GET".into(), host: "api.github.com".into(), path: "/".into(), status: 200, reason: "scheduled".into() };
+        app.append_netlog(vec![entry.clone()]);
+        let mut text = std::fs::read_to_string(dir.join(NETLOG_FILE)).unwrap();
+        text.push_str("{half a line\n");
+        std::fs::write(dir.join(NETLOG_FILE), text).unwrap();
+        assert_eq!(app.netlog(), vec![entry.clone()]);
+        // the next write keeps only readable lines
+        app.append_netlog(vec![entry.clone()]);
+        assert!(!std::fs::read_to_string(dir.join(NETLOG_FILE)).unwrap().contains("half"));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
