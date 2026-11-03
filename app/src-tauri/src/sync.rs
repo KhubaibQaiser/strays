@@ -107,6 +107,7 @@ pub fn run(
     let mut watcher = None;
     let mut last_scan: Option<Time> = None;
     let mut sent_today = (now_day(), 0usize);
+    let mut fingerprints = crate::state::Fingerprints::new();
     // a new clone or `git init` writes .git a moment after the folder appears, so rescan shortly after events
     let mut rescan_at: Option<Time> = None;
     loop {
@@ -127,12 +128,19 @@ pub fn run(
             last_scan = None;
         }
         let _ = &watcher; // kept alive for its callbacks
-        if last_scan.is_none_or(|t| now - t > Duration::hours(RESCAN_EVERY)) || rescan_at.is_some_and(|t| now >= t) {
-            changed |= app.scan_folders();
+        // folder listings and git reads run without the state, so the UI never waits on the disk
+        let scan = (last_scan.is_none_or(|t| now - t > Duration::hours(RESCAN_EVERY)) || rescan_at.is_some_and(|t| now >= t)).then(|| app.settings.watched_folders.clone());
+        let jobs = app.local_jobs();
+        drop(app);
+        let listed = scan.as_deref().map(crate::state::list_git_folders);
+        let local = crate::state::read_local(jobs, &mut fingerprints);
+        app = shared.lock().unwrap();
+        if let Some(listed) = listed {
+            changed |= app.apply_scan(listed);
             last_scan = Some(now);
             rescan_at = None;
         }
-        changed |= app.refresh_local_activity();
+        changed |= app.apply_local(local);
         if woke && app.settings.sync_on_wake && forced.is_none() {
             forced = Some(None);
         }

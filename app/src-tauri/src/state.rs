@@ -561,24 +561,43 @@ impl App {
     /// Lists git repos directly inside each watched folder. Repos that appear in a folder already
     /// watched before become new-project candidates; a newly watched folder's repos don't (they're
     /// offered in "Adopt a pet" instead). Returns whether anything changed.
+    #[cfg(test)]
     pub fn scan_folders(&mut self) -> bool {
+        let listed = list_git_folders(&self.settings.watched_folders);
+        self.apply_scan(listed)
+    }
+
+    /// Records what `list_git_folders` found (read without holding the state). Returns whether anything changed.
+    pub fn apply_scan(&mut self, listed: Vec<(String, Result<Vec<String>, String>)>) -> bool {
         let mut found = Vec::new();
         let mut fresh = Vec::new();
-        for root in &self.settings.watched_folders {
-            let seen_before = self.known_folders.roots.contains(root);
-            let Ok(entries) = std::fs::read_dir(root) else { continue };
-            for e in entries.flatten() {
-                let path = e.path();
-                if !path.join(".git").exists() {
+        let mut unreadable = Vec::new();
+        for (root, repos) in listed {
+            // the folder may have been removed from the watch list while it was being read
+            if !self.settings.watched_folders.contains(&root) {
+                continue;
+            }
+            let repos = match repos {
+                Ok(r) => {
+                    self.resolve(&format!("scan:{root}"));
+                    r
+                }
+                Err(e) => {
+                    unreadable.push((root, e));
                     continue;
                 }
-                let p = path.display().to_string();
+            };
+            let seen_before = self.known_folders.roots.contains(&root);
+            for p in repos {
                 if self.known_folders.repos.insert(p.clone()) && seen_before && !self.tracked_folder(&p) {
                     fresh.push(p.clone());
                 }
                 found.push(p);
             }
-            self.known_folders.roots.insert(root.clone());
+            self.known_folders.roots.insert(root);
+        }
+        for (root, e) in unreadable {
+            self.warn(&format!("scan:{root}"), format!("Strays can't look inside {} ({e}). Add it again in Settings → Folders, or remove it.", tilde(&root)));
         }
         found.sort();
         let changed = found != self.local_repos || !fresh.is_empty();
@@ -595,15 +614,28 @@ impl App {
         changed
     }
 
-    /// Reads commit dates from pets' local folders (§5.4). Never runs git or fetches.
-    pub fn refresh_local_activity(&mut self) -> bool {
+    /// Local folders to read for activity (§5.4): pets that still follow theirs.
+    pub fn local_jobs(&self) -> Vec<(Uuid, String)> {
+        self.pets
+            .iter()
+            .filter(|p| !matches!(p.state.kind, StateKind::Graduated | StateKind::LetGo))
+            .filter_map(|p| p.project.local.as_ref().filter(|l| !l.path.is_empty()).map(|l| (p.id, l.path.clone())))
+            .collect()
+    }
+
+    /// Records what `read_local` found (read without holding the state). Returns whether a pet got new activity.
+    pub fn apply_local(&mut self, results: Vec<(Uuid, Result<localgit::LocalInfo, String>)>) -> bool {
         let mut changed = Vec::new();
-        for p in &mut self.pets {
-            let Some(path) = p.project.local.as_ref().map(|l| l.path.clone()).filter(|p| !p.is_empty()) else { continue };
-            if matches!(p.state.kind, StateKind::Graduated | StateKind::LetGo) {
-                continue;
-            }
-            let Ok(info) = localgit::read(std::path::Path::new(&path), &Default::default()) else { continue };
+        for (id, info) in results {
+            let Some(p) = self.pets.iter_mut().find(|p| p.id == id && !matches!(p.state.kind, StateKind::Graduated | StateKind::LetGo)) else { continue };
+            let info = match info {
+                Ok(info) => info,
+                Err(e) => {
+                    let (name, folder) = (p.name.clone(), p.project.local.as_ref().map(|l| l.display_path.clone()).unwrap_or_default());
+                    self.warn(&format!("local:{id}"), format!("Strays can't read {folder} for {name} ({e}). If the folder moved or was deleted, let {name} go, or adopt the folder again."));
+                    continue;
+                }
+            };
             let before = p.activity.last;
             for (t, s) in [(info.last_commit, ActivitySource::LocalCommit), (info.last_remote_ref, ActivitySource::LocalRemoteRef)] {
                 if let Some(t) = t {
@@ -614,6 +646,7 @@ impl App {
                 changed.push(p.id);
                 self.cues.push((p.id, Cue::Eat));
             }
+            self.resolve(&format!("local:{id}"));
         }
         changed.iter().for_each(|&id| self.save_pet(id));
         !changed.is_empty()
@@ -809,6 +842,45 @@ fn reset<T: Default>(store: &Store, name: &str, what: &str, e: strays_core::stor
     };
     issues.push(Issue { key: format!("load:{name}"), text });
     T::default()
+}
+
+/// Git repos directly inside each watched folder (§5.9). Slow-ish on big folders, so it runs without the state.
+pub fn list_git_folders(roots: &[String]) -> Vec<(String, Result<Vec<String>, String>)> {
+    roots
+        .iter()
+        .map(|root| {
+            let listed = std::fs::read_dir(root).map_err(|e| e.to_string()).map(|entries| {
+                entries.flatten().map(|e| e.path()).filter(|p| p.join(".git").exists()).map(|p| p.display().to_string()).collect()
+            });
+            (root.clone(), listed)
+        })
+        .collect()
+}
+
+/// Git change fingerprints from the last read, by pet: a folder whose fingerprint hasn't moved isn't read again.
+pub type Fingerprints = HashMap<Uuid, Vec<(String, std::time::SystemTime)>>;
+
+/// Reads the folders `jobs` names (§5.4), skipping ones unchanged since the last read. Never runs git or
+/// fetches, and runs without the state, as a cold read takes up to ~150 ms a repo.
+pub fn read_local(jobs: Vec<(Uuid, String)>, seen: &mut Fingerprints) -> Vec<(Uuid, Result<localgit::LocalInfo, String>)> {
+    seen.retain(|id, _| jobs.iter().any(|(j, _)| j == id));
+    let mut out = Vec::new();
+    for (id, path) in jobs {
+        let path = std::path::Path::new(&path);
+        let fp = localgit::fingerprint(path);
+        if fp.is_some() && seen.get(&id) == fp.as_ref() {
+            continue;
+        }
+        let info = localgit::read(path, &Default::default());
+        // only a good read is remembered, so a failing folder is tried again next time
+        if let (Ok(_), Some(fp)) = (&info, fp) {
+            seen.insert(id, fp);
+        } else {
+            seen.remove(&id);
+        }
+        out.push((id, info));
+    }
+    out
 }
 
 /// Folders the app still reads: watched folders, and those of pets that aren't finished or past their let-go undo.
@@ -1013,6 +1085,44 @@ mod tests {
         app.warn("save:x", "Couldn't save Miso: disk full");
         app.warn("action", "All adoption slots are full");
         assert_eq!(app.reports.iter().map(|r| r.message.as_str()).collect::<Vec<_>>(), ["Couldn't save <name>: disk full"]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unchanged_folders_are_not_read_again_and_unreadable_ones_are_reported() {
+        let dir = std::env::temp_dir().join(format!("strays-local-{}", Uuid::new_v4()));
+        let repo = dir.join("proj");
+        std::fs::create_dir_all(&repo).unwrap();
+        // test fixture only: the app itself never runs git
+        let vars = [("GIT_COMMITTER_DATE", "2026-10-01T10:00:00Z"), ("GIT_AUTHOR_DATE", "2026-10-01T10:00:00Z"), ("GIT_CONFIG_GLOBAL", "/dev/null")];
+        let git = |args: &[&str]| assert!(std::process::Command::new("git").args(["-c", "user.name=t", "-c", "user.email=t@t"]).args(args).current_dir(&repo).envs(vars).status().unwrap().success());
+        git(&["init", "-q", "-b", "main"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "a"]);
+        let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
+        let jobs = || vec![(a, repo.display().to_string()), (b, dir.join("gone").display().to_string())];
+        let mut seen = Fingerprints::new();
+        let first = read_local(jobs(), &mut seen);
+        assert_eq!(first.len(), 2);
+        assert!(first[0].1.is_ok() && first[1].1.is_err());
+        // nothing changed: only the failing folder is tried again
+        let again = read_local(jobs(), &mut seen);
+        assert_eq!(again.iter().map(|(id, _)| *id).collect::<Vec<_>>(), vec![b]);
+        git(&["commit", "-q", "--allow-empty", "-m", "b"]);
+        assert_eq!(read_local(jobs(), &mut seen).len(), 2, "a new commit is read");
+        // a pet that no longer reads its folder is forgotten
+        read_local(vec![], &mut seen);
+        assert!(seen.is_empty());
+
+        let mut app = App::load(dir.join("data")).unwrap();
+        let now = strays_core::chrono::Utc::now();
+        let local = LocalRef { bookmark_id: Uuid::new_v4(), display_path: "~/gone".into(), path: dir.join("gone").display().to_string() };
+        let mut p = Pet::new(now, "Miso", Species::Cat, Project { github: None, local: Some(local) }, Activity { last: now, source: ActivitySource::LocalCommit }, Pace::Normal);
+        p.adopt(now).unwrap();
+        let id = p.id;
+        app.pets.push(p);
+        let results = read_local(app.local_jobs(), &mut seen);
+        app.apply_local(results);
+        assert!(app.issues.iter().any(|i| i.key == format!("local:{id}") && i.text.contains("~/gone") && i.text.contains("Miso")), "{:?}", app.issues);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
