@@ -115,6 +115,8 @@ pub struct Github {
     meta: RefCell<Meta>,
     reason: String,
     log: RefCell<Vec<NetEntry>>,
+    /// Listing stops after this many pages (100 repos each), so a runaway `next` link can't loop forever.
+    max_pages: usize,
 }
 
 /// One line of the network activity log (§8.5). Paths name repos by id only.
@@ -155,6 +157,7 @@ impl Github {
             meta: Default::default(),
             reason: "scheduled".into(),
             log: Default::default(),
+            max_pages: 50,
         })
     }
 
@@ -241,7 +244,13 @@ impl Github {
         let mut repos = Vec::new();
         let mut first_etag = None;
         let mut first = true;
+        let mut pages = 0;
         while let Some(url) = next.take() {
+            // past the cap, the newest-pushed repos are what matter; the listing is just marked incomplete
+            if pages == self.max_pages {
+                return Ok(Listing::Changed { repos, etag: first_etag, complete: false });
+            }
+            pages += 1;
             let res = self.get(&url, if first { etag } else { None })?;
             if res.status() == StatusCode::NOT_MODIFIED {
                 return Ok(Listing::NotModified);
@@ -630,6 +639,16 @@ mod tests {
         assert_eq!(gh.latest_release(RELEASES_REPO).unwrap(), None);
         // the anonymous client is still limited to the allowed host
         assert!(Github::anonymous("https://evil.example").is_err());
+    }
+
+    #[test]
+    fn listing_stops_at_the_page_cap_and_says_its_incomplete() {
+        let fake = Fake::start();
+        let mut gh = fake.client();
+        gh.max_pages = 2;
+        let Listing::Changed { repos, complete, .. } = gh.list_repos(None, None).unwrap() else { panic!() };
+        assert_eq!((repos.len(), complete), (200, false));
+        assert_eq!(gh.take_log().len(), 2, "no third request");
     }
 
     #[test]
