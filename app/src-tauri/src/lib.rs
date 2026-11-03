@@ -23,7 +23,7 @@ use serde::Serialize;
 use strays_core::chrono::Utc;
 use strays_core::uuid::Uuid;
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::overlay::Overlay;
 use crate::state::App;
@@ -261,7 +261,7 @@ pub fn run() {
                             && let Some(sound) = audio::for_cue(cue, sp).filter(|_| quiet_ok(sp)) {
                                 player.play(sound, app.settings.volume);
                             }
-                        let _ = ui.emit("cue", Cue { id, cue });
+                        overlay::send(&ui, "cue", Cue { id, cue });
                     }
                     let s = &app.settings;
                     let config = overlay::Config {
@@ -285,11 +285,11 @@ pub fn run() {
                         };
                         #[cfg(debug_assertions)]
                         println!("NUDGE {id} {text}");
-                        let _ = ui.emit("nudge", Feedback { id, ok: true, text });
+                        overlay::send(&ui, "nudge", Feedback { id, ok: true, text });
                     }
                     if let Some(sync::SyncOutcome { ok, for_pet: Some(id) }) = outcome {
                         let text = if ok { "✓".into() } else { format!("⚠ {}", app.sync_error.clone().unwrap_or_default()) };
-                        let _ = ui.emit("feedback", Feedback { id, ok, text });
+                        overlay::send(&ui, "feedback", Feedback { id, ok, text });
                     }
                     #[cfg(debug_assertions)]
                     println!("STATE visible={} pets={} sync={}", app.visible.len(), app.pets.len(), menu::status_line(app));

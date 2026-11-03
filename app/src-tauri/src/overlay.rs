@@ -14,6 +14,13 @@ use crate::platform;
 use crate::state::PetView;
 
 const LABEL: &str = "overlay";
+
+/// Sends an event to the overlay page only: frames, hovers and pet moments mean nothing to other windows.
+pub fn send<R: tauri::Runtime, S: Serialize + Clone>(h: &impl Emitter<R>, event: &str, payload: S) {
+    if let Err(e) = h.emit_to(LABEL, event, payload) {
+        crate::log::warn(&format!("could not send {event} to the overlay: {e}"));
+    }
+}
 /// The cat art fills about 65% of its square canvas (art/cat/scene.rml), so a canvas this much
 /// bigger than the pet height shows a pet of that height.
 const ART_FILL: f64 = 0.65;
@@ -250,10 +257,12 @@ impl Overlay {
                 };
                 if target != hovered || now_held != held {
                     let w = me.window();
-                    if target.is_some() != hovered.is_some() {
-                        let _ = w.set_ignore_cursor_events(target.is_none());
+                    if target.is_some() != hovered.is_some()
+                        && let Err(e) = w.set_ignore_cursor_events(target.is_none())
+                    {
+                        crate::log::warn(&format!("could not switch the overlay's click-through: {e}"));
                     }
-                    let _ = w.emit("hover", Hover { id: target, held: now_held });
+                    send(&w, "hover", Hover { id: target, held: now_held });
                     #[cfg(debug_assertions)]
                     println!("HOVER {:?} held={now_held}", target);
                     hovered = target;
@@ -271,9 +280,10 @@ impl Overlay {
                     };
                     let screen = screen.unwrap_or(old);
                     // resizing waits for the main thread, so not under the lock pet_click takes there
-                    if screen != old {
-                        let _ = w.set_size(LogicalSize::new(screen.frame.w, screen.frame.h));
-                        let _ = w.set_position(LogicalPosition::new(screen.frame.x, screen.frame.y));
+                    if screen != old
+                        && let Err(e) = w.set_size(LogicalSize::new(screen.frame.w, screen.frame.h)).and_then(|_| w.set_position(LogicalPosition::new(screen.frame.x, screen.frame.y)))
+                    {
+                        crate::log::warn(&format!("could not fit the overlay to the screen: {e}"));
                     }
                     let mut o = me.0.lock().unwrap();
                     if screen != o.screen || front != o.front || rm != o.reduce_motion {
@@ -319,11 +329,21 @@ fn relayout(o: &mut Inner) {
         println!("LAYOUT {} {} {} {}", p.view.id, (o.screen.frame.x + p.x).round(), (o.screen.frame.y + p.y).round(), p.s.round());
     }
     let frame = Frame { pets: o.placed.clone(), liveliness: o.liveliness, reduce_motion: o.reduce_motion };
-    let _ = o.window.emit("overlay", frame);
+    send(&o.window, "overlay", frame);
 }
 
 #[cfg(test)]
 mod tests {
+    /// Overlay events go to the overlay only (`send`); a plain `.emit(` would broadcast them to every window.
+    #[test]
+    fn overlay_events_are_never_broadcast() {
+        for (file, src) in [("overlay.rs", include_str!("overlay.rs")), ("lib.rs", include_str!("lib.rs"))] {
+            for event in ["overlay", "hover", "cue", "nudge", "feedback"] {
+                assert!(!src.contains(&format!(".emit(\"{event}\"")), "{file} broadcasts {event}");
+            }
+        }
+    }
+
     use super::*;
     use strays_core::mood::Mood;
 
