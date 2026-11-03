@@ -197,7 +197,6 @@ pub fn run() {
             commands::set_goal,
             commands::set_pet,
             commands::adopt,
-            commands::ignore_repo,
             commands::save_settings,
             commands::set_flag,
             commands::sync_now,

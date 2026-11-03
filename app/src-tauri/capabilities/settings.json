@@ -1,0 +1,27 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings",
+  "description": "Settings, the only window that can disconnect, export or delete everything",
+  "windows": [
+    "settings"
+  ],
+  "permissions": [
+    "core:event:default",
+    "allow-ui-state",
+    "allow-delete-everything",
+    "allow-dismiss-issues",
+    "allow-export-data",
+    "allow-netlog",
+    "allow-open-data-folder",
+    "allow-open-link",
+    "allow-open-window",
+    "allow-pick-folder",
+    "allow-reveal-log",
+    "allow-save-settings",
+    "allow-set-flag",
+    "allow-set-login-item",
+    "allow-sync-now",
+    "allow-test-sound",
+    "allow-token-disconnect"
+  ]
+}

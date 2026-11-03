@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "adopt",
+  "description": "The adoption window",
+  "windows": [
+    "adopt"
+  ],
+  "permissions": [
+    "core:event:default",
+    "allow-ui-state",
+    "allow-adopt",
+    "allow-close-window",
+    "allow-pick-folder"
+  ]
+}
