@@ -76,30 +76,29 @@ pub fn frontmost_window() -> Option<CGRect> {
 }
 
 /// A read-only security-scoped bookmark for a folder the user picked (§9), so the sandboxed app can open it again after a restart.
-pub fn bookmark(path: &str) -> Option<Vec<u8>> {
+pub fn bookmark(path: &str) -> Result<Vec<u8>, String> {
     let url = NSURL::fileURLWithPath(&NSString::from_str(path));
     let options = NSURLBookmarkCreationOptions::WithSecurityScope | NSURLBookmarkCreationOptions::SecurityScopeAllowOnlyReadAccess;
     url.bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(options, None, None)
-        .inspect_err(|e| eprintln!("could not bookmark {path}: {e:?}"))
-        .ok()
         .map(|d| d.to_vec())
+        .map_err(|e| e.localizedDescription().to_string())
 }
 
 /// Resolves a bookmark and starts access for the rest of the run. Returns the folder's current path and,
 /// when macOS says the bookmark is stale (the folder moved), a fresh one.
-pub fn open_bookmark(data: &[u8]) -> Option<(String, Option<Vec<u8>>)> {
+pub fn open_bookmark(data: &[u8]) -> Result<(String, Option<Vec<u8>>), String> {
     let mut stale = Bool::NO;
     // SAFETY: `stale` is a valid out-pointer for the duration of the call.
     let url = unsafe {
         NSURL::URLByResolvingBookmarkData_options_relativeToURL_bookmarkDataIsStale_error(&NSData::with_bytes(data), NSURLBookmarkResolutionOptions::WithSecurityScope, None, &mut stale)
     }
-    .inspect_err(|e| eprintln!("bookmark unusable: {e:?}"))
-    .ok()?;
+    .map_err(|e| e.localizedDescription().to_string())?;
     // SAFETY: plain Foundation call; access is kept until the app quits, as the pets watch these folders all the time.
     unsafe { url.startAccessingSecurityScopedResource() };
-    let path = url.path()?.to_string();
-    let fresh = if stale.as_bool() { bookmark(&path) } else { None };
-    Some((path, fresh))
+    let path = url.path().ok_or("the folder has no path")?.to_string();
+    // a stale bookmark still works for this run; failing to refresh it only matters after the next restart
+    let fresh = if stale.as_bool() { bookmark(&path).inspect_err(|e| eprintln!("could not refresh the bookmark for {path}: {e}")).ok() } else { None };
+    Ok((path, fresh))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]

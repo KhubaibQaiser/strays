@@ -276,3 +276,10 @@ table.log th {
   padding: 3px 6px;
   border-bottom: 1px solid var(--line);
 }
+
+.issues {
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+}

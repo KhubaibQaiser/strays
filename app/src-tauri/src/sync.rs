@@ -50,26 +50,28 @@ const UPDATE_EVERY: i64 = 7; // days
 /// `on_change` runs after every loop pass that changed something, and after every sync.
 const RESCAN_EVERY: i64 = 6; // hours; FSEvents covers the time in between (§5.9)
 
-/// Watches the given folders (not recursively); any change asks the loop to rescan.
-fn watch(folders: &[String], tx: &Sender<Cmd>) -> Option<notify::RecommendedWatcher> {
+/// Watches the given folders (not recursively); any change asks the loop to rescan. Also returns what
+/// couldn't be watched: those folders are still rescanned every few hours.
+fn watch(folders: &[String], tx: &Sender<Cmd>) -> (Option<notify::RecommendedWatcher>, Vec<String>) {
     use notify::Watcher;
     if folders.is_empty() {
-        return None;
+        return (None, Vec::new());
     }
     let tx = tx.clone();
-    let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        if res.is_ok() {
-            let _ = tx.send(Cmd::Folders);
-        }
-    })
-    .map_err(|e| eprintln!("folder watching unavailable: {e}"))
-    .ok()?;
-    for f in folders {
-        if let Err(e) = w.watch(std::path::Path::new(f), notify::RecursiveMode::NonRecursive) {
-            eprintln!("can't watch {f}: {e}");
-        }
-    }
-    Some(w)
+    let w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
+        // the loop has exited when this fails: the app is quitting
+        Ok(_) => drop(tx.send(Cmd::Folders)),
+        Err(e) => eprintln!("folder watch error: {e}"),
+    });
+    let mut w = match w {
+        Ok(w) => w,
+        Err(e) => return (None, vec![format!("Strays can't watch folders for new projects ({e}); it checks every {RESCAN_EVERY} hours instead.")]),
+    };
+    let failed = folders
+        .iter()
+        .filter_map(|f| w.watch(std::path::Path::new(f), notify::RecursiveMode::NonRecursive).err().map(|e| format!("Strays can't watch {} ({e}); it checks every {RESCAN_EVERY} hours instead.", crate::state::tilde(f))))
+        .collect();
+    (Some(w), failed)
 }
 
 pub fn run(
@@ -87,11 +89,14 @@ pub fn run(
         app.settings.sync_on_launch.then_some(None)
     };
     // the Keychain is read here, off the main thread, rather than on every UI refresh
-    let has_token = crate::token::load().is_some();
+    let token = crate::token::load();
     // show pets straight away; the first sync may take a while on a slow network
     {
         let mut app = shared.lock().unwrap();
-        app.has_token = has_token;
+        app.has_token = matches!(token, Ok(Some(_)));
+        if let Err(e) = token {
+            app.warn("keychain", e);
+        }
         app.tick(Utc::now());
         app.refresh_visible(Utc::now());
         on_change(&app, None, None, Vec::new());
@@ -112,7 +117,12 @@ pub fn run(
         changed |= app.tick(now);
         if app.settings.watched_folders != watched {
             watched = app.settings.watched_folders.clone();
-            watcher = watch(&watched, &tx);
+            let failed;
+            (watcher, failed) = watch(&watched, &tx);
+            app.resolve("watch");
+            if !failed.is_empty() {
+                app.warn("watch", failed.join(" "));
+            }
             last_scan = None;
         }
         let _ = &watcher; // kept alive for its callbacks
@@ -142,13 +152,18 @@ pub fn run(
         } else if (forced.is_some() || scheduled) && allowed {
             let for_pet = forced.take().flatten();
             let token = crate::token::load();
-            app.has_token = token.is_some();
+            app.has_token = matches!(token, Ok(Some(_)));
             match token {
-                None => {
+                Err(e) => {
+                    app.sync_error = Some(e);
+                    outcome = Some(SyncOutcome { ok: false, for_pet });
+                }
+                Ok(None) => {
                     app.sync_error = Some("No GitHub token yet".into());
                     outcome = Some(SyncOutcome { ok: false, for_pet });
                 }
-                Some(token) => {
+                Ok(Some(token)) => {
+                    app.resolve("keychain");
                     let full = last_full.is_none_or(|t| now - t > Duration::hours(FULL_EVERY));
                     let snapshot = app.sync.clone();
                     let tracked = github::tracked_ids(&app.pets);

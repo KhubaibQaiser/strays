@@ -86,9 +86,17 @@ pub struct App {
     nudge_log: strays_core::nudge::NudgeLog,
     /// Security-scoped bookmarks for folders the user picked, by path (§9): the sandbox's way back in after a restart.
     bookmarks: std::collections::BTreeMap<String, Vec<u8>>,
-    pub load_problems: usize,
+    /// Problems the user should know about, shown in the menu and Settings until fixed or dismissed.
+    pub issues: Vec<Issue>,
     /// Clips waiting to be played; `Eat` waits until its pet is on screen.
     pub cues: Vec<(Uuid, Cue)>,
+}
+
+/// Something that went wrong. `key` identifies the cause, so a repeat replaces it and a fix can clear it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Issue {
+    pub key: String,
+    pub text: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -178,19 +186,17 @@ const LOOKS: [[&str; 4]; 4] = [
 impl App {
     pub fn load(dir: PathBuf) -> Result<Self, String> {
         let store = Store::open(dir.clone()).map_err(|e| e.to_string())?;
-        let settings = store.load_settings().unwrap_or_else(|e| {
-            eprintln!("settings unreadable, using defaults (file kept): {e:?}");
-            Settings::default()
-        });
+        let mut issues = Vec::new();
+        let settings = store.load_settings().unwrap_or_else(|e| reset(&store, "settings.json", "Your settings", e, &mut issues));
         let (pets, problems) = store.load_pets().map_err(|e| e.to_string())?;
         for p in &problems {
-            eprintln!("pet file skipped: {p:?}");
+            issues.push(Issue { key: format!("load:{p}"), text: p.to_string() });
         }
-        let sync: SyncState = store.load(SYNC_FILE).unwrap_or_default();
-        let account: Option<Account> = store.load(ACCOUNT_FILE).unwrap_or_default();
-        let known_folders: KnownFolders = store.load(FOLDERS_FILE).unwrap_or_default();
-        let nudge_log = store.load(NUDGE_FILE).unwrap_or_default();
-        let mut bookmarks: std::collections::BTreeMap<String, Vec<u8>> = store.load(BOOKMARKS_FILE).unwrap_or_default();
+        let sync: SyncState = load(&store, SYNC_FILE, "Sync history", &mut issues);
+        let account: Option<Account> = load(&store, ACCOUNT_FILE, "The GitHub account details", &mut issues);
+        let known_folders: KnownFolders = load(&store, FOLDERS_FILE, "The list of known project folders", &mut issues);
+        let nudge_log = load(&store, NUDGE_FILE, "The nudge history", &mut issues);
+        let mut bookmarks: std::collections::BTreeMap<String, Vec<u8>> = load(&store, BOOKMARKS_FILE, "Folder access", &mut issues);
         // a bookmark no watched folder or pet still needs is dropped, so the sandbox stops granting that folder
         let needed = needed_folders(&settings, &pets, strays_core::chrono::Utc::now());
         let before = bookmarks.len();
@@ -198,7 +204,7 @@ impl App {
         if bookmarks.len() != before
             && let Err(e) = store.save(BOOKMARKS_FILE, &bookmarks)
         {
-            eprintln!("could not save folder bookmarks: {e:?}");
+            issues.push(Issue { key: "save:bookmarks".into(), text: format!("Couldn't save folder access: {e}") });
         }
         // vacation lives in the pets it paused, so it survives a restart without a file of its own
         let vacation = pets.iter().any(|p| p.state.kind == StateKind::Paused && p.state.reason == "vacation");
@@ -218,7 +224,7 @@ impl App {
             rotation_started: None,
             sync_error: None,
             has_token: false,
-            load_problems: problems.len(),
+            issues,
             cues: Vec::new(),
             local_repos: Vec::new(),
             new_folders: Vec::new(),
@@ -228,6 +234,29 @@ impl App {
         })
     }
 
+    /// Records a problem for the user (menu and Settings) and the log. A repeat of the same `key` replaces it.
+    pub fn warn(&mut self, key: &str, text: impl Into<String>) {
+        let text = text.into();
+        eprintln!("{key}: {text}");
+        match self.issues.iter_mut().find(|i| i.key == key) {
+            Some(i) => i.text = text,
+            None => self.issues.push(Issue { key: key.into(), text }),
+        }
+    }
+
+    /// Clears a problem once its cause is fixed.
+    pub fn resolve(&mut self, key: &str) {
+        self.issues.retain(|i| i.key != key);
+    }
+
+    /// Records a save's outcome under `key`: a failure warns, a success clears an earlier failure.
+    fn saved(&mut self, key: &str, what: &str, r: Result<(), strays_core::store::StoreError>) {
+        match r {
+            Ok(()) => self.resolve(key),
+            Err(e) => self.warn(key, format!("Couldn't save {what}: {e}")),
+        }
+    }
+
     pub fn remember_bookmark(&mut self, path: String, data: Vec<u8>) {
         self.bookmarks.insert(path, data);
         self.save_bookmarks();
@@ -235,11 +264,12 @@ impl App {
 
     /// Opens every saved bookmark (`open` resolves one and starts access), replacing stale ones.
     /// ponytail: a folder that moved keeps working only under its old path; pets and watched folders aren't renamed.
-    pub fn open_bookmarks(&mut self, open: impl Fn(&[u8]) -> Option<(String, Option<Vec<u8>>)>) {
+    pub fn open_bookmarks(&mut self, open: impl Fn(&[u8]) -> Result<(String, Option<Vec<u8>>), String>) {
         let mut changed = false;
+        let mut lost = Vec::new();
         for (path, data) in self.bookmarks.iter_mut() {
             match open(data) {
-                Some((now_at, fresh)) => {
+                Ok((now_at, fresh)) => {
                     if &now_at != path {
                         eprintln!("folder {path} moved to {now_at}");
                     }
@@ -248,35 +278,33 @@ impl App {
                         changed = true;
                     }
                 }
-                None => eprintln!("no access to {path} any more; add it again"),
+                Err(e) => lost.push((path.clone(), e)),
             }
+        }
+        for (path, e) in lost {
+            self.warn(&format!("access:{path}"), format!("Strays can't open {} any more ({e}). Add the folder again in Settings → Folders.", tilde(&path)));
         }
         if changed {
             self.save_bookmarks();
         }
     }
 
-    fn save_bookmarks(&self) {
-        if let Err(e) = self.store.save(BOOKMARKS_FILE, &self.bookmarks) {
-            eprintln!("could not save folder bookmarks: {e:?}");
-        }
+    fn save_bookmarks(&mut self) {
+        let r = self.store.save(BOOKMARKS_FILE, &self.bookmarks);
+        self.saved("save:bookmarks", "folder access", r);
     }
 
-    pub fn save_pet(&self, id: Uuid) {
-        if let Some(p) = self.pets.iter().find(|p| p.id == id)
-            && let Err(e) = self.store.save_pet(p)
-        {
-            eprintln!("could not save pet: {e:?}");
-        }
+    pub fn save_pet(&mut self, id: Uuid) {
+        let Some(p) = self.pets.iter().find(|p| p.id == id) else { return };
+        let (r, name) = (self.store.save_pet(p), p.name.clone());
+        self.saved(&format!("save:{id}"), &name, r);
     }
 
-    pub fn save_all(&self) {
-        for p in &self.pets {
-            self.save_pet(p.id);
-        }
-        if let Err(e) = self.store.save(SYNC_FILE, &self.sync) {
-            eprintln!("could not save sync state: {e:?}");
-        }
+    pub fn save_all(&mut self) {
+        let ids: Vec<Uuid> = self.pets.iter().map(|p| p.id).collect();
+        ids.into_iter().for_each(|id| self.save_pet(id));
+        let r = self.store.save(SYNC_FILE, &self.sync);
+        self.saved("save:sync", "the sync history", r);
     }
 
     pub fn mood(&self, p: &Pet, now: Time) -> Mood {
@@ -487,8 +515,9 @@ impl App {
                 self.new_folders.push(f);
             }
         }
-        if changed && let Err(e) = self.store.save(FOLDERS_FILE, &self.known_folders) {
-            eprintln!("could not save known folders: {e:?}");
+        if changed {
+            let r = self.store.save(FOLDERS_FILE, &self.known_folders);
+            self.saved("save:folders", "the list of known folders", r);
         }
         changed
     }
@@ -540,18 +569,16 @@ impl App {
         let nudge = pick(&on_screen, &all, &mut log, &self.settings, &cx);
         if log != self.nudge_log {
             self.nudge_log = log;
-            if let Err(e) = self.store.save(NUDGE_FILE, &self.nudge_log) {
-                eprintln!("could not save the nudge log: {e:?}");
-            }
+            let r = self.store.save(NUDGE_FILE, &self.nudge_log);
+            self.saved("save:nudges", "the nudge history", r);
         }
         nudge
     }
 
     pub fn set_account(&mut self, account: Option<Account>) {
         self.account = account;
-        if let Err(e) = self.store.save(ACCOUNT_FILE, &self.account) {
-            eprintln!("could not save account: {e:?}");
-        }
+        let r = self.store.save(ACCOUNT_FILE, &self.account);
+        self.saved("save:account", "the GitHub account details", r);
     }
 
     pub fn save_settings(&mut self, s: Settings) -> Result<(), String> {
@@ -561,7 +588,7 @@ impl App {
     }
 
     /// Appends to the network activity log, keeping the newest entries (§8.5).
-    pub fn append_netlog(&self, entries: Vec<NetEntry>) {
+    pub fn append_netlog(&mut self, entries: Vec<NetEntry>) {
         if entries.is_empty() {
             return;
         }
@@ -569,8 +596,9 @@ impl App {
         all.extend(entries);
         let start = all.len().saturating_sub(NETLOG_KEEP);
         let text: String = all[start..].iter().filter_map(|e| serde_json::to_string(e).ok()).map(|l| l + "\n").collect();
-        if let Err(e) = std::fs::write(self.dir.join(NETLOG_FILE), text) {
-            eprintln!("could not write the network log: {e}");
+        match std::fs::write(self.dir.join(NETLOG_FILE), text) {
+            Ok(()) => self.resolve("save:netlog"),
+            Err(e) => self.warn("save:netlog", format!("Couldn't write the network log: {e}")),
         }
     }
 
@@ -691,6 +719,25 @@ impl App {
     }
 }
 
+fn load<T: serde::de::DeserializeOwned + Default>(store: &Store, name: &str, what: &str, issues: &mut Vec<Issue>) -> T {
+    store.load(name).unwrap_or_else(|e| reset(store, name, what, e, issues))
+}
+
+/// A data file that couldn't be loaded: a corrupt one is moved aside (one copy, replacing any older copy) so
+/// the fresh file written next can't destroy it, and the user is told. Returns the defaults to start from.
+fn reset<T: Default>(store: &Store, name: &str, what: &str, e: strays_core::store::StoreError, issues: &mut Vec<Issue>) -> T {
+    use strays_core::store::StoreError;
+    let text = match e {
+        StoreError::Corrupt { .. } => match store.set_aside(name) {
+            Ok(kept) => format!("{what} couldn't be read, so Strays started fresh. The old file was kept as {}.", kept.display()),
+            Err(e2) => format!("{what} couldn't be read and couldn't be moved aside ({e2}), so the next save will replace it."),
+        },
+        e => format!("{what} couldn't be read ({e}). Strays is using defaults for now."),
+    };
+    issues.push(Issue { key: format!("load:{name}"), text });
+    T::default()
+}
+
 /// Folders the app still reads: watched folders, and those of pets that aren't finished or past their let-go undo.
 fn needed_folders<'a>(settings: &'a Settings, pets: &'a [Pet], now: Time) -> Vec<&'a str> {
     let undo = Duration::days(settings.let_go_undo_days.into());
@@ -782,7 +829,7 @@ mod tests {
         let (opened, _) = crate::platform::open_bookmark(&again.bookmarks[&path]).expect("it resolves");
         assert_eq!(std::fs::canonicalize(opened).unwrap(), std::fs::canonicalize(&code).unwrap());
 
-        again.open_bookmarks(|_| Some((path.clone(), Some(vec![1, 2, 3]))));
+        again.open_bookmarks(|_| Ok((path.clone(), Some(vec![1, 2, 3]))));
         assert_eq!(App::load(root.join("data")).unwrap().bookmarks[&path], vec![1, 2, 3], "the fresh bookmark is saved");
 
         // once nothing reads the folder, the next launch drops its bookmark
@@ -853,6 +900,41 @@ mod tests {
         assert_eq!(app.adopt(req("coatBase", "red;x"), now), Err("Those colours aren't valid".into()));
         assert_eq!(app.adopt(req("coat base", "#EFE1CC"), now), Err("Those colours aren't valid".into()));
         assert_eq!(app.adopt(req("coatBase", "#EFE1CC"), now), Err("Pick a repo or a folder".into()), "valid colours pass");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_file_is_kept_aside_and_reported_not_silently_replaced() {
+        let dir = std::env::temp_dir().join(format!("strays-corrupt-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(SYNC_FILE), "{half a file").unwrap();
+        std::fs::write(dir.join("settings.json"), r#"{"slots": 0}"#).unwrap();
+        let mut app = App::load(dir.clone()).unwrap();
+        let keys: Vec<&str> = app.issues.iter().map(|i| i.key.as_str()).collect();
+        assert_eq!(keys, ["load:settings.json", "load:sync-state.json"]);
+        assert!(app.issues[1].text.contains("sync-state.json.corrupt"), "{}", app.issues[1].text);
+        assert_eq!(std::fs::read_to_string(dir.join("sync-state.json.corrupt")).unwrap(), "{half a file");
+        assert!(dir.join("settings.json.corrupt").exists());
+        // saving now can't destroy the original
+        app.save_all();
+        assert_eq!(std::fs::read_to_string(dir.join("sync-state.json.corrupt")).unwrap(), "{half a file");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_failed_save_is_shown_and_cleared_once_saving_works_again() {
+        let dir = std::env::temp_dir().join(format!("strays-save-{}", Uuid::new_v4()));
+        let mut app = App::load(dir.clone()).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        app.save_all();
+        assert_eq!(app.issues.iter().map(|i| i.key.as_str()).collect::<Vec<_>>(), ["save:sync"]);
+        assert!(app.issues[0].text.starts_with("Couldn't save the sync history"));
+        std::fs::create_dir_all(dir.join("pets")).unwrap();
+        app.save_all();
+        assert!(app.issues.is_empty());
+        app.warn("x", "first");
+        app.warn("x", "second");
+        assert_eq!(app.issues, vec![Issue { key: "x".into(), text: "second".into() }], "a repeat replaces, never piles up");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

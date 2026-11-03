@@ -44,7 +44,23 @@ impl Store {
     pub fn open(root: impl Into<PathBuf>) -> Result<Self, StoreError> {
         let root = root.into();
         fs::create_dir_all(root.join("pets"))?;
+        // a crash between writing a temp file and renaming it leaves the temp file behind
+        for dir in [root.clone(), root.join("pets")] {
+            for e in fs::read_dir(&dir)?.flatten() {
+                if e.file_name().to_string_lossy().contains(".tmp-") {
+                    fs::remove_file(e.path())?;
+                }
+            }
+        }
         Ok(Self { root })
+    }
+
+    /// Moves an unreadable file to `<name>.corrupt` (replacing an older copy, so copies can't pile up) and
+    /// returns where it went. The caller then starts fresh without destroying what was there.
+    pub fn set_aside(&self, name: &str) -> Result<PathBuf, StoreError> {
+        let kept = self.root.join(format!("{name}.corrupt"));
+        fs::rename(self.root.join(name), &kept)?;
+        Ok(kept)
     }
 
     fn pet_path(&self, id: Uuid) -> PathBuf {
@@ -120,7 +136,9 @@ fn write_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), StoreError> 
         let mut f = fs::File::create(&tmp)?;
         f.write_all(&json)?;
         f.sync_all()?;
-        fs::rename(&tmp, path)
+        fs::rename(&tmp, path)?;
+        // the rename itself is only durable once the folder is synced too
+        fs::File::open(path.parent().unwrap_or(Path::new("."))).and_then(|d| d.sync_all())
     })();
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
@@ -158,6 +176,26 @@ mod tests {
         // no temp files left behind
         let names: Vec<_> = fs::read_dir(dir.path().join("pets")).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert_eq!(names.len(), 3, "{names:?}");
+    }
+
+    #[test]
+    fn leftover_temp_files_are_removed_and_corrupt_files_kept_aside() {
+        let dir = tempfile::tempdir().unwrap();
+        Store::open(dir.path()).unwrap();
+        fs::write(dir.path().join("sync-state.tmp-1234"), b"half").unwrap();
+        fs::write(dir.path().join("pets/abc.tmp-5678"), b"half").unwrap();
+        fs::write(dir.path().join("sync-state.json"), b"{broken").unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        assert!(!dir.path().join("sync-state.tmp-1234").exists());
+        assert!(!dir.path().join("pets/abc.tmp-5678").exists());
+        assert!(matches!(store.load::<crate::github::SyncState>("sync-state.json"), Err(StoreError::Corrupt { .. })));
+        let kept = store.set_aside("sync-state.json").unwrap();
+        assert_eq!(fs::read(&kept).unwrap(), b"{broken");
+        assert_eq!(store.load::<crate::github::SyncState>("sync-state.json").unwrap(), Default::default());
+        // a second corrupt file replaces the first copy rather than adding another
+        fs::write(dir.path().join("sync-state.json"), b"{again").unwrap();
+        store.set_aside("sync-state.json").unwrap();
+        assert_eq!(fs::read(&kept).unwrap(), b"{again");
     }
 
     #[test]

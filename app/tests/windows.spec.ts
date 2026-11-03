@@ -182,3 +182,14 @@ test("a refresh keeps what's being typed and the scroll position", async ({ page
   await expect.poll(() => calls(page, "ui_state").then((c) => c.length)).toBe(3);
   expect(await page.locator("main").evaluate((m) => m.scrollTop)).toBeGreaterThan(100);
 });
+
+test("problems show in Settings until dismissed, and a failed call is never silent", async ({ page }) => {
+  await mockApp(page, { open_data_folder: "Finder isn't responding" }, { issues: ["Sync history couldn't be read, so Strays started fresh."] });
+  await page.goto("/ui.html#settings/privacy");
+  await expect(page.getByRole("alert").getByText(/Sync history couldn't be read/)).toBeVisible();
+  await page.getByRole("button", { name: "Dismiss" }).click();
+  expect(await calls(page, "dismiss_issues")).toHaveLength(1);
+  // this button has no handler of its own; the page-wide one still reports it
+  await page.getByRole("button", { name: "Open data folder" }).click();
+  await expect(page.getByText("Finder isn't responding")).toBeVisible();
+});

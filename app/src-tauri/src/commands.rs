@@ -79,6 +79,8 @@ pub struct UiState {
     /// A newer release found by the opt-in update check, and when it last ran.
     update: Option<strays_core::github::Release>,
     update_checked: Option<Time>,
+    /// Problems to show until fixed or dismissed.
+    issues: Vec<String>,
     pub first_run: bool,
 }
 
@@ -147,6 +149,7 @@ pub fn snapshot(app: &App) -> UiState {
         login_item: crate::platform::login_item(),
         update: app.sync.update.clone(),
         update_checked: app.sync.update_checked,
+        issues: app.issues.iter().map(|i| i.text.clone()).collect(),
         first_run: app.pets.is_empty() && app.account.is_none() && app.settings.watched_folders.is_empty(),
     }
 }
@@ -249,6 +252,13 @@ pub fn set_login_item(on: bool, h: AppHandle) -> Res<crate::platform::LoginItem>
     Ok(state)
 }
 
+/// Settings → "Dismiss": hides the current problems; any that happen again come back.
+#[tauri::command]
+pub fn dismiss_issues(shared: State<'_, Shared>) {
+    shared.app.lock().unwrap().issues.clear();
+    changed(&shared);
+}
+
 #[tauri::command]
 pub fn sync_now(shared: State<'_, Shared>) {
     let _ = shared.tx.send(Cmd::SyncNow(None));
@@ -324,14 +334,15 @@ pub async fn token_save(token: String, shared: State<'_, Shared>) -> Res<()> {
 
 /// Deletes the Keychain item straight away (§6.4). Pets keep their data and freeze.
 #[tauri::command]
-pub fn token_disconnect(shared: State<'_, Shared>) {
-    crate::token::delete();
+pub fn token_disconnect(shared: State<'_, Shared>) -> Res<()> {
+    crate::token::delete()?;
     let mut app = shared.app.lock().unwrap();
     app.has_token = false;
     app.set_account(None);
     app.sync_error = Some("Not connected to GitHub".into());
     drop(app);
     changed(&shared);
+    Ok(())
 }
 
 #[tauri::command]
@@ -339,8 +350,18 @@ pub async fn pick_folder(h: AppHandle) -> Option<String> {
     let path = h.dialog().file().set_title("Choose a project folder").blocking_pick_folder().and_then(|p| p.into_path().ok()).map(|p| p.display().to_string())?;
     // picking is the only moment the sandbox grants access; the bookmark keeps it across restarts
     #[cfg(target_os = "macos")]
-    if let Some(data) = crate::platform::bookmark(&path) {
-        h.state::<Shared>().app.lock().unwrap().remember_bookmark(path.clone(), data);
+    {
+        let shared = h.state::<Shared>();
+        let mut app = shared.app.lock().unwrap();
+        match crate::platform::bookmark(&path) {
+            Ok(data) => {
+                app.resolve(&format!("access:{path}"));
+                app.remember_bookmark(path.clone(), data);
+            }
+            Err(e) => app.warn(&format!("access:{path}"), format!("Strays can read {} now, but macOS refused to remember it ({e}), so it'll need adding again after a restart.", crate::state::tilde(&path))),
+        }
+        drop(app);
+        changed(&shared);
     }
     Some(path)
 }
@@ -393,7 +414,7 @@ pub fn export_data(shared: State<'_, Shared>, h: AppHandle) -> Res<String> {
     let export = serde_json::json!({ "pets": app.pets, "settings": app.settings, "sync": app.sync, "account": app.account });
     let path = app.dir.join(format!("strays-export-{}.json", Utc::now().format("%Y%m%d-%H%M%S")));
     std::fs::write(&path, serde_json::to_vec_pretty(&export).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    let _ = h.opener().reveal_item_in_dir(&path);
+    h.opener().reveal_item_in_dir(&path).map_err(|e| format!("Exported to {}, but Finder couldn't show it: {e}", path.display()))?;
     Ok(path.display().to_string())
 }
 
@@ -403,18 +424,32 @@ pub fn delete_everything(confirm: String, shared: State<'_, Shared>, h: AppHandl
     if confirm != "DELETE" {
         return Err("Type DELETE to confirm".into());
     }
-    crate::token::delete();
-    let _ = crate::platform::set_login_item(false);
-    let dir = shared.app.lock().unwrap().dir.clone();
-    std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut failed = Vec::new();
+    if let Err(e) = crate::token::delete() {
+        failed.push(e);
+    }
+    if crate::platform::login_item() != crate::platform::LoginItem::Off
+        && let Err(e) = crate::platform::set_login_item(false)
+    {
+        failed.push(format!("the login item ({e})"));
+    }
+    let mut dirs = vec![shared.app.lock().unwrap().dir.clone()];
     // inside the sandbox, home is the app's own container, so its web view data is Strays' alone
     if std::env::var_os("APP_SANDBOX_CONTAINER_ID").is_some()
         && let Some(home) = std::env::var_os("HOME")
     {
         let lib = std::path::Path::new(&home).join("Library");
-        for d in ["WebKit", "Caches/WebKit"] {
-            let _ = std::fs::remove_dir_all(lib.join(d));
+        dirs.extend(["WebKit", "Caches/WebKit"].map(|d| lib.join(d)));
+    }
+    for d in dirs {
+        match std::fs::remove_dir_all(&d) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => failed.push(format!("{} ({e})", d.display())),
+            _ => {}
         }
+    }
+    // quitting would hide the failure; staying open lets the user see it and try again
+    if !failed.is_empty() {
+        return Err(format!("Some things couldn't be deleted: {}. Try again, or remove them by hand.", failed.join("; ")));
     }
     h.exit(0);
     Ok(())
@@ -434,9 +469,10 @@ pub fn open_window(kind: String, arg: Option<String>, h: AppHandle) -> Res<()> {
 }
 
 #[tauri::command]
-pub fn close_window(label: String, h: AppHandle) {
-    if let Some(w) = h.get_webview_window(&label) {
-        let _ = w.close();
+pub fn close_window(label: String, h: AppHandle) -> Res<()> {
+    match h.get_webview_window(&label) {
+        Some(w) => w.close().map_err(|e| e.to_string()),
+        None => Ok(()),
     }
 }
 

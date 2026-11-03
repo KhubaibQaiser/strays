@@ -145,7 +145,7 @@ export function renderSettings(root: HTMLElement, state: UiState, section: strin
       toggle("syncOnLaunch", "Also when Strays starts"),
       toggle("syncPauseOnLowPower", "Pause in Low Power Mode"),
       el("div", { class: "check muted" }, el("input", { type: "checkbox", disabled: true }), "Only on Wi-Fi (not available yet)"),
-      el("div", { class: "buttons" }, el("button", { onclick: () => void api.syncNow().then(() => notice("Syncing…")) }, "Sync now")),
+      el("div", { class: "buttons" }, el("button", { onclick: () => void api.syncNow().then(() => notice("Syncing…")).catch((e) => notice(String(e), true)) }, "Sync now")),
     ],
     privacy: () => privacy(state, s, save, notice),
     about: () => [
@@ -170,8 +170,19 @@ export function renderSettings(root: HTMLElement, state: UiState, section: strin
       "div",
       { class: "settings" },
       el("nav", { "aria-label": "Settings sections" }, ...SECTIONS.map(([id, t]) => el("button", { "aria-current": id === section ? "page" : false, onclick: () => go(id) }, t))),
-      el("main", {}, ...page(), el("p", { id: "notice", class: "small", role: "status" })),
+      el("main", {}, issues(state, notice), ...page(), el("p", { id: "notice", class: "small", role: "status" })),
     ),
+  );
+}
+
+/** Problems the app hit (unreadable files, failed saves, lost folder access…), until fixed or dismissed. */
+function issues(state: UiState, notice: Notice): HTMLElement | null {
+  if (!state.issues.length) return null;
+  return el(
+    "div",
+    { class: "issues", role: "alert" },
+    ...state.issues.map((t) => el("p", { class: "error small" }, `⚠ ${t}`)),
+    el("button", { onclick: () => void api.dismissIssues().catch((e) => notice(String(e), true)) }, "Dismiss"),
   );
 }
 
@@ -220,9 +231,9 @@ function privacy(state: UiState, s: Settings, save: () => Promise<unknown>, noti
     el(
       "div",
       { class: "buttons" },
-      gh ? el("button", { onclick: () => void api.syncNow().then(() => notice("Testing with a sync…")) }, "Test") : null,
+      gh ? el("button", { onclick: () => void api.syncNow().then(() => notice("Testing with a sync…")).catch((e) => notice(String(e), true)) }, "Test") : null,
       el("button", { class: gh ? "" : "primary", onclick: () => void api.openWindow("setup") }, gh ? "Replace token" : "Connect GitHub…"),
-      gh ? confirmButton("Disconnect", "Delete the token? Click again", () => void api.tokenDisconnect().then(() => notice("Disconnected; the token was deleted from the Keychain")), "danger") : null,
+      gh ? confirmButton("Disconnect", "Delete the token? Click again", () => void api.tokenDisconnect().then(() => notice("Disconnected; the token was deleted from the Keychain")).catch((e) => notice(String(e), true)), "danger") : null,
     ),
   );
 
