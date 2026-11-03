@@ -36,7 +36,7 @@ Strays is local-first and asks for as little as possible.
 
 - **No network** except GitHub, and only once you connect a token, or turn on the opt-in weekly update check (which sends no token).
 - **Read-only, expiring GitHub token.** A fine-grained token with only **Metadata: Read-only**: it can see when repos were pushed to, not their code. Classic tokens are rejected. The token is kept in the macOS Keychain and never reaches the app's web view.
-- **Only `api.github.com`.** No other host is contacted, and redirects are never followed.
+- **Only `api.github.com`.** No other host is contacted, and redirects are never followed. The one exception is opt-in: anonymous error reports to PostHog, off until you turn them on, with paths and names removed.
 - **No `git` commands.** Local repositories are read directly (commit dates and remote URLs only). Strays never fetches, and never touches your credentials or SSH keys.
 - **No special macOS permissions.** Cursor position, the ⌥ key and window bounds are all readable without Accessibility, Input Monitoring or Screen Recording.
 
