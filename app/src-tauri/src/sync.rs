@@ -216,8 +216,7 @@ pub fn run(
                             app.cues.extend(fed);
                             let farewells: Vec<_> = app.pets.iter().filter(|p| report.graduated.contains(&p.id)).map(|p| (p.id, crate::state::Cue::graduate(p))).collect();
                             app.cues.extend(farewells);
-                            let fresh: Vec<_> = report.new_projects.iter().filter(|r| !app.new_projects.iter().any(|n| n.id == r.id)).cloned().collect();
-                            app.new_projects.extend(fresh);
+                            app.offer_new(&report.new_projects);
                         }
                         Err(e) => {
                             app.sync_error = Some(e.to_string());

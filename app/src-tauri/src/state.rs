@@ -23,6 +23,15 @@ const NETLOG_KEEP: usize = 1000;
 const FOLDERS_FILE: &str = "folders.json";
 const NUDGE_FILE: &str = "nudges.json";
 const BOOKMARKS_FILE: &str = "bookmarks.json";
+const PROMPTS_FILE: &str = "new-projects.json";
+
+/// New repos and folders still waiting for the user's decision (§5.9). Saved, because once seen they
+/// count as known and would never be offered again.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct Prompts {
+    repos: Vec<Repo>,
+    folders: Vec<String>,
+}
 
 /// Git folders already seen inside watched folders, so only ones that appear later count as new (§5.9).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -204,6 +213,7 @@ impl App {
         let known_folders: KnownFolders = load(&store, FOLDERS_FILE, "The list of known project folders", &mut issues);
         let nudge_log = load(&store, NUDGE_FILE, "The nudge history", &mut issues);
         let mut bookmarks: std::collections::BTreeMap<String, Vec<u8>> = load(&store, BOOKMARKS_FILE, "Folder access", &mut issues);
+        let prompts: Prompts = load(&store, PROMPTS_FILE, "The list of new projects", &mut issues);
         // a bookmark no watched folder or pet still needs is dropped, so the sandbox stops granting that folder
         let needed = needed_folders(&settings, &pets, strays_core::chrono::Utc::now());
         let before = bookmarks.len();
@@ -224,7 +234,7 @@ impl App {
             sync,
             flags: Flags { vacation, ..Flags::default() },
             repos: Vec::new(),
-            new_projects: Vec::new(),
+            new_projects: prompts.repos,
             visible: Vec::new(),
             hidden_needy: 0,
             last_shown: HashMap::new(),
@@ -235,7 +245,7 @@ impl App {
             reports: Vec::new(),
             cues: Vec::new(),
             local_repos: Vec::new(),
-            new_folders: Vec::new(),
+            new_folders: prompts.folders,
             known_folders,
             nudge_log,
             bookmarks,
@@ -486,16 +496,34 @@ impl App {
         let id = p.id;
         self.pets.push(p);
         self.new_projects.retain(|r| r.id != repo_id);
+        self.save_prompts();
         self.save_pet(id);
         Ok(message)
     }
 
     pub fn ignore_folder(&mut self, path: &str) {
         self.new_folders.retain(|f| f != path);
+        self.save_prompts();
     }
 
     pub fn ignore_new(&mut self, repo_id: u64) {
         self.new_projects.retain(|r| r.id != repo_id);
+        self.save_prompts();
+    }
+
+    /// Repos found by a sync that wait for the user's decision.
+    pub fn offer_new(&mut self, repos: &[Repo]) {
+        let fresh: Vec<Repo> = repos.iter().filter(|r| !self.new_projects.iter().any(|n| n.id == r.id)).cloned().collect();
+        if !fresh.is_empty() {
+            self.new_projects.extend(fresh);
+            self.save_prompts();
+        }
+    }
+
+    fn save_prompts(&mut self) {
+        let prompts = Prompts { repos: self.new_projects.clone(), folders: self.new_folders.clone() };
+        let r = self.store.save(PROMPTS_FILE, &prompts);
+        self.saved("save:prompts", "the list of new projects", r);
     }
 
     pub fn act(&mut self, id: Uuid, action: Action, now: Time) -> Result<String, String> {
@@ -605,10 +633,14 @@ impl App {
         found.sort();
         let changed = found != self.local_repos || !fresh.is_empty();
         self.local_repos = found;
+        let offered = self.new_folders.len();
         for f in fresh {
             if !self.new_folders.contains(&f) {
                 self.new_folders.push(f);
             }
+        }
+        if self.new_folders.len() != offered {
+            self.save_prompts();
         }
         if changed {
             let r = self.store.save(FOLDERS_FILE, &self.known_folders);
@@ -793,6 +825,7 @@ impl App {
         if let Some(f) = &req.folder {
             self.new_folders.retain(|n| n != f);
         }
+        self.save_prompts();
         self.pets.push(p);
         self.save_pet(id);
         Ok(message)
@@ -954,12 +987,34 @@ mod tests {
         assert_eq!(app.new_folders, vec![code.join("fresh").display().to_string()]);
         assert!(!app.scan_folders(), "nothing changed");
 
-        // the known list survives a restart, so "fresh" isn't offered twice
-        let mut again = App::load(data).unwrap();
+        // both lists survive a restart: "fresh" is still offered, and only once
+        let mut again = App::load(data.clone()).unwrap();
         again.settings.watched_folders = app.settings.watched_folders.clone();
         again.scan_folders();
-        assert!(again.new_folders.is_empty());
+        assert_eq!(again.new_folders, vec![code.join("fresh").display().to_string()]);
+        // once decided, it's gone for good
+        again.ignore_folder(&code.join("fresh").display().to_string());
+        let mut third = App::load(data).unwrap();
+        third.settings.watched_folders = app.settings.watched_folders.clone();
+        third.scan_folders();
+        assert!(third.new_folders.is_empty());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_new_repo_offered_before_a_restart_is_still_offered_after_it() {
+        let dir = std::env::temp_dir().join(format!("strays-prompts-{}", Uuid::new_v4()));
+        let now = strays_core::chrono::Utc::now();
+        let repo = |id| Repo { id, name: "x".into(), full_name: format!("me/x{id}"), owner: strays_core::github::Owner { login: "me".into() }, private: true, fork: false, archived: false, created_at: now, pushed_at: Some(now) };
+        let mut app = App::load(dir.clone()).unwrap();
+        app.offer_new(&[repo(1), repo(2)]);
+        app.offer_new(&[repo(1)]);
+        let mut app = App::load(dir.clone()).unwrap();
+        assert_eq!(app.new_projects.iter().map(|r| r.id).collect::<Vec<_>>(), [1, 2], "kept, once each");
+        app.ignore_new(1);
+        app.adopt_repo(2, Some(Species::Dog), now).unwrap();
+        assert!(App::load(dir.clone()).unwrap().new_projects.is_empty(), "decided ones stay decided");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
