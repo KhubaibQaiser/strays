@@ -45,6 +45,34 @@ pub fn read(path: &Path, ssh_aliases: &HashMap<String, String>) -> Result<LocalI
     Ok(info)
 }
 
+/// What `read` depends on, cheaply: modification times of HEAD, config, packed-refs and every folder
+/// under `refs/` (git writes a ref by renaming a lock file into its folder, which bumps that folder's time).
+/// Equal fingerprints mean `read` would return the same answer. `None` (a linked worktree, whose `.git`
+/// is a file) means "read it every time".
+pub fn fingerprint(path: &Path) -> Option<Vec<(String, std::time::SystemTime)>> {
+    let git = path.join(".git");
+    if !git.is_dir() {
+        return None;
+    }
+    let mut out = Vec::new();
+    let mut stamp = |p: &Path| {
+        if let Ok(t) = std::fs::metadata(p).and_then(|m| m.modified()) {
+            out.push((p.strip_prefix(&git).unwrap_or(p).display().to_string(), t));
+        }
+    };
+    for f in ["HEAD", "config", "packed-refs"] {
+        stamp(&git.join(f));
+    }
+    let mut dirs = vec![git.join("refs")];
+    while let Some(d) = dirs.pop() {
+        stamp(&d);
+        let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        dirs.extend(entries.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()));
+    }
+    out.sort();
+    Some(out)
+}
+
 /// `owner/name` for a GitHub remote URL in any form git accepts (https, ssh://, scp-style `git@host:o/n`).
 pub fn github_slug(url: &gix::Url, ssh_aliases: &HashMap<String, String>) -> Option<String> {
     let host = url.host()?.to_lowercase();
@@ -197,6 +225,31 @@ mod tests {
         assert_eq!(match_repo(&info, &[repo(1, "me/other")]), Match::None);
         let two = LocalInfo { github_slugs: vec!["me/app".into(), "me/other".into()], ..Default::default() };
         assert_eq!(match_repo(&two, &[repo(1, "me/other"), repo(2, "me/app")]), Match::Ambiguous(vec![1, 2]));
+    }
+
+    #[test]
+    fn the_fingerprint_changes_with_commits_fetches_and_remotes_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        let date = "2026-10-01T10:00:00Z";
+        git(d, &["init", "-q", "-b", "main"], date);
+        git(d, &["commit", "-q", "--allow-empty", "-m", "a"], date);
+        let f0 = fingerprint(d).unwrap();
+        assert_eq!(fingerprint(d).unwrap(), f0, "nothing happened");
+        std::fs::write(d.join("notes.txt"), "work in progress").unwrap();
+        assert_eq!(fingerprint(d).unwrap(), f0, "editing files isn't activity");
+        // a commit on a nested branch name only touches a sub-folder of refs/heads
+        git(d, &["checkout", "-q", "-b", "feat/x"], date);
+        let f1 = fingerprint(d).unwrap();
+        git(d, &["commit", "-q", "--allow-empty", "-m", "b"], date);
+        let f2 = fingerprint(d).unwrap();
+        assert_ne!(f2, f1);
+        git(d, &["update-ref", "refs/remotes/origin/main", "HEAD"], date);
+        let f3 = fingerprint(d).unwrap();
+        assert_ne!(f3, f2, "a fetched remote ref");
+        git(d, &["remote", "add", "origin", "https://github.com/me/app.git"], date);
+        assert_ne!(fingerprint(d).unwrap(), f3, "a new remote");
+        assert_eq!(fingerprint(&d.join("missing")), None);
     }
 
     #[test]
