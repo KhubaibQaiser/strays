@@ -58,12 +58,13 @@ pub struct Meta {
     pub rate_reset: Option<Time>,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Owner {
     pub login: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+/// Serialized as GitHub sends it, so the app can keep repos between runs.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Repo {
     pub id: u64,
     pub name: String,
