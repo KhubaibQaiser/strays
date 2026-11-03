@@ -206,7 +206,15 @@ impl App {
         let store = Store::open(dir.clone()).map_err(|e| e.to_string())?;
         let mut issues = Vec::new();
         let settings = store.load_settings().unwrap_or_else(|e| reset(&store, "settings.json", "Your settings", e, &mut issues));
-        let (pets, problems) = store.load_pets().map_err(|e| e.to_string())?;
+        let (mut pets, problems) = store.load_pets().map_err(|e| e.to_string())?;
+        // a future-dated commit read by an older version would pin its pet at Joyful until that date
+        let now = strays_core::chrono::Utc::now();
+        for p in pets.iter_mut().filter(|p| p.activity.last > now) {
+            p.activity.last = now;
+            if let Err(e) = store.save_pet(p) {
+                issues.push(Issue { key: format!("save:{}", p.id), text: format!("Couldn't save {}: {e}", p.name) });
+            }
+        }
         for p in &problems {
             issues.push(Issue { key: format!("load:{p}"), text: p.to_string() });
         }
@@ -681,11 +689,12 @@ impl App {
 
     /// Records what `read_local` found (read without holding the state). Returns whether a pet got new activity.
     pub fn apply_local(&mut self, results: Vec<(Uuid, Result<localgit::LocalInfo, String>)>) -> bool {
+        let now = strays_core::chrono::Utc::now();
         let mut changed = Vec::new();
         for (id, info) in results {
             let Some(p) = self.pets.iter_mut().find(|p| p.id == id && !matches!(p.state.kind, StateKind::Graduated | StateKind::LetGo)) else { continue };
             let info = match info {
-                Ok(info) => info,
+                Ok(info) => info.no_later_than(now),
                 Err(e) => {
                     let (name, folder) = (p.name.clone(), p.project.local.as_ref().map(|l| l.display_path.clone()).unwrap_or_default());
                     self.warn(&format!("local:{id}"), format!("Strays can't read {folder} for {name} ({e}). If the folder moved or was deleted, let {name} go, or adopt the folder again."));
@@ -805,7 +814,7 @@ impl App {
             if self.tracked_folder(folder) {
                 return Err("This folder already has a pet".into());
             }
-            let info = localgit::read(std::path::Path::new(folder), &Default::default()).map_err(|e| format!("Not a git repository: {e}"))?;
+            let info = localgit::read(std::path::Path::new(folder), &Default::default()).map_err(|e| format!("Not a git repository: {e}"))?.no_later_than(now);
             if project.github.is_none()
                 && let localgit::Match::Unique(id) = localgit::match_repo(&info, &self.repos)
                 && !self.tracked(id)
@@ -1052,6 +1061,20 @@ mod tests {
         let mut app = app;
         app.merge_repos(&[repo(2, t(2))], true);
         assert_eq!(App::load(dir.clone()).unwrap().repos.iter().map(|r| r.id).collect::<Vec<_>>(), [2], "gone from a full listing, gone here");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_pet_pinned_by_a_future_commit_is_freed_on_load() {
+        let dir = std::env::temp_dir().join(format!("strays-future-{}", Uuid::new_v4()));
+        let now = strays_core::chrono::Utc::now();
+        let mut app = App::load(dir.clone()).unwrap();
+        let p = Pet::new(now, "Miso", Species::Cat, Project::default(), Activity { last: now + Duration::days(300), source: ActivitySource::LocalCommit }, Pace::Normal);
+        let id = p.id;
+        app.pets.push(p);
+        app.save_pet(id);
+        let app = App::load(dir.clone()).unwrap();
+        assert!(app.pets[0].activity.last <= strays_core::chrono::Utc::now());
         std::fs::remove_dir_all(dir).unwrap();
     }
 
