@@ -43,14 +43,39 @@ pub fn open_card(h: &AppHandle, pet: &str, near: Option<Rect>) -> tauri::Result<
         .focused(true)
         .build()?;
     if let Some(r) = near {
-        // left of the pet, bottoms aligned; on the right if there's no room on the left
-        let x = if r.x - w - 8.0 > 0.0 { r.x - w - 8.0 } else { r.x + r.w + 8.0 };
-        let y = (r.y + r.h - ht).max(30.0);
+        let screen = win.current_monitor()?.map(|m| {
+            let (p, s, k) = (m.position(), m.size(), m.scale_factor());
+            Rect { x: p.x as f64 / k, y: p.y as f64 / k, w: s.width as f64 / k, h: s.height as f64 / k }
+        });
+        let (x, y) = card_position(r, (w, ht), screen);
         win.set_position(LogicalPosition::new(x, y))?;
     } else {
         win.center()?;
     }
     win.set_focus()
+}
+
+/// Left of the pet with bottoms aligned, or right of it when there's no room on the left; then kept
+/// inside the screen (below the menu bar), so a pet at an edge never pushes its card off it.
+fn card_position(pet: Rect, (w, h): (f64, f64), screen: Option<Rect>) -> (f64, f64) {
+    let s = screen.unwrap_or(Rect { x: 0.0, y: 0.0, w: f64::MAX / 4.0, h: f64::MAX / 4.0 });
+    let x = if pet.x - w - 8.0 > s.x { pet.x - w - 8.0 } else { pet.x + pet.w + 8.0 };
+    let y = pet.y + pet.h - h;
+    let fit = |v: f64, lo: f64, hi: f64| v.min(hi).max(lo);
+    (fit(x, s.x + 8.0, s.x + s.w - w - 8.0), fit(y, s.y + 30.0, s.y + s.h - h - 8.0))
+}
+
+#[cfg(test)]
+#[test]
+fn the_card_stays_on_screen() {
+    let screen = Some(Rect { x: 0.0, y: 0.0, w: 1440.0, h: 900.0 });
+    let pet = |x, y| Rect { x, y, w: 100.0, h: 100.0 };
+    assert_eq!(card_position(pet(800.0, 700.0), (320.0, 430.0), screen), (472.0, 370.0), "left of the pet, bottoms aligned");
+    assert_eq!(card_position(pet(100.0, 700.0), (320.0, 430.0), screen), (208.0, 370.0), "no room on the left: on the right");
+    // a parrot perched top right, and a pet wider than the gap at the right edge
+    assert_eq!(card_position(pet(1340.0, 40.0), (320.0, 430.0), screen), (1012.0, 30.0));
+    let (x, _) = card_position(Rect { x: 200.0, y: 700.0, w: 1200.0, h: 100.0 }, (320.0, 430.0), screen);
+    assert_eq!(x, 1440.0 - 320.0 - 8.0, "never past the right edge");
 }
 
 pub fn settings(h: &AppHandle, section: &str) -> tauri::Result<()> {
