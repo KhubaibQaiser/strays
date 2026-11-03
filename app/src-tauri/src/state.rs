@@ -977,7 +977,10 @@ pub fn snooze_until(s: Snooze, now: Time) -> Option<Time> {
         Snooze::Days(d) => Some(now + Duration::days(d)),
         Snooze::UntilWake => None,
         Snooze::Tomorrow => {
-            let day = now.with_timezone(&Local).date_naive() + Duration::days(1);
+            use strays_core::chrono::Timelike;
+            // just after midnight, "tomorrow" still means the coming morning, not the one after
+            let local = now.with_timezone(&Local);
+            let day = local.date_naive() + Duration::days(if local.hour() < 5 { 0 } else { 1 });
             let nine = day.and_time(NaiveTime::from_hms_opt(9, 0, 0).unwrap());
             Local.from_local_datetime(&nine).earliest().map(|t| t.to_utc()).or(Some(now + Duration::hours(24)))
         }
@@ -1076,6 +1079,16 @@ mod tests {
         let app = App::load(dir.clone()).unwrap();
         assert!(app.pets[0].activity.last <= strays_core::chrono::Utc::now());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn until_tomorrow_after_midnight_means_this_morning() {
+        let at = |h, m| Local.from_local_datetime(&Local::now().date_naive().and_hms_opt(h, m, 0).unwrap()).earliest().unwrap().to_utc();
+        let nine_today = at(9, 0);
+        assert_eq!(snooze_until(Snooze::Tomorrow, at(0, 30)), Some(nine_today));
+        assert_eq!(snooze_until(Snooze::Tomorrow, at(4, 59)), Some(nine_today));
+        let evening = snooze_until(Snooze::Tomorrow, at(22, 0)).unwrap();
+        assert!(evening > nine_today && evening - nine_today <= Duration::hours(25), "the next morning");
     }
 
     #[test]
