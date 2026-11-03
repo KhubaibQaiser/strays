@@ -24,6 +24,8 @@ const FOLDERS_FILE: &str = "folders.json";
 const NUDGE_FILE: &str = "nudges.json";
 const BOOKMARKS_FILE: &str = "bookmarks.json";
 const PROMPTS_FILE: &str = "new-projects.json";
+/// Every repo the token sees, from the last sync, for "Adopt a project" and folder matching before the next one.
+const REPOS_FILE: &str = "repos.json";
 
 /// New repos and folders still waiting for the user's decision (§5.9). Saved, because once seen they
 /// count as known and would never be offered again.
@@ -214,6 +216,7 @@ impl App {
         let nudge_log = load(&store, NUDGE_FILE, "The nudge history", &mut issues);
         let mut bookmarks: std::collections::BTreeMap<String, Vec<u8>> = load(&store, BOOKMARKS_FILE, "Folder access", &mut issues);
         let prompts: Prompts = load(&store, PROMPTS_FILE, "The list of new projects", &mut issues);
+        let repos: Vec<Repo> = load(&store, REPOS_FILE, "The list of GitHub repos", &mut issues);
         // a bookmark no watched folder or pet still needs is dropped, so the sandbox stops granting that folder
         let needed = needed_folders(&settings, &pets, strays_core::chrono::Utc::now());
         let before = bookmarks.len();
@@ -233,7 +236,7 @@ impl App {
             pets,
             sync,
             flags: Flags { vacation, ..Flags::default() },
-            repos: Vec::new(),
+            repos,
             new_projects: prompts.repos,
             visible: Vec::new(),
             hidden_needy: 0,
@@ -509,6 +512,24 @@ impl App {
     pub fn ignore_new(&mut self, repo_id: u64) {
         self.new_projects.retain(|r| r.id != repo_id);
         self.save_prompts();
+    }
+
+    /// Keeps `repos` as the latest view of every repo, newest push first. A `complete` listing replaces it,
+    /// so deleted repos and ones the token no longer sees drop out; a partial one only updates.
+    pub fn merge_repos(&mut self, repos: &[Repo], complete: bool) {
+        if complete {
+            self.repos = repos.to_vec();
+        } else {
+            for r in repos {
+                match self.repos.iter_mut().find(|x| x.id == r.id) {
+                    Some(x) => *x = r.clone(),
+                    None => self.repos.push(r.clone()),
+                }
+            }
+        }
+        self.repos.sort_by_key(|r| std::cmp::Reverse(r.pushed_at));
+        let r = self.store.save(REPOS_FILE, &self.repos);
+        self.saved("save:repos", "the list of GitHub repos", r);
     }
 
     /// Repos found by a sync that wait for the user's decision.
@@ -1014,6 +1035,23 @@ mod tests {
         app.ignore_new(1);
         app.adopt_repo(2, Some(Species::Dog), now).unwrap();
         assert!(App::load(dir.clone()).unwrap().new_projects.is_empty(), "decided ones stay decided");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_repo_list_is_there_before_the_first_sync_and_a_full_listing_replaces_it() {
+        let dir = std::env::temp_dir().join(format!("strays-repos-{}", Uuid::new_v4()));
+        let t = |d: i64| strays_core::chrono::Utc::now() - Duration::days(d);
+        let repo = |id, pushed| Repo { id, name: "x".into(), full_name: format!("me/x{id}"), owner: strays_core::github::Owner { login: "me".into() }, private: true, fork: false, archived: false, created_at: t(9), pushed_at: Some(pushed) };
+        let mut app = App::load(dir.clone()).unwrap();
+        app.merge_repos(&[repo(1, t(3)), repo(2, t(2))], true);
+        // a partial listing updates what it names and keeps the rest
+        app.merge_repos(&[repo(1, t(1))], false);
+        let app = App::load(dir.clone()).unwrap();
+        assert_eq!(app.repos.iter().map(|r| r.id).collect::<Vec<_>>(), [1, 2], "kept across a restart, newest push first");
+        let mut app = app;
+        app.merge_repos(&[repo(2, t(2))], true);
+        assert_eq!(App::load(dir.clone()).unwrap().repos.iter().map(|r| r.id).collect::<Vec<_>>(), [2], "gone from a full listing, gone here");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

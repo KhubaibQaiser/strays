@@ -342,6 +342,8 @@ pub fn token_disconnect(shared: State<'_, Shared>) -> Res<()> {
     let mut app = shared.app.lock().unwrap();
     app.has_token = false;
     app.set_account(None);
+    // what the old token could see isn't offered any more
+    app.merge_repos(&[], true);
     app.sync_error = Some("Not connected to GitHub".into());
     drop(app);
     changed(&shared);
