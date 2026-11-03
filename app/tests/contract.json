@@ -1,0 +1,170 @@
+{
+  "feedback": {
+    "id": "string",
+    "ok": "boolean",
+    "text": "string"
+  },
+  "hover": {
+    "held": "boolean",
+    "id": "null|string"
+  },
+  "netEntry": {
+    "at": "string",
+    "host": "string",
+    "method": "string",
+    "path": "string",
+    "reason": "string",
+    "status": "number"
+  },
+  "overlay": {
+    "liveliness": "string",
+    "pets": [
+      {
+        "colors": {},
+        "confused": "boolean",
+        "id": "string",
+        "label": "string",
+        "mood": "string",
+        "s": "number",
+        "species": "string",
+        "x": "number",
+        "y": "number"
+      }
+    ],
+    "reduceMotion": "boolean"
+  },
+  "uiState": {
+    "account": {
+      "nullable": {
+        "expires": "string",
+        "login": "string",
+        "repoCount": "number"
+      }
+    },
+    "dataDir": "string",
+    "firstRun": "boolean",
+    "hasToken": "boolean",
+    "hideAll": "boolean",
+    "issues": [
+      "string"
+    ],
+    "lastSync": "null|string",
+    "localRepos": [
+      [
+        "boolean|string"
+      ]
+    ],
+    "loginItem": "string",
+    "newFolders": [
+      "string"
+    ],
+    "newProjects": [
+      {
+        "fullName": "string",
+        "id": "number",
+        "private": "boolean",
+        "pushedAt": "string",
+        "tracked": "boolean"
+      }
+    ],
+    "pets": [
+      {
+        "colors": {},
+        "folder": "null|string",
+        "goal": {
+          "checklist": [
+            "never"
+          ],
+          "text": "string"
+        },
+        "id": "string",
+        "idleDays": "number",
+        "lastActivity": "string",
+        "lastSource": "string",
+        "missing": "boolean",
+        "mood": "null|string",
+        "name": "string",
+        "nextMoodDays": "null|number",
+        "onScreen": "boolean",
+        "pace": "string",
+        "releases": "number",
+        "repo": "null|string",
+        "since": "string",
+        "sources": [
+          "string"
+        ],
+        "species": "string",
+        "state": "string",
+        "until": "null|string"
+      }
+    ],
+    "presentation": "boolean",
+    "rateRemaining": "null|number",
+    "reportsAvailable": "boolean",
+    "repos": [
+      {
+        "fullName": "string",
+        "id": "number",
+        "private": "boolean",
+        "pushedAt": "string",
+        "tracked": "boolean"
+      }
+    ],
+    "requestsToday": "number",
+    "settings": {
+      "checkUpdates": "boolean",
+      "defaultPace": "string",
+      "errorReports": "boolean",
+      "hideInFullScreen": "boolean",
+      "holidayDays": "number",
+      "ignore": [
+        "never"
+      ],
+      "letGoUndoDays": "number",
+      "liveliness": "string",
+      "maxVisible": "number",
+      "minVisible": "number",
+      "modifier": "string",
+      "mutedSpecies": [
+        "never"
+      ],
+      "nudgeStyle": "string",
+      "nudgesDaily": "number",
+      "nudgesPerPetDaily": "number",
+      "offline": "boolean",
+      "petSize": "string",
+      "quietEnd": "number",
+      "quietHours": "boolean",
+      "quietStart": "number",
+      "releaseCooldownDays": "number",
+      "rotationHours": "number",
+      "skipWeekends": "boolean",
+      "slots": "number",
+      "sound": "boolean",
+      "syncInterval": "number",
+      "syncOnLaunch": "boolean",
+      "syncOnWake": "boolean",
+      "syncOnlyOnWifi": "boolean",
+      "syncPauseOnLowPower": "boolean",
+      "thresholds": [
+        "number"
+      ],
+      "volume": "number",
+      "wakeStagger": "number",
+      "watchedFolders": [
+        "never"
+      ]
+    },
+    "slotsUsed": "number",
+    "syncError": "null|string",
+    "update": {
+      "nullable": {
+        "html_url": "string",
+        "tag_name": "string"
+      }
+    },
+    "updateChecked": "null|string",
+    "vacation": "boolean",
+    "version": "string"
+  }
+}

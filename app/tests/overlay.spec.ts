@@ -1,18 +1,8 @@
 // The pet overlay in Chromium with the real Rive runtime: frames place pets, cues play clips.
 import { expect, test } from "@playwright/test";
-import { mockApp } from "./mock";
+import { mockApp, placed as pet } from "./mock";
 
 const shots = "test-results/screens";
-const pet = (id: string, mood: string, x: number) => ({
-  id,
-  species: "cat",
-  colors: { coatBase: "#E8A15C", coatShade: "#CB8240", coatHighlight: "#FBE3C6", outline: "#7A4520" },
-  label: `${id} · ${mood}`,
-  mood,
-  x,
-  y: 20,
-  s: 200,
-});
 const emit = (page: import("@playwright/test").Page, event: string, payload: unknown) =>
   page.evaluate(([e, p]) => (window as unknown as { __emit: (e: string, p: unknown) => void }).__emit(e as string, p), [event, payload]);
 

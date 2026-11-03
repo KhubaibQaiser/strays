@@ -49,6 +49,8 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit -p .
+      # the tests' mock is checked against the app's types; tests/contract.spec.ts checks it against Rust
+      - run: npx tsc --noEmit -p tests
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test
       - run: npm audit --omit=dev --audit-level=high

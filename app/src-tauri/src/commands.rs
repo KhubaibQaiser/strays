@@ -1,6 +1,6 @@
 //! Commands the windows call. The token goes in through `token_check` / `token_save` and never comes back out.
 use serde::Serialize;
-use strays_core::chrono::{Local, Timelike, Utc};
+use strays_core::chrono::{Local, Utc};
 use strays_core::clock::Time;
 use strays_core::github::{self, Github, NetEntry};
 use strays_core::mood::Pace;
@@ -212,12 +212,6 @@ pub fn adopt(request: AdoptRequest, shared: State<'_, Shared>) -> Res<String> {
 #[tauri::command]
 pub fn ignore_repo(id: u64, shared: State<'_, Shared>) {
     shared.app.lock().unwrap().ignore_new(id);
-    changed(&shared);
-}
-
-#[tauri::command]
-pub fn ignore_folder(path: String, shared: State<'_, Shared>) {
-    shared.app.lock().unwrap().ignore_folder(&path);
     changed(&shared);
 }
 
@@ -500,14 +494,117 @@ pub fn close_window(label: String, h: AppHandle) -> Res<()> {
     }
 }
 
-/// Minute of the local day, for the UI's quiet-hours preview.
-#[tauri::command]
-pub fn local_minute() -> u32 {
-    let n = Local::now();
-    n.hour() * 60 + n.minute()
-}
-
 /// Windows re-fetch `ui_state` when they hear this.
 pub fn emit_changed(h: &AppHandle) {
     let _ = h.emit("state-changed", ());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Map, Value, json};
+    use strays_core::github::{Owner, Release, Repo};
+    use strays_core::pet::{Activity, ActivitySource, GithubRef, LocalRef, Project};
+
+    /// The JSON shape of a value: field names and the kinds of value each holds ("string", "null|number", …),
+    /// arrays as the merged shape of their items. Empty objects stand for maps with any keys.
+    fn shape(v: &Value) -> Value {
+        match v {
+            Value::Null => json!("null"),
+            Value::Bool(_) => json!("boolean"),
+            Value::Number(_) => json!("number"),
+            Value::String(_) => json!("string"),
+            Value::Array(items) => json!([items.iter().map(shape).reduce(|a, b| merge(&a, &b)).unwrap_or(json!("never"))]),
+            Value::Object(m) => Value::Object(m.iter().map(|(k, v)| (k.clone(), shape(v))).collect()),
+        }
+    }
+
+    fn merge(a: &Value, b: &Value) -> Value {
+        match (a, b) {
+            (Value::Object(x), Value::Object(y)) => {
+                let mut out = Map::new();
+                for k in x.keys().chain(y.keys()) {
+                    let v = match (x.get(k), y.get(k)) {
+                        (Some(p), Some(q)) => merge(p, q),
+                        (Some(p), None) | (None, Some(p)) => p.clone(),
+                        (None, None) => unreachable!(),
+                    };
+                    out.insert(k.clone(), v);
+                }
+                Value::Object(out)
+            }
+            // an empty array's items: no evidence either way
+            (Value::String(n), other) | (other, Value::String(n)) if n == "never" => other.clone(),
+            (Value::Array(x), Value::Array(y)) => json!([merge(&x[0], &y[0])]),
+            (Value::String(x), Value::String(y)) => {
+                let mut kinds: Vec<&str> = x.split('|').chain(y.split('|')).collect();
+                kinds.sort();
+                kinds.dedup();
+                json!(kinds.join("|"))
+            }
+            // an object or array on one side and null on the other: an optional structure
+            (Value::String(n), other) | (other, Value::String(n)) if n == "null" => json!({ "nullable": other }),
+            (Value::Object(o), other) | (other, Value::Object(o)) if o.contains_key("nullable") => json!({ "nullable": merge(&o["nullable"], other) }),
+            (x, y) => panic!("can't merge {x} and {y}"),
+        }
+    }
+
+    /// Every optional filled in: pets in two states, an account, repos, folders, an update, a problem.
+    fn full_app(dir: &std::path::Path) -> App {
+        let mut app = App::load(dir.to_path_buf()).unwrap();
+        let now = Utc::now();
+        let gh = GithubRef { id: 7, full_name: "me/strays".into(), account: "me".into() };
+        let local = LocalRef { bookmark_id: Uuid::new_v4(), display_path: "~/Code/x".into(), path: "/Users/me/Code/x".into() };
+        let mut a = Pet::new(now, "Miso", Species::Cat, Project { github: Some(gh), local: Some(local) }, Activity { last: now, source: ActivitySource::Github }, Pace::Normal);
+        a.adopt(now).unwrap();
+        a.missing_since = Some(now);
+        let mut b = Pet::new(now, "Rex", Species::Dog, Project::default(), Activity { last: now, source: ActivitySource::LocalCommit }, Pace::Sprint);
+        b.adopt(now).unwrap();
+        b.snooze(now, Some(now + strays_core::chrono::Duration::hours(1))).unwrap();
+        app.pets = vec![a, b];
+        app.account = Some(Account { login: "me".into(), expires: Some(now), repo_count: 3 });
+        app.sync.last_successful_check = Some(now);
+        app.sync.rate_remaining = Some(4000);
+        app.sync.update = Some(Release { tag_name: "v0.2.0".into(), html_url: "https://github.com/KhubaibQaiser/strays/releases/tag/v0.2.0".into() });
+        app.sync.update_checked = Some(now);
+        app.sync_error = Some("offline".into());
+        let repo = Repo { id: 9, name: "x".into(), full_name: "me/x".into(), owner: Owner { login: "me".into() }, private: true, fork: false, archived: false, created_at: now, pushed_at: Some(now) };
+        app.repos = vec![repo.clone()];
+        app.new_projects = vec![repo];
+        app.local_repos = vec!["/Users/me/Code/x".into()];
+        app.new_folders = vec!["/Users/me/Code/y".into()];
+        app.warn("x", "a problem");
+        app.refresh_visible(now);
+        app
+    }
+
+    /// The contract the TypeScript side is checked against (tests/contract.spec.ts): the shape of every
+    /// payload the windows and the overlay receive. `UPDATE_CONTRACT=1 cargo test contract` rewrites it.
+    #[test]
+    fn contract() {
+        let dir = std::env::temp_dir().join(format!("strays-contract-{}", Uuid::new_v4()));
+        let full = full_app(&dir.join("full"));
+        let empty = App::load(dir.join("empty")).unwrap();
+        let ui = merge(&shape(&serde_json::to_value(snapshot(&full)).unwrap()), &shape(&serde_json::to_value(snapshot(&empty)).unwrap()));
+        let placed = |confused| crate::overlay::Placed { view: crate::state::PetView { id: Uuid::new_v4(), species: Species::Cat, colors: Default::default(), label: "Miso".into(), mood: strays_core::mood::Mood::Content, confused }, x: 1.0, y: 2.0, s: 3.0 };
+        let frame = crate::overlay::Frame { pets: vec![placed(true)], liveliness: strays_core::settings::Liveliness::Calm, reduce_motion: false };
+        let hovers = [crate::overlay::Hover { id: Some(Uuid::new_v4()), held: true }, crate::overlay::Hover { id: None, held: false }];
+        let hover = merge(&shape(&serde_json::to_value(&hovers[0]).unwrap()), &shape(&serde_json::to_value(&hovers[1]).unwrap()));
+        let feedback = shape(&serde_json::to_value(crate::Feedback { id: Uuid::new_v4(), ok: true, text: "✓".into() }).unwrap());
+        let contract = json!({
+            "uiState": ui,
+            "overlay": shape(&serde_json::to_value(&frame).unwrap()),
+            "hover": hover,
+            "feedback": feedback,
+            "netEntry": shape(&serde_json::to_value(NetEntry { at: Utc::now(), method: "GET".into(), host: "api.github.com".into(), path: "/".into(), status: 200, reason: "scheduled".into() }).unwrap()),
+        });
+        std::fs::remove_dir_all(&dir).unwrap();
+        let text = serde_json::to_string_pretty(&contract).unwrap() + "\n";
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/contract.json");
+        if std::env::var_os("UPDATE_CONTRACT").is_some() {
+            std::fs::write(&path, &text).unwrap();
+        }
+        let saved = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(saved == text, "the UI contract changed: run `UPDATE_CONTRACT=1 cargo test contract` and update src/ui/api.ts and tests/mock.ts to match");
+    }
 }

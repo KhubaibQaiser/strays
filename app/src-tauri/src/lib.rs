@@ -253,7 +253,6 @@ pub fn run() {
             commands::set_pet,
             commands::adopt,
             commands::ignore_repo,
-            commands::ignore_folder,
             commands::save_settings,
             commands::set_flag,
             commands::sync_now,
@@ -274,7 +273,6 @@ pub fn run() {
             commands::delete_everything,
             commands::open_window,
             commands::close_window,
-            commands::local_minute,
         ])
         .on_menu_event(|h, e| handle_menu(h, e.id().as_ref()))
         .setup(|tauri_app| {

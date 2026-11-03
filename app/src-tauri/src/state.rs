@@ -33,9 +33,12 @@ struct KnownFolders {
 
 /// The connected GitHub account (no secrets; the token itself is in the Keychain).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Account {
     pub login: String,
     pub expires: Option<Time>,
+    /// Older `accounts.json` files wrote `repo_count`.
+    #[serde(alias = "repo_count")]
     pub repo_count: u64,
 }
 
@@ -1147,6 +1150,14 @@ mod tests {
         app.save_settings(Settings::default()).unwrap();
         assert!(!dir.exists());
         assert!(app.issues.is_empty(), "skipped on purpose, not failed: {:?}", app.issues);
+    }
+
+    #[test]
+    fn an_account_saved_by_an_older_version_still_loads() {
+        let old: Option<Account> = serde_json::from_str(r#"{"login":"me","expires":null,"repo_count":96}"#).unwrap();
+        assert_eq!(old.unwrap().repo_count, 96);
+        let now = serde_json::to_value(Account { login: "me".into(), expires: None, repo_count: 1 }).unwrap();
+        assert_eq!(now["repoCount"], 1, "the UI reads repoCount");
     }
 
     #[test]
