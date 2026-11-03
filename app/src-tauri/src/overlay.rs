@@ -327,7 +327,7 @@ mod tests {
     use strays_core::mood::Mood;
 
     fn view(species: Species) -> PetView {
-        PetView { id: Uuid::new_v4(), species, colors: Default::default(), label: String::new(), mood: Mood::Content }
+        PetView { id: Uuid::new_v4(), species, colors: Default::default(), label: String::new(), mood: Mood::Content, confused: false }
     }
 
     fn screen() -> Screen {

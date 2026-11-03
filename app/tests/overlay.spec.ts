@@ -79,3 +79,19 @@ test("each species draws with its own rig", async ({ page }) => {
   const logs = await page.evaluate(() => (window as unknown as { __calls: { cmd: string; args: { msg?: string } }[] }).__calls.filter((c) => c.cmd === "pet_log").map((c) => c.args.msg));
   expect(logs.filter((m) => m?.startsWith("LOADED"))).toHaveLength(4);
 });
+
+test("a pet whose repo GitHub can't find keeps asking until it's answered", async ({ page }) => {
+  await mockApp(page);
+  await page.setViewportSize({ width: 440, height: 240 });
+  await page.goto("/index.html");
+  await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.some((c) => c.cmd === "overlay_ready"));
+  const frame = (confused: boolean) => ({ pets: [{ ...pet("lost", "content", 220), confused }], liveliness: "calm", reduceMotion: false });
+  await emit(page, "overlay", frame(true));
+  await expect(page.getByText("❓ Where did my repo go?")).toBeVisible();
+  // a passing message doesn't knock the question away
+  await emit(page, "feedback", { id: "lost", ok: true, text: "✓" });
+  await expect(page.getByText("❓ Where did my repo go?")).toBeVisible();
+  await page.screenshot({ path: `${shots}/overlay-confused.png` });
+  await emit(page, "overlay", frame(false));
+  await expect(page.getByText("❓ Where did my repo go?")).toHaveCount(0);
+});

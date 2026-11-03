@@ -25,6 +25,7 @@ export const STATE = {
       pace: "normal",
       onScreen: true,
       releases: 0,
+      missing: false,
     },
   ],
   settings: {

@@ -111,6 +111,7 @@ export function renderCard(root: HTMLElement, state: UiState, id: string, notice
       "div",
       { class: "infocard" },
       el("div", { class: "title" }, el("h1", {}, `${SPECIES_ICON[p.species]} ${p.name}`), el("span", { class: "muted small" }, PACE_LABEL[p.pace])),
+      p.missing && p.state !== "letGo" && p.state !== "graduated" ? missing(p, act) : null,
       status,
       tracking,
       el("h2", {}, "Goal"),
@@ -120,6 +121,23 @@ export function renderCard(root: HTMLElement, state: UiState, id: string, notice
       el("div", { class: "buttons" }, ...buttons),
       petSettings(p, notice),
       el("p", { id: "notice", class: "small", role: "status" }),
+    ),
+  );
+}
+
+/** GitHub answers 404 both for a deleted repo and for one the token can't see, so the pet asks. */
+function missing(p: Pet, act: (action: string) => Promise<unknown>): HTMLElement {
+  return el(
+    "div",
+    { class: "issues", role: "alert" },
+    el("p", {}, el("b", {}, "❓ Where did my repo go?")),
+    el("p", { class: "small" }, `GitHub can't find ${p.repo ?? "this pet's repo"} any more. It may have been deleted, or your token can't see it now (for example a new token limited to fewer repos). ${p.name}'s mood is on hold until you decide.`),
+    el(
+      "div",
+      { class: "buttons" },
+      confirmButton("It was deleted: let go", "Let go? Click again", () => void act("letgo")),
+      el("button", { onclick: () => void api.openWindow("setup") }, "Check the token…"),
+      el("button", { onclick: () => void act("sync") }, "Look again"),
     ),
   );
 }

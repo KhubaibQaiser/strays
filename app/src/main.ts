@@ -8,7 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 type Liveliness = "calm" | "gentle" | "lively";
-type Placed = { id: string; species: string; colors: Record<string, string>; label: string; mood: string; x: number; y: number; s: number };
+type Placed = { id: string; species: string; colors: Record<string, string>; label: string; mood: string; confused: boolean; x: number; y: number; s: number };
 type Frame = { pets: Placed[]; liveliness: Liveliness; reduceMotion: boolean };
 
 const log = (msg: string) => void invoke("pet_log", { msg });
@@ -224,6 +224,9 @@ ready.push(listen<Frame>("overlay", ({ payload }) => {
       } else if (modeChanged) schedule(p);
     }
   }
+  // GitHub can't find its repo: the question stays over the pet until the user answers it (card or menu)
+  document.querySelectorAll(".ask").forEach((b) => b.remove());
+  for (const placed of payload.pets) if (placed.confused) bubble(placed.id, "❓ Where did my repo go?", 0, "ask");
 }));
 
 // ⌥ held: every pet freezes, and the one under the cursor gets an outline and a tooltip (§7.2, §7.3).
