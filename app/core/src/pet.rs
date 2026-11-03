@@ -128,6 +128,10 @@ pub struct Pet {
     pub releases: Vec<Release>,
     #[serde(default)]
     pub goal: Goal,
+    /// When GitHub stopped finding this pet's repo (a 404 by id): deleted, or the token can't see it any
+    /// more. GitHub can't tell which, so the pet is confused and the user decides; its mood is frozen meanwhile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing_since: Option<Time>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -187,6 +191,7 @@ impl Pet {
             frozen: Vec::new(),
             releases: Vec::new(),
             goal: Goal::default(),
+            missing_since: None,
         }
     }
 
@@ -216,6 +221,7 @@ impl Pet {
     /// `last_check` is the last successful GitHub check (§5.3); ignored for local-only pets.
     pub fn idle_days<Tz: TimeZone>(&self, now: Time, last_check: Option<Time>, settings: &Settings, tz: &Tz) -> f64 {
         let eval = if self.is_github_backed() { last_check.unwrap_or(self.activity.last).min(now) } else { now };
+        let eval = self.missing_since.map_or(eval, |m| eval.min(m));
         let frozen: Vec<Interval> = self.frozen.iter().map(|f| f.span).collect();
         mood::idle_days(self.activity.last, eval, &frozen, settings.skip_weekends, tz)
     }

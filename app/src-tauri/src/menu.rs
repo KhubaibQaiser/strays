@@ -51,6 +51,13 @@ pub fn pet_entries<Rt: Runtime>(h: &AppHandle<Rt>, app: &App, p: &Pet, now: Time
     let repo = p.project.github.as_ref().map(|g| g.full_name.clone()).unwrap_or_else(|| "local folder".into());
     let mut v = vec![label(h, &format!("{repo} · last activity {}", ago(p.activity.last, now)))?];
     let confirm = |what: &str, yes: &str, action: &str| -> R<MenuItemKind<Rt>> { sub(h, what, vec![item(h, &id(action), yes)?]) };
+    if p.missing_since.is_some() && !matches!(p.state.kind, StateKind::LetGo | StateKind::Graduated) {
+        v.push(label(h, "❓ GitHub can't find this repo. Deleted, or can't your token see it?")?);
+        v.push(item(h, &id("letgo"), "It was deleted: let go")?);
+        v.push(item(h, "setup", "Check the token…")?);
+        v.push(item(h, &id("sync"), "Look again")?);
+        v.push(sep(h)?);
+    }
     match p.state.kind {
         StateKind::Active => {
             v.push(sub(
@@ -101,7 +108,8 @@ fn pet_title(app: &App, p: &Pet, now: Time) -> String {
         (StateKind::Graduated, Some(a)) => format!(" · {}", accessory_label(a)),
         _ => String::new(),
     };
-    format!("{} {}{mood}{worn}", species_icon(p.species), p.name)
+    let confused = if p.missing_since.is_some() && !matches!(p.state.kind, StateKind::LetGo | StateKind::Graduated) { " ❓" } else { "" };
+    format!("{} {}{mood}{worn}{confused}", species_icon(p.species), p.name)
 }
 
 /// How the Graduates list names the accessory a pet earned.

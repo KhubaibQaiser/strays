@@ -164,7 +164,8 @@ pub fn run(
                 }
                 Ok(Some(token)) => {
                     app.resolve("keychain");
-                    let full = last_full.is_none_or(|t| now - t > Duration::hours(FULL_EVERY));
+                    // a sync the user asked for is a full one, so "Look again" on a confused pet re-checks its repo
+                    let full = manual || last_full.is_none_or(|t| now - t > Duration::hours(FULL_EVERY));
                     let snapshot = app.sync.clone();
                     let tracked = github::tracked_ids(&app.pets);
                     drop(app);
@@ -210,6 +211,7 @@ pub fn run(
                             }
                         }
                     }
+                    app.note_missing();
                     app.save_all();
                     outcome = Some(SyncOutcome { ok: result.is_ok(), for_pet });
                     manual = false;

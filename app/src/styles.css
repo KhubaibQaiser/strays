@@ -20,7 +20,8 @@ canvas.hover {
   filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 6px rgba(120, 170, 255, 0.8));
 }
 
-.bubble {
+.bubble,
+.ask {
   position: absolute;
   transform: translate(-50%, 0);
   background: #fff;

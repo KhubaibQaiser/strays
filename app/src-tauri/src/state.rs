@@ -163,6 +163,8 @@ pub struct PetView {
     pub colors: std::collections::BTreeMap<String, String>,
     pub label: String,
     pub mood: Mood,
+    /// GitHub can't find its repo; the overlay asks the user what happened.
+    pub confused: bool,
 }
 
 pub fn mood_word(m: Mood) -> &'static str {
@@ -208,7 +210,7 @@ impl App {
         }
         // vacation lives in the pets it paused, so it survives a restart without a file of its own
         let vacation = pets.iter().any(|p| p.state.kind == StateKind::Paused && p.state.reason == "vacation");
-        Ok(Self {
+        let mut app = Self {
             store,
             dir,
             account,
@@ -231,7 +233,9 @@ impl App {
             known_folders,
             nudge_log,
             bookmarks,
-        })
+        };
+        app.note_missing();
+        Ok(app)
     }
 
     /// Records a problem for the user (menu and Settings) and the log. A repeat of the same `key` replaces it.
@@ -396,7 +400,7 @@ impl App {
                     Some(r) => format!("{} · {r} · {}", p.name, mood_word(mood)),
                     None => format!("{} · {}", p.name, mood_word(mood)),
                 };
-                PetView { id: p.id, species: p.species, colors: p.colors.clone(), label, mood }
+                PetView { id: p.id, species: p.species, colors: p.colors.clone(), label, mood, confused: p.missing_since.is_some() }
             })
             .collect()
     }
@@ -478,7 +482,23 @@ impl App {
             Action::UndoLetGo => p.undo_let_go(now, &settings).map(|_| format!("{name} is back in the shelter")).map_err(refused)?,
         };
         self.save_pet(id);
+        self.note_missing();
         Ok(msg)
+    }
+
+    /// One warning naming every pet whose repo GitHub can't find, so it's seen even with the pet off screen.
+    pub fn note_missing(&mut self) {
+        let names: Vec<String> = self.pets.iter().filter(|p| p.missing_since.is_some() && self.holds_project(p) && p.state.kind != StateKind::LetGo).map(|p| p.name.clone()).collect();
+        if names.is_empty() {
+            return self.resolve("missing");
+        }
+        self.warn(
+            "missing",
+            format!(
+                "GitHub can't find the repo of {}. It may have been deleted, or your token can't see it any more. ⌥-click the pet, or use its menu, to decide.",
+                names.join(", ")
+            ),
+        );
     }
 
     pub fn tracked_folder(&self, path: &str) -> bool {
@@ -888,6 +908,27 @@ mod tests {
         assert!(app.tracked(7), "still undoable");
         app.pets[0].state.since = now - Duration::days(31);
         assert!(!app.tracked(7));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_pet_with_a_missing_repo_is_flagged_after_a_restart_until_its_let_go() {
+        let dir = std::env::temp_dir().join(format!("strays-missing-{}", Uuid::new_v4()));
+        let now = strays_core::chrono::Utc::now();
+        let mut app = App::load(dir.clone()).unwrap();
+        let gh = GithubRef { id: 7, full_name: "me/x".into(), account: "me".into() };
+        let mut p = Pet::new(now, "Miso", Species::Cat, Project { github: Some(gh), local: None }, Activity { last: now, source: ActivitySource::Github }, Pace::Normal);
+        p.adopt(now).unwrap();
+        p.missing_since = Some(now);
+        let id = p.id;
+        app.pets.push(p);
+        app.save_pet(id);
+        let mut app = App::load(dir.clone()).unwrap();
+        app.refresh_visible(now);
+        assert!(app.views(now)[0].confused);
+        assert!(app.issues.iter().any(|i| i.key == "missing" && i.text.contains("Miso")), "{:?}", app.issues);
+        app.act(id, Action::LetGo, now).unwrap();
+        assert!(!app.issues.iter().any(|i| i.key == "missing"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

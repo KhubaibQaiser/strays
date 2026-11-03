@@ -26,6 +26,7 @@ export type Pet = {
   pace: Pace;
   onScreen: boolean;
   releases: number;
+  missing: boolean;
 };
 
 export type Repo = { id: number; fullName: string; pushedAt: string | null; private: boolean; tracked: boolean };

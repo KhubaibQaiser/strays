@@ -193,3 +193,21 @@ test("problems show in Settings until dismissed, and a failed call is never sile
   await page.getByRole("button", { name: "Open data folder" }).click();
   await expect(page.getByText("Finder isn't responding")).toBeVisible();
 });
+
+test("the card asks what happened to a repo GitHub can't find", async ({ page }) => {
+  await mockApp(page, {}, { pets: [{ ...STATE.pets[0], missing: true }] });
+  await page.setViewportSize({ width: 320, height: 430 });
+  await page.goto(`/ui.html#card/${PET_ID}`);
+  await expect(page.getByText("Where did my repo go?")).toBeVisible();
+  await expect(page.getByText(/GitHub can't find me\/strays any more/)).toBeVisible();
+  await page.screenshot({ path: `${shots}/card-missing.png` });
+  await page.getByRole("button", { name: "Look again" }).click();
+  expect((await calls(page, "pet_action")).at(-1)?.args).toEqual({ id: PET_ID, action: "sync" });
+  await page.getByRole("button", { name: "Check the token…" }).click();
+  expect((await calls(page, "open_window")).at(-1)?.args).toMatchObject({ kind: "setup" });
+  // letting go needs a second click, like every other way out
+  await page.getByRole("button", { name: "It was deleted: let go" }).click();
+  expect(await calls(page, "pet_action")).toHaveLength(1);
+  await page.getByRole("button", { name: "Let go? Click again" }).click();
+  expect((await calls(page, "pet_action")).at(-1)?.args).toEqual({ id: PET_ID, action: "letgo" });
+});

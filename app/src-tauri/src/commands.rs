@@ -41,6 +41,8 @@ pub struct UiPet {
     pace: Pace,
     on_screen: bool,
     releases: usize,
+    /// GitHub can't find the repo: deleted, or the token can't see it.
+    missing: bool,
 }
 
 #[derive(Serialize)]
@@ -117,6 +119,7 @@ fn ui_pet(app: &App, p: &Pet, now: Time) -> UiPet {
         pace: p.pace,
         on_screen: app.visible.contains(&p.id),
         releases: p.releases.len(),
+        missing: p.missing_since.is_some(),
     }
 }
 

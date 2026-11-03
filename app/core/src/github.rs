@@ -362,13 +362,14 @@ pub struct SyncReport {
     pub updated: Vec<Uuid>,
     pub renamed: Vec<Uuid>,
     pub graduated: Vec<Uuid>,
-    pub gone: Vec<Uuid>,
+    /// Pets whose repo GitHub no longer finds (see `Pet::missing_since`).
+    pub missing: Vec<Uuid>,
     /// Repos to offer as new projects (§5.9).
     pub new_projects: Vec<Repo>,
 }
 
 /// The network half of a sync, done without holding app state: the listing, plus a lookup by id for
-/// each tracked repo missing from a complete listing (404 → `None`, meaning deleted).
+/// each tracked repo missing from a complete listing (404 → `None`: deleted, or no longer visible to the token).
 #[derive(Debug, PartialEq)]
 pub struct Fetched {
     pub listing: Listing,
@@ -424,9 +425,8 @@ pub fn apply(result: Result<Fetched, GhError>, meta: &Meta, st: &mut SyncState, 
         for pet in pets.iter_mut().filter(|p| p.project.github.as_ref().is_some_and(|g| g.id == id)) {
             match &repo {
                 None => {
-                    if pet.let_go(now, "Repo no longer exists").is_ok() {
-                        report.gone.push(pet.id);
-                    }
+                    pet.missing_since.get_or_insert(now);
+                    report.missing.push(pet.id);
                 }
                 Some(r) => apply_repos(std::slice::from_mut(pet), std::slice::from_ref(r), st, settings, now, &mut report),
             }
@@ -458,6 +458,8 @@ fn apply_repos(pets: &mut [Pet], repos: &[Repo], st: &mut SyncState, settings: &
         for pet in pets.iter_mut() {
             let Some(gh) = pet.project.github.as_mut().filter(|g| g.id == repo.id) else { continue };
             tracked = true;
+            // found again: it wasn't deleted after all (a token with access again, or a repo made visible)
+            pet.missing_since = None;
             if gh.full_name != repo.full_name {
                 gh.full_name = repo.full_name.clone();
                 gh.account = repo.owner.login.clone();
@@ -649,8 +651,10 @@ mod tests {
         let r = sync(&gh, &mut st, &mut pets, &settings, true, t1).unwrap();
         assert_eq!(pets[0].activity.last, t("2026-10-29T06:00:00Z"));
         assert!(r.updated.contains(&pets[0].id));
-        assert_eq!(pets[1].state.kind, StateKind::LetGo);
-        assert_eq!(r.gone, vec![pets[1].id]);
+        // a 404 can't tell deleted from hidden, so the pet asks rather than leaving
+        assert_eq!(pets[1].state.kind, StateKind::Active);
+        assert_eq!(pets[1].missing_since, Some(t1));
+        assert_eq!(r.missing, vec![pets[1].id]);
         assert_eq!(st.last_successful_check, Some(t1));
         assert_eq!(st.known_repo_ids.len(), 250);
         // every fake repo was created after install
@@ -683,6 +687,30 @@ mod tests {
         assert_eq!(pets[1].state.kind, StateKind::Graduated);
         assert_eq!((report.renamed.len(), report.graduated.len()), (1, 1));
         assert_eq!(tracked_ids(&pets), vec![4]);
+    }
+
+    #[test]
+    fn a_missing_repo_confuses_its_pet_freezes_its_mood_and_clears_when_found() {
+        let fake = Fake::start();
+        let gh = fake.client();
+        let settings = Settings::default();
+        let mut pets = vec![pet_for(4, t("2026-10-01T00:00:00Z"))];
+        let mut st = SyncState::default();
+        let lost = t("2026-10-05T00:00:00Z");
+        let fetched = Fetched { listing: Listing::NotModified, by_id: vec![(4, None)] };
+        let r = apply(Ok(fetched), &gh.meta(), &mut st, &mut pets, &settings, lost).unwrap();
+        assert_eq!((r.missing.clone(), pets[0].missing_since, pets[0].state.kind), (vec![pets[0].id], Some(lost), StateKind::Active));
+        // weeks later the mood is still the one it had when the repo went missing
+        let later = t("2026-11-05T00:00:00Z");
+        assert_eq!(pets[0].idle_days(later, Some(later), &settings, &Utc), pets[0].idle_days(lost, Some(lost), &settings, &Utc));
+        // a second 404 keeps the first date
+        let fetched = Fetched { listing: Listing::NotModified, by_id: vec![(4, None)] };
+        apply(Ok(fetched), &gh.meta(), &mut st, &mut pets, &settings, later).unwrap();
+        assert_eq!(pets[0].missing_since, Some(lost));
+        // visible again (say, a token with access): back to normal
+        let fetched = Fetched { listing: Listing::NotModified, by_id: vec![(4, gh.repo_by_id(4).unwrap())] };
+        apply(Ok(fetched), &gh.meta(), &mut st, &mut pets, &settings, later).unwrap();
+        assert_eq!(pets[0].missing_since, None);
     }
 
     /// Live check with the user's test token: `cargo test -- --ignored live`. Prints no secrets.
