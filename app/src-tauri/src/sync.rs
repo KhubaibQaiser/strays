@@ -28,21 +28,23 @@ pub struct SyncOutcome {
 const MAX_WAIT: StdDuration = StdDuration::from_secs(60);
 const FULL_EVERY: i64 = 24; // hours
 
-fn github_client(token: &str) -> Result<Github, GhError> {
-    #[cfg(debug_assertions)]
-    if let Ok(base) = std::env::var("STRAYS_FAKE_GITHUB") {
-        return Github::new(token, &base);
-    }
-    Github::new(token, github::API)
+/// What the loop reaches outside the app state: the Keychain, GitHub and the Mac. Tests swap them.
+pub struct Deps {
+    pub token: Box<dyn Fn() -> Result<Option<String>, String> + Send>,
+    /// GitHub's API, or the fake server in dev runs and tests.
+    pub api: String,
+    pub full_screen: Box<dyn Fn() -> bool + Send>,
+    pub low_power: Box<dyn Fn() -> bool + Send>,
 }
 
-/// Update checks need no token; the fake server stands in for GitHub in dev runs.
-fn update_client() -> Result<Github, GhError> {
-    #[cfg(debug_assertions)]
-    if let Ok(base) = std::env::var("STRAYS_FAKE_GITHUB") {
-        return Github::anonymous(&base);
+impl Deps {
+    pub fn real(full_screen: impl Fn() -> bool + Send + 'static) -> Self {
+        #[cfg(debug_assertions)]
+        let api = std::env::var("STRAYS_FAKE_GITHUB").unwrap_or_else(|_| github::API.into());
+        #[cfg(not(debug_assertions))]
+        let api = github::API.to_string();
+        Self { token: Box::new(crate::token::load), api, full_screen: Box::new(full_screen), low_power: Box::new(crate::platform::low_power_mode) }
     }
-    Github::anonymous(github::API)
 }
 
 const UPDATE_EVERY: i64 = 7; // days
@@ -78,7 +80,7 @@ pub fn run(
     shared: Arc<Mutex<App>>,
     tx: Sender<Cmd>,
     rx: Receiver<Cmd>,
-    full_screen: impl Fn() -> bool,
+    deps: Deps,
     on_change: impl Fn(&App, Option<SyncOutcome>, Option<Nudge>, Vec<(strays_core::uuid::Uuid, crate::state::Cue)>),
 ) {
     let mut last_pass = Utc::now();
@@ -89,7 +91,7 @@ pub fn run(
         app.settings.sync_on_launch.then_some(None)
     };
     // the Keychain is read here, off the main thread, rather than on every UI refresh
-    let token = crate::token::load();
+    let token = (deps.token)();
     // show pets straight away; the first sync may take a while on a slow network
     {
         let mut app = shared.lock().unwrap();
@@ -154,7 +156,7 @@ pub fn run(
         let scheduled = app.has_token
             && !app.sync.disconnected
             && wait.is_some_and(|w| app.sync.last_attempt.is_none_or(|a| now - a >= w))
-            && !(app.settings.sync_pause_on_low_power && crate::platform::low_power_mode());
+            && !(app.settings.sync_pause_on_low_power && (deps.low_power)());
         let allowed = not_before.is_none_or(|t| now >= t);
         let mut outcome = None;
         if app.settings.offline {
@@ -164,7 +166,7 @@ pub fn run(
             }
         } else if (forced.is_some() || scheduled) && allowed {
             let for_pet = forced.take().flatten();
-            let token = crate::token::load();
+            let token = (deps.token)();
             app.has_token = matches!(token, Ok(Some(_)));
             match token {
                 Err(e) => {
@@ -184,7 +186,7 @@ pub fn run(
                     drop(app);
                     // network, without holding the state
                     let reason = if for_pet.is_some() || manual { "manual" } else { "scheduled" };
-                    let gh = github_client(&token).map(|g| g.with_reason(reason));
+                    let gh = Github::new(&token, &deps.api).map(|g| g.with_reason(reason));
                     let result = gh.as_ref().map_err(Clone::clone).and_then(|gh| github::fetch(gh, &snapshot, &tracked, full).map(|f| (f, gh.meta())));
                     app = shared.lock().unwrap();
                     if let Ok(gh) = &gh {
@@ -242,7 +244,8 @@ pub fn run(
             }
         } else if !app.settings.offline && app.sync.update_checked.is_none_or(|t| now - t >= Duration::days(UPDATE_EVERY)) {
             drop(app);
-            let gh = update_client().map(|g| g.with_reason("update check"));
+            // update checks need no token
+            let gh = Github::anonymous(&deps.api).map(|g| g.with_reason("update check"));
             let found = gh.as_ref().map_err(Clone::clone).and_then(|g| g.latest_release(github::RELEASES_REPO));
             app = shared.lock().unwrap();
             if let Ok(gh) = &gh {
@@ -299,7 +302,7 @@ pub fn run(
                 crate::log::warn(&format!("error reports not sent: {e}"));
             }
         }
-        let nudge = app.next_nudge(now, full_screen());
+        let nudge = app.next_nudge(now, (deps.full_screen)());
         if changed || nudge.is_some() {
             let was_visible = app.visible.clone();
             app.refresh_visible(now);
@@ -338,4 +341,165 @@ fn merge_repos(app: &mut App, repos: &[github::Repo]) {
         }
     }
     app.repos.sort_by_key(|r| std::cmp::Reverse(r.pushed_at));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader};
+    use std::process::{Child, Command, Stdio};
+    use std::sync::mpsc;
+    use std::time::Duration as D;
+
+    /// tools/fake-github, as in the core's tests.
+    struct Fake(Child, String);
+
+    impl Fake {
+        fn start() -> Self {
+            let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/fake-github/server.py");
+            let mut child = Command::new("python3").arg(script).stdout(Stdio::piped()).spawn().expect("python3");
+            let mut line = String::new();
+            BufReader::new(child.stdout.as_mut().unwrap()).read_line(&mut line).unwrap();
+            let port = line.trim().strip_prefix("PORT ").expect("PORT line").to_string();
+            Fake(child, format!("http://127.0.0.1:{port}"))
+        }
+        /// Picks the fake's scenario with a bare HTTP request (the app has no HTTP client of its own).
+        fn scenario(&self, name: &str) {
+            use std::io::{Read, Write};
+            let addr = self.1.strip_prefix("http://").unwrap();
+            let mut s = std::net::TcpStream::connect(addr).unwrap();
+            let body = format!(r#"{{"name":"{name}"}}"#);
+            write!(s, "POST /_scenario HTTP/1.1\r\nHost: {addr}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            let mut out = String::new();
+            s.read_to_string(&mut out).unwrap();
+            assert!(out.starts_with("HTTP/1.0 200") || out.starts_with("HTTP/1.1 200"), "scenario {name}: {out}");
+        }
+    }
+
+    impl Drop for Fake {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+        }
+    }
+
+    /// What one `on_change` call saw.
+    #[derive(Debug)]
+    struct Seen {
+        ok: Option<bool>,
+        error: Option<String>,
+        repos: usize,
+        issues: Vec<String>,
+    }
+
+    fn start(app: App, deps: Deps) -> (Arc<Mutex<App>>, Sender<Cmd>, mpsc::Receiver<Seen>, std::thread::JoinHandle<()>) {
+        let shared = Arc::new(Mutex::new(app));
+        let (tx, rx) = mpsc::channel();
+        let (seen_tx, seen) = mpsc::channel();
+        let (s, t) = (shared.clone(), tx.clone());
+        let thread = std::thread::spawn(move || {
+            run(s, t, rx, deps, move |app, outcome, _, _| {
+                let _ = seen_tx.send(Seen { ok: outcome.map(|o| o.ok), error: app.sync_error.clone(), repos: app.repos.len(), issues: app.issues.iter().map(|i| i.key.clone()).collect() });
+            })
+        });
+        (shared, tx, seen, thread)
+    }
+
+    /// The next `on_change` that reports a sync outcome.
+    fn next_sync(seen: &mpsc::Receiver<Seen>) -> Seen {
+        loop {
+            let s = seen.recv_timeout(D::from_secs(20)).expect("a sync outcome");
+            if s.ok.is_some() {
+                return s;
+            }
+        }
+    }
+
+    fn deps(api: &str, token: Result<Option<String>, String>) -> Deps {
+        Deps { token: Box::new(move || token.clone()), api: api.into(), full_screen: Box::new(|| false), low_power: Box::new(|| false) }
+    }
+
+    fn temp() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("strays-loop-{}", strays_core::uuid::Uuid::new_v4()))
+    }
+
+    #[test]
+    fn the_loop_syncs_on_launch_and_on_request_freezes_on_401_and_stops_when_closed() {
+        let fake = Fake::start();
+        let dir = temp();
+        let (shared, tx, seen, thread) = start(App::load(dir.clone()).unwrap(), deps(&fake.1, Ok(Some("github_pat_fake".into()))));
+
+        // pets are drawn before the first sync, then the launch sync lists every repo
+        let first = seen.recv_timeout(D::from_secs(5)).unwrap();
+        assert_eq!(first.ok, None);
+        let s = next_sync(&seen);
+        assert_eq!((s.ok, s.error.as_deref()), (Some(true), None));
+        assert!(s.repos > 200, "{s:?}");
+        {
+            let app = shared.lock().unwrap();
+            assert!(app.has_token && app.sync.last_successful_check.is_some());
+            assert!(app.netlog().iter().any(|e| e.reason == "scheduled" && e.status == 200), "every request is logged");
+        }
+
+        // a 401: the error is shown, the account counts as disconnected, moods freeze at the last good check
+        fake.scenario("unauthorized");
+        let checked = shared.lock().unwrap().sync.last_successful_check;
+        tx.send(Cmd::SyncNow(None)).unwrap();
+        let s = next_sync(&seen);
+        assert_eq!(s.ok, Some(false));
+        assert!(s.error.is_some());
+        {
+            let app = shared.lock().unwrap();
+            assert!(app.sync.disconnected);
+            assert_eq!(app.sync.last_successful_check, checked);
+        }
+
+        // offline: nothing is fetched, and the user is told why
+        shared.lock().unwrap().settings.offline = true;
+        let before = shared.lock().unwrap().netlog().len();
+        tx.send(Cmd::SyncNow(None)).unwrap();
+        let s = loop {
+            let s = seen.recv_timeout(D::from_secs(5)).unwrap();
+            if s.error.as_deref() == Some("Offline mode is on") {
+                break s;
+            }
+        };
+        assert_eq!(s.ok, None);
+        assert_eq!(shared.lock().unwrap().netlog().len(), before);
+
+        // Delete everything closes the store: the loop ends on its next pass
+        shared.lock().unwrap().close();
+        tx.send(Cmd::Changed).unwrap();
+        for _ in 0..50 {
+            if thread.is_finished() {
+                break;
+            }
+            std::thread::sleep(D::from_millis(100));
+        }
+        assert!(thread.is_finished(), "the loop stopped");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_keychain_is_reported_not_taken_for_no_token() {
+        let dir = temp();
+        // nothing listens here: the loop must not get as far as the network
+        let (shared, _tx, seen, _thread) = start(App::load(dir.clone()).unwrap(), deps("http://127.0.0.1:9", Err("Keychain locked".into())));
+        let s = next_sync(&seen);
+        assert_eq!((s.ok, s.error.as_deref()), (Some(false), Some("Keychain locked")));
+        assert!(s.issues.contains(&"keychain".to_string()));
+        assert!(!shared.lock().unwrap().has_token);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn without_a_token_nothing_is_scheduled_and_the_user_is_told_on_a_manual_sync() {
+        let dir = temp();
+        let (shared, tx, seen, _thread) = start(App::load(dir.clone()).unwrap(), deps("http://127.0.0.1:9", Ok(None)));
+        let s = next_sync(&seen);
+        assert_eq!((s.ok, s.error.as_deref()), (Some(false), Some("No GitHub token yet")));
+        tx.send(Cmd::SyncNow(None)).unwrap();
+        assert_eq!(next_sync(&seen).error.as_deref(), Some("No GitHub token yet"));
+        assert!(shared.lock().unwrap().netlog().is_empty(), "no request without a token");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
