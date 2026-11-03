@@ -155,7 +155,12 @@ impl Settings {
         check((1..=14).contains(&self.holiday_days), "holidayDays (1–14)")?;
         check((1..=8).contains(&self.max_visible), "maxVisible (1–8)")?;
         check(self.min_visible <= self.max_visible, "minVisible (0–maxVisible)")?;
-        check(self.rotation_hours >= 1, "rotationHours")?;
+        check((1..=48).contains(&self.rotation_hours), "rotationHours (1–48)")?;
+        check(self.release_cooldown_days <= 90, "releaseCooldownDays (0–90)")?;
+        check((1..=365).contains(&self.let_go_undo_days), "letGoUndoDays (1–365)")?;
+        // lists come from the web view and are saved and scanned on every pass: keep them small
+        check(self.ignore.len() <= 100 && self.ignore.iter().all(|p| p.chars().count() <= 100), "ignore (at most 100 patterns of 100 characters)")?;
+        check(self.watched_folders.len() <= 50 && self.watched_folders.iter().all(|f| f.starts_with('/') && f.len() <= 1024), "watchedFolders (at most 50 full paths)")?;
         check(SyncInterval::CHOICES.contains(&self.sync_interval.0), "syncInterval")?;
         check(self.nudges_per_pet_daily <= 10 && self.nudges_daily <= 20, "nudge caps")?;
         check(self.quiet_start < 1440 && self.quiet_end < 1440, "quiet hours")?;
@@ -219,6 +224,19 @@ mod tests {
         assert!(bad.validate().is_err());
         let bad = Settings { sync_interval: SyncInterval(Some(7)), ..Settings::default() };
         assert!(bad.validate().is_err());
+        for bad in [
+            Settings { rotation_hours: 49, ..Settings::default() },
+            Settings { release_cooldown_days: 91, ..Settings::default() },
+            Settings { let_go_undo_days: 0, ..Settings::default() },
+            Settings { let_go_undo_days: 366, ..Settings::default() },
+            Settings { ignore: vec!["x".into(); 101], ..Settings::default() },
+            Settings { ignore: vec!["x".repeat(101)], ..Settings::default() },
+            Settings { watched_folders: vec!["relative/path".into()], ..Settings::default() },
+            Settings { watched_folders: vec!["/a".into(); 51], ..Settings::default() },
+        ] {
+            assert!(bad.validate().is_err(), "{bad:?}");
+        }
+        Settings { rotation_hours: 48, release_cooldown_days: 90, let_go_undo_days: 365, watched_folders: vec!["/Users/me/Code".into()], ..Settings::default() }.validate().unwrap();
     }
 
     #[test]
