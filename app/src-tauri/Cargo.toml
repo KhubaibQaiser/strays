@@ -49,3 +49,7 @@ objc2-core-graphics = { version = "0.3.2", default-features = false, features = 
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSProcessInfo", "NSString", "NSArray", "NSGeometry", "NSNotification", "NSURL", "NSData", "NSError"] }
 objc2-service-management = { version = "0.3", default-features = false, features = ["std", "SMAppService", "objc2", "objc2-foundation"] }
 security-framework = "3.7.0"
+
+[dev-dependencies]
+# tests run the sync loop against the local fake GitHub server, which only devtools builds may reach
+strays-core = { path = "../core", features = ["devtools"] }

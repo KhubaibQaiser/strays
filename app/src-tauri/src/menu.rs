@@ -269,6 +269,84 @@ pub enum Event {
     Quit,
 }
 
+/// What a click needs from the shell once `apply` has changed the state.
+#[derive(Debug, PartialEq)]
+pub enum Outcome {
+    Done,
+    Sync(Option<Uuid>),
+    Open(Window),
+    Quit,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Window {
+    Settings(&'static str),
+    Setup,
+    /// The adoption window's query, e.g. `folder=…`.
+    Adopt(String),
+}
+
+/// Applies a menu click to the state. Success shows in the menu itself; a refusal ("All adoption slots
+/// are full") is shown at the menu's top until the next action succeeds.
+pub fn apply(app: &mut App, event: Event, now: Time) -> Outcome {
+    let result = match event {
+        Event::Pet(pet, action) => app.act(pet, action, now).map(Some),
+        Event::SyncPet(pet) => return Outcome::Sync(Some(pet)),
+        Event::Sync => return Outcome::Sync(None),
+        Event::Repo(repo, species) => app.adopt_repo(repo, species, now).map(Some),
+        Event::IgnoreRepo(repo) => {
+            app.ignore_new(repo);
+            Ok(None)
+        }
+        Event::Presentation => {
+            app.flags.presentation = !app.flags.presentation;
+            Ok(None)
+        }
+        Event::Vacation => {
+            let on = !app.flags.vacation;
+            app.set_vacation(on, now);
+            Ok(None)
+        }
+        Event::HideAll => {
+            app.flags.hide_all = !app.flags.hide_all;
+            Ok(None)
+        }
+        // the menu may be older than the list: a folder already decided on is left alone
+        Event::NewFolder(path, _) if !app.new_folders.contains(&path) => Ok(None),
+        Event::NewFolder(path, true) => return Outcome::Open(Window::Adopt(format!("folder={}", crate::windows::encode(&path)))),
+        Event::NewFolder(path, false) => {
+            app.ignore_folder(&path);
+            Ok(None)
+        }
+        Event::Settings => return Outcome::Open(Window::Settings("pets")),
+        Event::Update => return Outcome::Open(Window::Settings("about")),
+        Event::Setup => return Outcome::Open(Window::Setup),
+        Event::AdoptWindow => return Outcome::Open(Window::Adopt(String::new())),
+        Event::Dismiss => {
+            app.issues.clear();
+            Ok(None)
+        }
+        Event::Quit => {
+            app.save_all();
+            return Outcome::Quit;
+        }
+    };
+    match result {
+        Ok(Some(msg)) => {
+            #[cfg(debug_assertions)]
+            println!("ACTION {msg}");
+            app.resolve("action");
+        }
+        Err(msg) => {
+            #[cfg(debug_assertions)]
+            println!("ACTION {msg}");
+            app.warn("action", msg);
+        }
+        Ok(None) => {}
+    }
+    Outcome::Done
+}
+
 pub fn parse(id: &str) -> Option<Event> {
     if let Some((choice, path)) = id.strip_prefix("newfolder/").and_then(|r| r.split_once('/')) {
         return Some(Event::NewFolder(path.to_string(), choice == "adopt"));
@@ -337,6 +415,73 @@ mod tests {
         assert!(parse("pet/x").is_none());
         assert!(matches!(parse("quit"), Some(Event::Quit)));
         assert!(matches!(parse("newfolder/adopt//Users/me/Code/a b"), Some(Event::NewFolder(p, true)) if p == "/Users/me/Code/a b"));
+    }
+
+    /// Every id the menu builds must parse back, or its click does nothing: checked from this file's source.
+    #[test]
+    fn every_id_the_menu_builds_parses() {
+        let src = include_str!("menu.rs");
+        let src = &src[..src.find("#[cfg(test)]").unwrap()];
+        let quoted = |after: &str| -> Vec<String> { src.match_indices(after).map(|(i, _)| src[i + after.len()..].split('"').next().unwrap().to_string()).collect() };
+        let pet = Uuid::new_v4();
+        // pet actions are built in pet_entries; repo choices use their own `id` and are checked below
+        let entries = &src[src.find("pub fn pet_entries").unwrap()..src.find("fn pet_title").unwrap()];
+        let mut actions: Vec<String> = entries.match_indices("id(\"").map(|(i, _)| entries[i + 4..].split('"').next().unwrap().to_string()).collect();
+        // confirm("Let go…", "Yes, …", "letgo"): the action is the third string
+        actions.extend(entries.match_indices("confirm(\"").filter_map(|(i, _)| entries[i..].split('"').nth(5).map(String::from)));
+        assert!(actions.len() > 15 && actions.contains(&"graduate".to_string()) && actions.contains(&"adopt".to_string()), "{actions:?}");
+        for a in &actions {
+            assert!(parse(&format!("pet/{pet}/{a}")).is_some(), "pet action {a}");
+        }
+        let plain = quoted("item(h, \"");
+        assert!(plain.len() > 4, "{plain:?}");
+        for id in plain.iter().chain(&quoted("CheckMenuItem::with_id(h, \"")) {
+            assert!(parse(id).is_some(), "menu id {id}");
+        }
+        for r in ["cat", "dog", "hamster", "parrot", "shelter", "ignore"] {
+            assert!(parse(&format!("repo/1/{r}")).is_some());
+        }
+    }
+
+    fn pet(app: &mut App, now: Time) -> Uuid {
+        use strays_core::pet::{Activity, ActivitySource, Project};
+        let mut p = Pet::new(now, "Miso", Species::Cat, Project::default(), Activity { last: now, source: ActivitySource::LocalCommit }, strays_core::mood::Pace::Normal);
+        p.adopt(now).unwrap();
+        let id = p.id;
+        app.pets.push(p);
+        id
+    }
+
+    #[test]
+    fn clicks_change_state_refusals_are_shown_and_windows_are_asked_for() {
+        let dir = std::env::temp_dir().join(format!("strays-menu-{}", Uuid::new_v4()));
+        let mut app = App::load(dir.clone()).unwrap();
+        let now = Utc::now();
+        let id = pet(&mut app, now);
+        assert_eq!(apply(&mut app, Event::Pet(id, Action::Snooze(Snooze::Hours(1))), now), Outcome::Done);
+        assert_eq!(app.pets[0].state.kind, StateKind::Snoozed);
+        // waking an awake pet is refused: the reason shows at the menu's top, the next success clears it
+        apply(&mut app, Event::Pet(id, Action::Wake), now);
+        assert_eq!(apply(&mut app, Event::Pet(id, Action::Wake), now), Outcome::Done);
+        assert!(app.issues.iter().any(|i| i.key == "action"), "{:?}", app.issues);
+        apply(&mut app, Event::Pet(id, Action::Pause), now);
+        assert!(!app.issues.iter().any(|i| i.key == "action"));
+        assert_eq!(apply(&mut app, Event::SyncPet(id), now), Outcome::Sync(Some(id)));
+        assert_eq!(apply(&mut app, Event::Presentation, now), Outcome::Done);
+        assert!(app.flags.presentation);
+        // a folder no longer on the list is left alone; one on it opens adoption for it
+        assert_eq!(apply(&mut app, Event::NewFolder("/x".into(), true), now), Outcome::Done);
+        app.new_folders.push("/Users/me/Code/new app".into());
+        assert_eq!(apply(&mut app, Event::NewFolder("/Users/me/Code/new app".into(), true), now), Outcome::Open(Window::Adopt("folder=/Users/me/Code/new%20app".into())));
+        apply(&mut app, Event::NewFolder("/Users/me/Code/new app".into(), false), now);
+        assert!(app.new_folders.is_empty());
+        app.warn("x", "y");
+        apply(&mut app, Event::Dismiss, now);
+        assert!(app.issues.is_empty());
+        assert_eq!(apply(&mut app, Event::Settings, now), Outcome::Open(Window::Settings("pets")));
+        assert_eq!(apply(&mut app, Event::Quit, now), Outcome::Quit);
+        assert!(dir.join("pets").join(format!("{id}.json")).exists(), "quitting saves");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

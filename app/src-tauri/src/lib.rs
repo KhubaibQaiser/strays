@@ -148,93 +148,20 @@ fn open_from_menu(h: &AppHandle, opened: tauri::Result<()>) {
 fn handle_menu(h: &AppHandle, id: &str) {
     let shared = h.state::<Shared>();
     let Some(event) = menu::parse(id) else { return };
-    let now = Utc::now();
-    let mut app = shared.app.lock().unwrap();
-    let result = match event {
-        menu::Event::Pet(pet, action) => app.act(pet, action, now).map(Some),
-        menu::Event::SyncPet(pet) => {
-            let _ = shared.tx.send(Cmd::SyncNow(Some(pet)));
-            return;
-        }
-        menu::Event::Sync => {
-            let _ = shared.tx.send(Cmd::SyncNow(None));
-            return;
-        }
-        menu::Event::Repo(repo, species) => app.adopt_repo(repo, species, now).map(Some),
-        menu::Event::IgnoreRepo(repo) => {
-            app.ignore_new(repo);
-            Ok(None)
-        }
-        menu::Event::Presentation => {
-            app.flags.presentation = !app.flags.presentation;
-            Ok(None)
-        }
-        menu::Event::Vacation => {
-            let on = !app.flags.vacation;
-            app.set_vacation(on, now);
-            Ok(None)
-        }
-        menu::Event::HideAll => {
-            app.flags.hide_all = !app.flags.hide_all;
-            Ok(None)
-        }
-        menu::Event::NewFolder(path, adopt) => {
-            if !app.new_folders.contains(&path) {
-                return;
-            }
-            if adopt {
-                drop(app);
-                open_from_menu(h, windows::adopt(h, &format!("folder={}", windows::encode(&path))));
-                return;
-            }
-            app.ignore_folder(&path);
-            Ok(None)
-        }
-        menu::Event::Settings => {
-            drop(app);
-            open_from_menu(h, windows::settings(h, "pets"));
-            return;
-        }
-        menu::Event::Update => {
-            drop(app);
-            open_from_menu(h, windows::settings(h, "about"));
-            return;
-        }
-        menu::Event::Setup => {
-            drop(app);
-            open_from_menu(h, windows::setup(h));
-            return;
-        }
-        menu::Event::AdoptWindow => {
-            drop(app);
-            open_from_menu(h, windows::adopt(h, ""));
-            return;
-        }
-        menu::Event::Dismiss => {
-            app.issues.clear();
-            Ok(None)
-        }
-        menu::Event::Quit => {
-            app.save_all();
-            h.exit(0);
-            return;
-        }
-    };
-    // success shows in the menu itself; a refusal ("All adoption slots are full") is shown at its top
-    match result {
-        Ok(Some(msg)) => {
-            #[cfg(debug_assertions)]
-            println!("ACTION {msg}");
-            app.resolve("action");
-        }
-        Err(msg) => {
-            #[cfg(debug_assertions)]
-            println!("ACTION {msg}");
-            app.warn("action", msg);
-        }
-        Ok(None) => {}
+    let outcome = menu::apply(&mut shared.app.lock().unwrap(), event, Utc::now());
+    match outcome {
+        menu::Outcome::Done => {}
+        menu::Outcome::Sync(pet) => drop(shared.tx.send(Cmd::SyncNow(pet))),
+        menu::Outcome::Open(w) => open_from_menu(
+            h,
+            match w {
+                menu::Window::Settings(section) => windows::settings(h, section),
+                menu::Window::Setup => windows::setup(h),
+                menu::Window::Adopt(query) => windows::adopt(h, &query),
+            },
+        ),
+        menu::Outcome::Quit => return h.exit(0),
     }
-    drop(app);
     let _ = shared.tx.send(Cmd::Changed);
 }
 
@@ -308,7 +235,7 @@ pub fn run() {
             let ui = h.clone();
             std::thread::spawn(move || {
                 let fs = overlay.clone();
-                sync::run(app, tx, rx, move || fs.is_full_screen(), move |app, outcome, nudge, cues| {
+                sync::run(app, tx, rx, sync::Deps::real(move || fs.is_full_screen()), move |app, outcome, nudge, cues| {
                     // cues go first: a pet that's leaving must start its clip before the frame removes it
                     let quiet_ok = |sp| audio::allowed(&app.settings, Some(sp), app.flags.presentation, overlay.is_full_screen(), state::local_minute());
                     let species = |id| app.pets.iter().find(|p| p.id == id).map(|p| p.species);
