@@ -492,7 +492,9 @@ pub fn close_window(label: String, h: AppHandle) -> Res<()> {
 
 /// Windows re-fetch `ui_state` when they hear this.
 pub fn emit_changed(h: &AppHandle) {
-    let _ = h.emit("state-changed", ());
+    if let Err(e) = h.emit("state-changed", ()) {
+        crate::log::warn(&format!("could not tell the windows about a change: {e}"));
+    }
 }
 
 #[cfg(test)]
