@@ -113,7 +113,6 @@ export const api = {
   setGoal: (id: string, goal: Goal) => invoke<void>("set_goal", { id, goal }),
   setPet: (id: string, name: string, pace: Pace) => invoke<void>("set_pet", { id, name, pace }),
   adopt: (request: AdoptRequest) => invoke<string>("adopt", { request }),
-  ignoreRepo: (id: number) => invoke<void>("ignore_repo", { id }),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setFlag: (name: "presentation" | "hideAll" | "vacation", on: boolean) => invoke<void>("set_flag", { name, on }),
   syncNow: () => invoke<void>("sync_now"),

@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "setup",
+  "description": "GitHub setup: the only window that can check and save a token",
+  "windows": [
+    "setup"
+  ],
+  "permissions": [
+    "core:event:default",
+    "allow-ui-state",
+    "allow-close-window",
+    "allow-open-link",
+    "allow-open-window",
+    "allow-token-check",
+    "allow-token-save"
+  ]
+}

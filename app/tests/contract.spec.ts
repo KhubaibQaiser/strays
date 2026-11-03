@@ -87,3 +87,29 @@ test("every command the webviews call exists, is registered, and gets the argume
   const called = new Set(calls.map((c) => c[1]));
   expect([...registered].filter((r) => commands.has(r) && !called.has(r))).toEqual([]);
 });
+
+test("each window may call exactly the commands its pages use, and no wrapper is left unused", async ({ request }) => {
+  const source = async (path: string) => JSON.parse((await (await request.get(`${path}?raw`)).text()).replace(/^export default /, "").replace(/;\s*$/, "")) as string;
+  const api = await source("/src/ui/api.ts");
+  // api.ts wrapper name → command
+  const wrappers = new Map([...api.matchAll(/^\s+(\w+): \([^)]*\) => invoke(?:<[^(]*>)?\("(\w+)"/gm)].map((m) => [m[1], m[2]]));
+  const views: Record<string, string> = { card: "card", settings: "settings", setup: "setup", adopt: "adopt", welcome: "welcome" };
+  const shared = await source("/src/ui/main.ts"); // every window's router
+  const used: Record<string, Set<string>> = {};
+  for (const [file, window] of Object.entries(views)) {
+    const src = (await source(`/src/ui/${file}.ts`)) + shared;
+    used[window] = new Set([...src.matchAll(/api\.(\w+)\(/g)].map((m) => wrappers.get(m[1])).filter((c): c is string => !!c));
+  }
+  used.overlay = new Set([...(await source("/src/main.ts")).matchAll(/invoke\("(\w+)"/g)].map((m) => m[1]));
+  const problems: string[] = [];
+  for (const [window, cmds] of Object.entries(used)) {
+    const cap = (await (await request.get(`/src-tauri/capabilities/${window}.json`)).json()) as { windows: string[]; permissions: string[] };
+    const allowed = new Set(cap.permissions.filter((p) => p.startsWith("allow-")).map((p) => p.slice(6).replace(/-/g, "_")));
+    expect(cap.windows).toEqual([window]);
+    problems.push(...[...cmds].filter((c) => !allowed.has(c)).map((c) => `${window} calls ${c} without permission`));
+    problems.push(...[...allowed].filter((c) => !cmds.has(c)).map((c) => `${window} may call ${c} but never does`));
+  }
+  const everyUse = new Set(Object.values(used).flatMap((s) => [...s]));
+  problems.push(...[...wrappers].filter(([, c]) => !everyUse.has(c)).map(([w]) => `api.${w} is never called`));
+  expect(problems).toEqual([]);
+});

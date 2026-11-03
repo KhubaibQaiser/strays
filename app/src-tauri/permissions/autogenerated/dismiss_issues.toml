@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dismiss-issues"
+description = "Enables the dismiss_issues command without any pre-configured scope."
+commands.allow = ["dismiss_issues"]
+
+[[permission]]
+identifier = "deny-dismiss-issues"
+description = "Denies the dismiss_issues command without any pre-configured scope."
+commands.deny = ["dismiss_issues"]

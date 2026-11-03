@@ -210,12 +210,6 @@ pub fn adopt(request: AdoptRequest, shared: State<'_, Shared>) -> Res<String> {
 }
 
 #[tauri::command]
-pub fn ignore_repo(id: u64, shared: State<'_, Shared>) {
-    shared.app.lock().unwrap().ignore_new(id);
-    changed(&shared);
-}
-
-#[tauri::command]
 pub fn save_settings(settings: Settings, shared: State<'_, Shared>) -> Res<()> {
     let r = shared.app.lock().unwrap().save_settings(settings);
     changed(&shared);
