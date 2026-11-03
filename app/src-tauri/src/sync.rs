@@ -219,6 +219,8 @@ pub fn run(
                             app.offer_new(&report.new_projects);
                         }
                         Err(e) => {
+                            // shown in the menu; logged too, so a bug report has the history
+                            crate::log::warn(&format!("sync failed: {e}"));
                             app.sync_error = Some(e.to_string());
                             if let GhError::RateLimited { retry_after, reset_at } = e {
                                 not_before = retry_after.map(|d| now + d).max(*reset_at);
@@ -256,7 +258,10 @@ pub fn run(
                     app.sync.update = release.filter(|r| github::is_newer(&r.tag_name, env!("CARGO_PKG_VERSION")));
                 }
                 // try again in a day rather than a week
-                Err(_) => app.sync.update_checked = Some(now - Duration::days(UPDATE_EVERY - 1)),
+                Err(e) => {
+                    crate::log::warn(&format!("update check failed, trying again tomorrow: {e}"));
+                    app.sync.update_checked = Some(now - Duration::days(UPDATE_EVERY - 1));
+                }
             }
             app.save_all();
             changed = true;
