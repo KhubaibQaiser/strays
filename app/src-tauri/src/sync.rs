@@ -116,6 +116,10 @@ pub fn run(
         let woke = now - last_pass > Duration::minutes(5);
         last_pass = now;
         let mut app = shared.lock().unwrap();
+        // Delete everything closed the store: this thread has nothing left to do
+        if app.is_closed() {
+            return;
+        }
         changed |= app.tick(now);
         if app.settings.watched_folders != watched {
             watched = app.settings.watched_folders.clone();

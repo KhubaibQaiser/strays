@@ -694,8 +694,17 @@ impl App {
     }
 
     /// Appends to the network activity log, keeping the newest entries (§8.5).
+    /// Delete everything: nothing may write the data folder from here on (`Store::close`).
+    pub fn close(&mut self) {
+        self.store.close();
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.store.is_closed()
+    }
+
     pub fn append_netlog(&mut self, entries: Vec<NetEntry>) {
-        if entries.is_empty() {
+        if entries.is_empty() || self.is_closed() {
             return;
         }
         let mut all = self.netlog();
@@ -1124,6 +1133,20 @@ mod tests {
         app.apply_local(results);
         assert!(app.issues.iter().any(|i| i.key == format!("local:{id}") && i.text.contains("~/gone") && i.text.contains("Miso")), "{:?}", app.issues);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn once_closed_for_delete_nothing_writes_the_data_folder() {
+        let dir = std::env::temp_dir().join(format!("strays-close-{}", Uuid::new_v4()));
+        let mut app = App::load(dir.clone()).unwrap();
+        app.close();
+        std::fs::remove_dir_all(&dir).unwrap();
+        app.save_all();
+        app.set_account(None);
+        app.append_netlog(vec![NetEntry { at: strays_core::chrono::Utc::now(), method: "GET".into(), host: "api.github.com".into(), path: "/".into(), status: 200, reason: "scheduled".into() }]);
+        app.save_settings(Settings::default()).unwrap();
+        assert!(!dir.exists());
+        assert!(app.issues.is_empty(), "skipped on purpose, not failed: {:?}", app.issues);
     }
 
     #[test]

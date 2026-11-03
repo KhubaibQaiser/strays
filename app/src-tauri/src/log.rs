@@ -31,6 +31,11 @@ fn append(path: &Path, line: &str) -> std::io::Result<()> {
     std::fs::OpenOptions::new().create(true).append(true).open(path)?.write_all(line.as_bytes())
 }
 
+/// Stops writing the log file (Delete everything removes it); lines still go to stderr.
+pub fn stop() {
+    *FILE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
 pub fn warn(msg: &str) {
     write("WARN", msg);
 }

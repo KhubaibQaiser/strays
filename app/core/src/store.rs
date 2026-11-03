@@ -13,6 +13,8 @@ use crate::settings::Settings;
 
 pub struct Store {
     root: PathBuf,
+    /// Set by `close`: no write reaches the folder afterwards (Delete everything).
+    closed: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Debug)]
@@ -52,7 +54,23 @@ impl Store {
                 }
             }
         }
-        Ok(Self { root })
+        Ok(Self { root, closed: Default::default() })
+    }
+
+    /// From now on every save is skipped, so a folder being deleted can't be recreated by a late write.
+    pub fn close(&self) {
+        self.closed.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn write<T: Serialize>(&self, path: &Path, value: &T) -> Result<(), StoreError> {
+        if self.is_closed() {
+            return Ok(());
+        }
+        write_atomic(path, value)
     }
 
     /// Moves an unreadable file to `<name>.corrupt` (replacing an older copy, so copies can't pile up) and
@@ -85,7 +103,7 @@ impl Store {
     }
 
     pub fn save_pet(&self, pet: &Pet) -> Result<(), StoreError> {
-        write_atomic(&self.pet_path(pet.id), pet)
+        self.write(&self.pet_path(pet.id), pet)
     }
 
     /// Missing file → defaults. A corrupt or invalid file is an error, so the caller can tell the user
@@ -102,7 +120,7 @@ impl Store {
 
     pub fn save_settings(&self, s: &Settings) -> Result<(), StoreError> {
         s.validate().map_err(|why| StoreError::Corrupt { path: self.root.join("settings.json"), why })?;
-        write_atomic(&self.root.join("settings.json"), s)
+        self.write(&self.root.join("settings.json"), s)
     }
 
     pub fn load<T: DeserializeOwned + Default>(&self, name: &str) -> Result<T, StoreError> {
@@ -111,7 +129,7 @@ impl Store {
     }
 
     pub fn save<T: Serialize>(&self, name: &str, value: &T) -> Result<(), StoreError> {
-        write_atomic(&self.root.join(name), value)
+        self.write(&self.root.join(name), value)
     }
 }
 
@@ -196,6 +214,19 @@ mod tests {
         fs::write(dir.path().join("sync-state.json"), b"{again").unwrap();
         store.set_aside("sync-state.json").unwrap();
         assert_eq!(fs::read(&kept).unwrap(), b"{again");
+    }
+
+    #[test]
+    fn a_closed_store_never_recreates_a_deleted_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("data");
+        let store = Store::open(&root).unwrap();
+        store.close();
+        fs::remove_dir_all(&root).unwrap();
+        store.save_pet(&sample()).unwrap();
+        store.save("sync-state.json", &1).unwrap();
+        store.save_settings(&Settings::default()).unwrap();
+        assert!(!root.exists());
     }
 
     #[test]
