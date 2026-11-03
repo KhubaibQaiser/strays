@@ -101,7 +101,7 @@ export async function mockApp(page: Page, fail: Record<string, string> = {}, pat
       const calls: { cmd: string; args: unknown }[] = [];
       (window as unknown as { __calls: unknown }).__calls = calls;
       let next = 1;
-      const answers: Record<string, unknown> = {
+      const answers: Record<string, unknown> = ((window as unknown as { __answers: unknown }).__answers = {
         ui_state: state,
         token_check: { login: "me", repoCount: 96, expires: "2026-11-29T13:28:15Z" },
         pet_action: "Done",
@@ -109,7 +109,7 @@ export async function mockApp(page: Page, fail: Record<string, string> = {}, pat
         netlog: [{ at: "2026-11-01T10:00:00Z", method: "GET", host: "api.github.com", path: "/user/repos?sort=pushed", status: 200, reason: "scheduled" }],
         pick_folder: "/Users/me/Code",
         export_data: "/tmp/strays-export.json",
-      };
+      }) as Record<string, unknown>;
       // event handlers by name, so tests can emit events the way the app does
       const callbacks: Record<number, (e: unknown) => void> = {};
       const handlers: Record<string, number[]> = {};
@@ -126,6 +126,8 @@ export async function mockApp(page: Page, fail: Record<string, string> = {}, pat
           if (cmd.startsWith("plugin:event|")) return next++;
           calls.push({ cmd, args });
           if (cmd in fail) throw fail[cmd];
+          // saved settings are what ui_state answers next, as in the app
+          if (cmd === "save_settings") (answers.ui_state as { settings: unknown }).settings = structuredClone(args.settings);
           return structuredClone(answers[cmd] ?? null);
         },
         metadata: { currentWindow: { label: "test" }, currentWebview: { label: "test" } },

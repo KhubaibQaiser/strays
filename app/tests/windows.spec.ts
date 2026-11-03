@@ -34,7 +34,7 @@ test("settings save each change and reject thresholds that don't increase", asyn
   await page.goto("/ui.html#settings/pets");
   await page.getByLabel("slots").fill("5");
   await page.getByLabel("slots").press("Tab");
-  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ slots: 5 });
+  await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ slots: 5 });
   await page.screenshot({ path: `${shots}/settings-pets.png` });
 
   await page.getByRole("button", { name: "Moods" }).click();
@@ -46,7 +46,7 @@ test("settings save each change and reject thresholds that don't increase", asyn
 
   await page.getByRole("button", { name: "Display" }).click();
   await page.getByLabel("liveliness").selectOption({ label: "Lively: always moving (about 11% CPU, noticeably more battery)" });
-  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ liveliness: "lively" });
+  await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ liveliness: "lively" });
   await page.screenshot({ path: `${shots}/settings-display.png` });
 });
 
@@ -55,12 +55,12 @@ test("sound settings: off by default, a master switch, volume, per-species and a
   await page.goto("/ui.html#settings/sound");
   await expect(page.getByLabel("Play sounds")).not.toBeChecked();
   await page.getByLabel("Play sounds").check();
-  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ sound: true });
+  await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ sound: true });
   await page.getByLabel("Cats").uncheck();
-  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ mutedSpecies: ["cat"] });
+  await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ mutedSpecies: ["cat"] });
   await page.getByLabel("Volume").fill("80");
   await page.getByLabel("Volume").dispatchEvent("change");
-  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ volume: 80 });
+  await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ volume: 80 });
   await page.getByRole("button", { name: "Test" }).click();
   expect(await calls(page, "test_sound")).toHaveLength(1);
   await page.screenshot({ path: `${shots}/settings-sound.png` });
@@ -165,7 +165,7 @@ test("welcome walks three steps and saves the comfort settings", async ({ page }
   await expect(reports).not.toBeChecked();
   await page.screenshot({ path: `${shots}/welcome-comfort.png` });
   await page.getByRole("button", { name: "Adopt your first pet…" }).click();
-  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ watchedFolders: ["/Users/me/Code"], errorReports: false });
+  await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ watchedFolders: ["/Users/me/Code"], errorReports: false });
   expect((await calls(page, "open_window")).at(-1)?.args).toEqual({ kind: "adopt" });
 });
 
@@ -223,7 +223,7 @@ test("error reports are opt-in, explained, and unavailable without a key", async
   await expect(box).not.toBeChecked();
   await expect(page.getByText(/every path and every pet, repo and account name removed/).first()).toBeVisible();
   await box.check();
-  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ errorReports: true });
+  await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ errorReports: true });
   await page.getByRole("button", { name: "Show log" }).click();
   expect(await calls(page, "reveal_log")).toHaveLength(1);
 });
@@ -233,4 +233,19 @@ test("a build without a PostHog key can't turn error reports on", async ({ page 
   await page.goto("/ui.html#settings/privacy");
   await expect(page.getByLabel("Send anonymous error and crash reports")).toBeDisabled();
   await expect(page.getByText("○ Not in this build")).toBeVisible();
+});
+
+test("a settings change lands on top of what another window saved meanwhile, and a bad number isn't sent", async ({ page }) => {
+  await mockApp(page);
+  await page.goto("/ui.html#settings/pets");
+  // the welcome window (say) turned sound on after this page loaded
+  await page.evaluate(() => ((window as unknown as { __answers: { ui_state: { settings: { sound: boolean } } } }).__answers.ui_state.settings.sound = true));
+  await page.getByLabel("slots").fill("5");
+  await page.getByLabel("slots").press("Tab");
+  await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ slots: 5, sound: true });
+  await page.getByLabel("slots").fill("");
+  await page.getByLabel("slots").press("Tab");
+  await expect(page.getByText("slots must be a number from 1 to 20")).toBeVisible();
+  await expect(page.getByLabel("slots")).toHaveValue("5");
+  expect(await calls(page, "save_settings")).toHaveLength(1);
 });

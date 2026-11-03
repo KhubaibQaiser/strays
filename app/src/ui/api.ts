@@ -107,6 +107,17 @@ export type AdoptRequest = {
   pace: Pace;
 };
 
+/** Saves only the settings that differ from `base` (what this page started from), on top of the
+ *  latest saved ones, so two open windows can't undo each other's changes. Updates `base` after. */
+export async function saveChanged(s: Settings, base: Settings): Promise<void> {
+  const latest = (await api.state()).settings as Record<string, unknown>;
+  const mine = s as Record<string, unknown>;
+  const before = base as Record<string, unknown>;
+  for (const k of Object.keys(mine)) if (JSON.stringify(mine[k]) !== JSON.stringify(before[k])) latest[k] = structuredClone(mine[k]);
+  await api.saveSettings(latest as Settings);
+  Object.assign(base, structuredClone(s));
+}
+
 export const api = {
   state: () => invoke<UiState>("ui_state"),
   petAction: (id: string, action: string) => invoke<string>("pet_action", { id, action }),
