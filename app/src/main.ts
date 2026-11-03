@@ -8,8 +8,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 type Liveliness = "calm" | "gentle" | "lively";
-type Placed = { id: string; species: string; colors: Record<string, string>; label: string; mood: string; confused: boolean; x: number; y: number; s: number };
-type Frame = { pets: Placed[]; liveliness: Liveliness; reduceMotion: boolean };
+export type Placed = { id: string; species: string; colors: Record<string, string>; label: string; mood: string; confused: boolean; x: number; y: number; s: number };
+export type Frame = { pets: Placed[]; liveliness: Liveliness; reduceMotion: boolean };
+export type Hover = { id: string | null; held: boolean };
+export type Feedback = { id: string; ok: boolean; text: string };
 
 const log = (msg: string) => void invoke("pet_log", { msg });
 addEventListener("error", (e) => log(`ERROR ${e.message}`));
@@ -230,7 +232,7 @@ ready.push(listen<Frame>("overlay", ({ payload }) => {
 }));
 
 // ⌥ held: every pet freezes, and the one under the cursor gets an outline and a tooltip (§7.2, §7.3).
-ready.push(listen<{ id: string | null; held: boolean }>("hover", ({ payload }) => {
+ready.push(listen<Hover>("hover", ({ payload }) => {
   if (payload.held !== frozen) {
     frozen = payload.held;
     pets.forEach(schedule);
@@ -242,7 +244,7 @@ ready.push(listen<{ id: string | null; held: boolean }>("hover", ({ payload }) =
   }
 }));
 
-ready.push(listen<{ id: string; ok: boolean; text: string }>("feedback", ({ payload }) => bubble(payload.id, payload.text, 2500)));
+ready.push(listen<Feedback>("feedback", ({ payload }) => bubble(payload.id, payload.text, 2500)));
 ready.push(listen<{ id: string; cue: Cue }>("cue", ({ payload }) => {
   const p = pets.get(payload.id);
   if (p) cue(p, payload.cue);

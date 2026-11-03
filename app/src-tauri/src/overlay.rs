@@ -111,16 +111,16 @@ fn covers(a: Rect, b: Rect) -> bool {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Frame {
-    pets: Vec<Placed>,
-    liveliness: Liveliness,
-    reduce_motion: bool,
+pub(crate) struct Frame {
+    pub pets: Vec<Placed>,
+    pub liveliness: Liveliness,
+    pub reduce_motion: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
-struct Hover {
-    id: Option<Uuid>,
-    held: bool,
+pub(crate) struct Hover {
+    pub id: Option<Uuid>,
+    pub held: bool,
 }
 
 struct Inner {

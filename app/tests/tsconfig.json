@@ -1,0 +1,6 @@
+{
+  // the tests and their mock are type-checked against the app's types too (CI: tsc -p tests)
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "lib": ["ES2022", "DOM"] },
+  "include": [".", "../src", "../playwright.config.ts"]
+}

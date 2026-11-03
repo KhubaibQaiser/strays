@@ -1,9 +1,10 @@
 // Stands in for Tauri's IPC in the browser: answers the app's commands from a fixture and records calls.
 import type { Page } from "@playwright/test";
+import type { UiState } from "../src/ui/api";
 
 export const PET_ID = "11111111-1111-4111-8111-111111111111";
 
-export const STATE = {
+export const STATE: UiState = {
   pets: [
     {
       id: PET_ID,
@@ -139,3 +140,16 @@ export async function calls(page: Page, cmd: string): Promise<Call[]> {
   const all = (await page.evaluate(() => (window as unknown as { __calls: Call[] }).__calls)) as Call[];
   return all.filter((c) => c.cmd === cmd);
 }
+
+/** A placed pet as the overlay receives it. */
+export const placed = (id: string, mood: string, x: number) => ({
+  id,
+  species: "cat",
+  colors: { coatBase: "#E8A15C", coatShade: "#CB8240", coatHighlight: "#FBE3C6", outline: "#7A4520" },
+  label: `${id} · ${mood}`,
+  mood,
+  confused: false,
+  x,
+  y: 20,
+  s: 200,
+});
