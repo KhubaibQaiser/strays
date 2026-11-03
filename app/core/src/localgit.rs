@@ -18,6 +18,17 @@ pub struct LocalInfo {
     pub github_slugs: Vec<String>,
 }
 
+impl LocalInfo {
+    /// Commit dates come from whichever clock made the commit. One in the future (a wrong clock, or
+    /// `--date`) would keep the pet Joyful until that date, so it counts as `now` instead.
+    pub fn no_later_than(mut self, now: Time) -> Self {
+        for t in [&mut self.last_commit, &mut self.last_remote_ref] {
+            *t = t.map(|t| t.min(now));
+        }
+        self
+    }
+}
+
 /// Reads a working copy. `ssh_aliases` maps `Host` aliases to `HostName` from `~/.ssh/config`;
 /// pass an empty map when that file isn't readable (the App Sandbox blocks it without a grant).
 pub fn read(path: &Path, ssh_aliases: &HashMap<String, String>) -> Result<LocalInfo, String> {
@@ -250,6 +261,15 @@ mod tests {
         git(d, &["remote", "add", "origin", "https://github.com/me/app.git"], date);
         assert_ne!(fingerprint(d).unwrap(), f3, "a new remote");
         assert_eq!(fingerprint(&d.join("missing")), None);
+    }
+
+    #[test]
+    fn a_commit_from_the_future_counts_as_now() {
+        let now: Time = "2026-11-03T10:00:00Z".parse().unwrap();
+        let later: Time = "2027-01-01T00:00:00Z".parse().unwrap();
+        let earlier: Time = "2026-11-01T00:00:00Z".parse().unwrap();
+        let info = LocalInfo { last_commit: Some(later), last_remote_ref: Some(earlier), github_slugs: vec![] }.no_later_than(now);
+        assert_eq!((info.last_commit, info.last_remote_ref), (Some(now), Some(earlier)));
     }
 
     #[test]
