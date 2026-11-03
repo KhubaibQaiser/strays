@@ -51,16 +51,18 @@ struct Feedback {
     text: String,
 }
 
-/// ⌥-click on a pet: ⇧ quick-syncs it (§7.3), otherwise its info card opens beside it (§8.3).
+/// A click on a pet with the chosen modifier held: with ⇧ added it quick-syncs (§7.3), otherwise its
+/// info card opens beside it (§8.3). When the modifier itself includes ⇧, every click opens the card.
 #[tauri::command]
 fn pet_click(id: Uuid, shift: bool, shared: State<'_, Shared>, h: AppHandle) {
     #[cfg(debug_assertions)]
     println!("CLICK pet={id} shift={shift}");
-    if shift {
+    let mut app = shared.app.lock().unwrap();
+    if quick_sync(app.settings.modifier, shift) {
+        drop(app);
         let _ = shared.tx.send(Cmd::SyncNow(Some(id)));
         return;
     }
-    let mut app = shared.app.lock().unwrap();
     if audio::allowed(&app.settings, None, app.flags.presentation, shared.overlay.is_full_screen(), state::local_minute()) {
         shared.audio.play(audio::Sound::Tick, app.settings.volume);
     }
@@ -72,6 +74,22 @@ fn pet_click(id: Uuid, shift: bool, shared: State<'_, Shared>, h: AppHandle) {
             let _ = shared.tx.send(Cmd::Changed);
         }
     }
+}
+
+fn quick_sync(modifier: strays_core::settings::Modifier, shift: bool) -> bool {
+    use strays_core::settings::Modifier;
+    shift && !matches!(modifier, Modifier::Shift | Modifier::OptionShift)
+}
+
+#[cfg(test)]
+#[test]
+fn shift_quick_syncs_only_when_it_isnt_part_of_the_modifier() {
+    use strays_core::settings::Modifier;
+    assert!(quick_sync(Modifier::Option, true));
+    assert!(quick_sync(Modifier::Control, true));
+    assert!(!quick_sync(Modifier::Option, false));
+    assert!(!quick_sync(Modifier::Shift, true), "⇧-click is the plain click here");
+    assert!(!quick_sync(Modifier::OptionShift, true));
 }
 
 /// The webview asks for the current frame once it has loaded.

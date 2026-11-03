@@ -299,7 +299,8 @@ fn effective_front(front: Option<Rect>, screen: &Screen, hide_full: bool) -> Opt
     front.filter(|f| hide_full || !covers(*f, screen.frame))
 }
 
-/// Whether exactly the chosen modifier is down (⌥⇧ needs both).
+/// Whether the chosen modifier is down (⌥⇧ needs both). Extra keys are allowed: ⇧ on top of the
+/// modifier is the quick-sync click (§7.3).
 fn held_modifier(m: Modifier) -> bool {
     use objc2_app_kit::NSEventModifierFlags as F;
     let f = platform::modifier_flags();
