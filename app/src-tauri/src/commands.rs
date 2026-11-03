@@ -322,6 +322,9 @@ pub async fn token_save(token: String, shared: State<'_, Shared>) -> Res<()> {
         let gh = client(&token)?;
         let v = gh.validate();
         let mut app = app.lock().unwrap();
+        if app.is_closed() {
+            return Err("Strays is deleting its data".into());
+        }
         app.append_netlog(gh.take_log());
         let v = v.map_err(describe)?;
         crate::token::save(token.trim())?;
@@ -437,6 +440,11 @@ pub fn delete_everything(confirm: String, shared: State<'_, Shared>, h: AppHandl
     if confirm != "DELETE" {
         return Err("Type DELETE to confirm".into());
     }
+    // held until the end: every write to the data folder takes this lock, and the closed store refuses
+    // them afterwards, so no save (sync thread, a window, a late token save) can recreate what's deleted
+    let mut app = shared.app.lock().unwrap();
+    app.close();
+    crate::log::stop();
     let mut failed = Vec::new();
     if let Err(e) = crate::token::delete() {
         failed.push(e);
@@ -446,7 +454,7 @@ pub fn delete_everything(confirm: String, shared: State<'_, Shared>, h: AppHandl
     {
         failed.push(format!("the login item ({e})"));
     }
-    let mut dirs = vec![shared.app.lock().unwrap().dir.clone()];
+    let mut dirs = vec![app.dir.clone()];
     // inside the sandbox, home is the app's own container, so its web view data is Strays' alone
     if std::env::var_os("APP_SANDBOX_CONTAINER_ID").is_some()
         && let Some(home) = std::env::var_os("HOME")
@@ -461,8 +469,11 @@ pub fn delete_everything(confirm: String, shared: State<'_, Shared>, h: AppHandl
         }
     }
     // quitting would hide the failure; staying open lets the user see it and try again
+    drop(app);
+    // the sync thread sees the closed store on its next pass and ends
+    let _ = shared.tx.send(Cmd::Changed);
     if !failed.is_empty() {
-        return Err(format!("Some things couldn't be deleted: {}. Try again, or remove them by hand.", failed.join("; ")));
+        return Err(format!("Some things couldn't be deleted: {}. Try again, or remove them by hand and quit Strays: it no longer saves anything.", failed.join("; ")));
     }
     h.exit(0);
     Ok(())
