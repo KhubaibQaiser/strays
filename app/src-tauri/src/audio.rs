@@ -72,7 +72,7 @@ impl Player {
         std::thread::spawn(move || {
             while let Ok(first) = rx.recv() {
                 let Ok(device) = rodio::DeviceSinkBuilder::open_default_sink() else {
-                    eprintln!("no audio output device");
+                    crate::log::warn("no audio output device");
                     continue;
                 };
                 // play this and anything queued meanwhile, then close the device again
@@ -83,7 +83,7 @@ impl Player {
                             player.set_volume(volume);
                             player.sleep_until_end();
                         }
-                        Err(e) => eprintln!("could not play {sound:?}: {e}"),
+                        Err(e) => crate::log::warn(&format!("could not play {sound:?}: {e}")),
                     }
                     next = rx.try_recv().ok();
                 }

@@ -62,6 +62,7 @@ export const STATE = {
     volume: 50,
     mutedSpecies: [],
     checkUpdates: false,
+    errorReports: false,
   },
   account: { login: "me", expires: "2026-11-29T13:28:15Z", repoCount: 96 },
   hasToken: true,
@@ -86,6 +87,7 @@ export const STATE = {
   update: null as { tag_name: string; html_url: string } | null,
   updateChecked: null as string | null,
   issues: [] as string[],
+  reportsAvailable: true,
   firstRun: false,
 };
 

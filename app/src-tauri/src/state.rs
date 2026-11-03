@@ -88,6 +88,8 @@ pub struct App {
     bookmarks: std::collections::BTreeMap<String, Vec<u8>>,
     /// Problems the user should know about, shown in the menu and Settings until fixed or dismissed.
     pub issues: Vec<Issue>,
+    /// Error reports waiting for the sync thread to send them (only collected while the user opted in).
+    pub reports: Vec<crate::report::Report>,
     /// Clips waiting to be played; `Eat` waits until its pet is on screen.
     pub cues: Vec<(Uuid, Cue)>,
 }
@@ -227,6 +229,7 @@ impl App {
             sync_error: None,
             has_token: false,
             issues,
+            reports: Vec::new(),
             cues: Vec::new(),
             local_repos: Vec::new(),
             new_folders: Vec::new(),
@@ -234,17 +237,67 @@ impl App {
             nudge_log,
             bookmarks,
         };
+        // problems found while loading go through the same log and reports as later ones
+        for i in std::mem::take(&mut app.issues) {
+            app.warn(&i.key, i.text);
+        }
         app.note_missing();
+        app.pick_up_crash();
         Ok(app)
     }
 
     /// Records a problem for the user (menu and Settings) and the log. A repeat of the same `key` replaces it.
     pub fn warn(&mut self, key: &str, text: impl Into<String>) {
         let text = text.into();
-        eprintln!("{key}: {text}");
+        crate::log::warn(&format!("{key}: {text}"));
         match self.issues.iter_mut().find(|i| i.key == key) {
-            Some(i) => i.text = text,
-            None => self.issues.push(Issue { key: key.into(), text }),
+            Some(i) if i.text == text => return,
+            Some(i) => i.text = text.clone(),
+            None => self.issues.push(Issue { key: key.into(), text: text.clone() }),
+        }
+        // reported once when it starts or changes, not on every repeat
+        self.queue_report(key, &text);
+    }
+
+    /// Names that must never leave the Mac in a report: pets, repos, the account.
+    fn private_words(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.account.iter().map(|a| a.login.clone()).collect();
+        for p in &self.pets {
+            v.push(p.name.clone());
+            if let Some(g) = &p.project.github {
+                v.push(g.full_name.clone());
+                v.extend(g.full_name.split('/').map(String::from));
+            }
+        }
+        v.extend(self.repos.iter().map(|r| r.full_name.clone()));
+        v
+    }
+
+    fn queue_report(&mut self, key: &str, text: &str) {
+        if !self.settings.error_reports || !crate::report::available() {
+            return;
+        }
+        let private = self.private_words();
+        let private: Vec<&str> = private.iter().map(String::as_str).collect();
+        if let Some(r) = crate::report::for_issue(key, text, &private) {
+            self.reports.push(r);
+            let extra = self.reports.len().saturating_sub(crate::report::QUEUE);
+            self.reports.drain(..extra);
+        }
+    }
+
+    /// The last run crashed: tell the user, report it if they opted in, and keep the details in the log.
+    fn pick_up_crash(&mut self) {
+        let path = self.dir.join(crate::report::CRASH_FILE);
+        let Ok(text) = std::fs::read_to_string(&path) else { return };
+        self.issues.push(Issue { key: "crash".into(), text: "Strays quit unexpectedly last time. The details are in logs/strays.log in the data folder (Settings → Privacy).".into() });
+        if self.settings.error_reports && crate::report::available() {
+            let private = self.private_words();
+            let private: Vec<&str> = private.iter().map(String::as_str).collect();
+            self.reports.push(crate::report::for_crash(&text, &private));
+        }
+        if let Err(e) = std::fs::remove_file(&path) {
+            self.warn("crash-file", format!("Couldn't clear the crash note, so this warning may show again: {e}"));
         }
     }
 
@@ -275,7 +328,7 @@ impl App {
             match open(data) {
                 Ok((now_at, fresh)) => {
                     if &now_at != path {
-                        eprintln!("folder {path} moved to {now_at}");
+                        crate::log::write("INFO", &format!("folder {path} moved to {now_at}"));
                     }
                     if let Some(fresh) = fresh {
                         *data = fresh;
@@ -929,6 +982,37 @@ mod tests {
         assert!(app.issues.iter().any(|i| i.key == "missing" && i.text.contains("Miso")), "{:?}", app.issues);
         app.act(id, Action::LetGo, now).unwrap();
         assert!(!app.issues.iter().any(|i| i.key == "missing"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_crash_is_shown_next_launch_and_reported_only_with_consent() {
+        let dir = std::env::temp_dir().join(format!("strays-crash-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let crash = "src/state.rs:42\nno pet called Miso in /Users/me/Code\n\nbacktrace";
+        std::fs::write(dir.join(crate::report::CRASH_FILE), crash).unwrap();
+        let app = App::load(dir.clone()).unwrap();
+        assert!(app.issues.iter().any(|i| i.key == "crash"));
+        assert!(app.reports.is_empty(), "reports are off by default");
+        assert!(!dir.join(crate::report::CRASH_FILE).exists(), "shown once");
+
+        let mut app = app;
+        app.save_settings(Settings { error_reports: true, ..Settings::default() }).unwrap();
+        let now = strays_core::chrono::Utc::now();
+        let mut p = Pet::new(now, "Miso", Species::Cat, Project::default(), Activity { last: now, source: ActivitySource::LocalCommit }, Pace::Normal);
+        p.adopt(now).unwrap();
+        let id = p.id;
+        app.pets.push(p);
+        app.save_pet(id);
+        std::fs::write(dir.join(crate::report::CRASH_FILE), crash).unwrap();
+        let mut app = App::load(dir.clone()).unwrap();
+        let r = app.reports.pop().unwrap();
+        assert_eq!((r.kind.as_str(), r.message.as_str()), ("crash", "no pet called <name> in <path> at src/state.rs:42"));
+        // a repeat of a known problem isn't reported again; a decision is never reported
+        app.warn("save:x", "Couldn't save Miso: disk full");
+        app.warn("save:x", "Couldn't save Miso: disk full");
+        app.warn("action", "All adoption slots are full");
+        assert_eq!(app.reports.iter().map(|r| r.message.as_str()).collect::<Vec<_>>(), ["Couldn't save <name>: disk full"]);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

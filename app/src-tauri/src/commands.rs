@@ -83,6 +83,8 @@ pub struct UiState {
     update_checked: Option<Time>,
     /// Problems to show until fixed or dismissed.
     issues: Vec<String>,
+    /// Whether this build can send error reports (it has a PostHog key).
+    reports_available: bool,
     pub first_run: bool,
 }
 
@@ -153,6 +155,7 @@ pub fn snapshot(app: &App) -> UiState {
         update: app.sync.update.clone(),
         update_checked: app.sync.update_checked,
         issues: app.issues.iter().map(|i| i.text.clone()).collect(),
+        reports_available: crate::report::available(),
         first_run: app.pets.is_empty() && app.account.is_none() && app.settings.watched_folders.is_empty(),
     }
 }
@@ -402,6 +405,13 @@ pub fn netlog(shared: State<'_, Shared>) -> Vec<NetEntry> {
     let mut log = shared.app.lock().unwrap().netlog();
     log.reverse();
     log
+}
+
+/// Settings → Privacy → "Show log": the file to attach to a bug report.
+#[tauri::command]
+pub fn reveal_log(h: AppHandle) -> Res<()> {
+    let path = crate::log::path().filter(|p| p.exists()).ok_or("Nothing has been logged yet")?;
+    h.opener().reveal_item_in_dir(path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

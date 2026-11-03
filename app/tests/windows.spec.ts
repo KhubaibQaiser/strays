@@ -160,8 +160,12 @@ test("welcome walks three steps and saves the comfort settings", async ({ page }
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Add a folder…" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
+  // error reports are asked for, never assumed
+  const reports = page.getByLabel("Help fix bugs: send anonymous error and crash reports");
+  await expect(reports).not.toBeChecked();
+  await page.screenshot({ path: `${shots}/welcome-comfort.png` });
   await page.getByRole("button", { name: "Adopt your first pet…" }).click();
-  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ watchedFolders: ["/Users/me/Code"] });
+  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ watchedFolders: ["/Users/me/Code"], errorReports: false });
   expect((await calls(page, "open_window")).at(-1)?.args).toEqual({ kind: "adopt" });
 });
 
@@ -210,4 +214,23 @@ test("the card asks what happened to a repo GitHub can't find", async ({ page })
   expect(await calls(page, "pet_action")).toHaveLength(1);
   await page.getByRole("button", { name: "Let go? Click again" }).click();
   expect((await calls(page, "pet_action")).at(-1)?.args).toEqual({ id: PET_ID, action: "letgo" });
+});
+
+test("error reports are opt-in, explained, and unavailable without a key", async ({ page }) => {
+  await mockApp(page);
+  await page.goto("/ui.html#settings/privacy");
+  const box = page.getByLabel("Send anonymous error and crash reports");
+  await expect(box).not.toBeChecked();
+  await expect(page.getByText(/every path and every pet, repo and account name removed/).first()).toBeVisible();
+  await box.check();
+  expect((await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ errorReports: true });
+  await page.getByRole("button", { name: "Show log" }).click();
+  expect(await calls(page, "reveal_log")).toHaveLength(1);
+});
+
+test("a build without a PostHog key can't turn error reports on", async ({ page }) => {
+  await mockApp(page, {}, { reportsAvailable: false });
+  await page.goto("/ui.html#settings/privacy");
+  await expect(page.getByLabel("Send anonymous error and crash reports")).toBeDisabled();
+  await expect(page.getByText("○ Not in this build")).toBeVisible();
 });
