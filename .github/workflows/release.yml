@@ -58,6 +58,9 @@ jobs:
       - run: npx tauri build --bundles app,dmg
         env:
           CI: true
+          # baked in at compile time; without it the build simply can't send error reports
+          STRAYS_POSTHOG_KEY: ${{ secrets.STRAYS_POSTHOG_KEY }}
+          STRAYS_POSTHOG_HOST: ${{ vars.STRAYS_POSTHOG_HOST }}
       - run: ../tools/permissions-audit.sh src-tauri/target/release/bundle/macos/Strays.app
       - run: lipo src-tauri/target/release/bundle/macos/Strays.app/Contents/MacOS/Strays -verify_arch arm64
       - name: Check the signature

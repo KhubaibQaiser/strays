@@ -186,6 +186,10 @@ function issues(state: UiState, notice: Notice): HTMLElement | null {
   );
 }
 
+/** What an error report holds, word for word the same in Settings and the welcome screen. */
+export const REPORTS_TEXT =
+  "Sent to PostHog: what kind of error it was, its message with every path and every pet, repo and account name removed, the Strays and macOS versions, and a random id. At most 20 a day; each one shows in the activity log. Nothing is sent while this is off or Strays is offline.";
+
 function thresholdRows(s: Settings, save: () => Promise<unknown>): HTMLElement {
   const names = ["Joyful", "Content", "Peckish", "Hungry"];
   const err = el("p", { class: "error small", role: "alert" });
@@ -270,7 +274,7 @@ function privacy(state: UiState, s: Settings, save: () => Promise<unknown>, noti
   const logBox = el("div");
   const network = card(
     "Network",
-    s.offline ? "Fully offline" : "api.github.com only",
+    s.offline ? "Fully offline" : s.errorReports && state.reportsAvailable ? "api.github.com and PostHog" : "api.github.com only",
     !s.offline,
     el("p", {}, `${state.requestsToday} requests today.`),
     el(
@@ -310,6 +314,21 @@ function privacy(state: UiState, s: Settings, save: () => Promise<unknown>, noti
       state.loginItem === "needsApproval" ? el("p", { class: "muted small" }, "Allow it in System Settings → General → Login Items.") : el("p", { class: "muted small" }, "Listed in System Settings → General → Login Items."),
     );
   })();
+  const reports = (() => {
+    const i = el("input", { type: "checkbox", checked: s.errorReports, id: "error-reports", disabled: !state.reportsAvailable });
+    i.addEventListener("change", () => {
+      s.errorReports = i.checked;
+      void save();
+    });
+    return card(
+      "Error reports",
+      !state.reportsAvailable ? "Not in this build" : s.errorReports ? "On" : "Off",
+      s.errorReports && state.reportsAvailable,
+      el("div", { class: "check" }, i, el("label", { for: "error-reports" }, "Send anonymous error and crash reports")),
+      el("p", { class: "muted small" }, REPORTS_TEXT),
+      el("div", { class: "buttons" }, el("button", { onclick: () => void api.revealLog().catch((e) => notice(String(e), true)) }, "Show log")),
+    );
+  })();
   const notYet = card("Focus status", "Not available yet", false, el("p", { class: "muted" }, "Needs the signed release."));
 
   const confirmBox = el("input", { type: "text", placeholder: "Type DELETE", "aria-label": "Type DELETE to confirm" });
@@ -329,7 +348,7 @@ function privacy(state: UiState, s: Settings, save: () => Promise<unknown>, noti
     el("div", { class: "row" }, confirmBox, el("button", { class: "danger", onclick: () => void api.deleteEverything(confirmBox.value).catch((e) => notice(String(e), true)) }, "Delete everything")),
   );
 
-  return [el("h1", {}, "Privacy & Permissions"), github, folders, network, capture, login, notYet, data];
+  return [el("h1", {}, "Privacy & Permissions"), github, folders, network, reports, capture, login, notYet, data];
 }
 
 function volumeSlider(s: Settings, save: () => Promise<void>) {

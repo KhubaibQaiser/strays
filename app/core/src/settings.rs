@@ -101,6 +101,8 @@ pub struct Settings {
     pub muted_species: Vec<Species>,
     /// Opt-in update check (§16): off by default; weekly while on, anonymous, to api.github.com only.
     pub check_updates: bool,
+    /// Opt-in error and crash reports to PostHog (`report.rs`): off until the user says yes.
+    pub error_reports: bool,
 }
 
 impl Default for Settings {
@@ -139,6 +141,7 @@ impl Default for Settings {
             volume: 50,
             muted_species: Vec::new(),
             check_updates: false,
+            error_reports: false,
         }
     }
 }

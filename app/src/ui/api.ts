@@ -65,6 +65,7 @@ export type Settings = {
   volume: number;
   mutedSpecies: Species[];
   checkUpdates: boolean;
+  errorReports: boolean;
 };
 
 export type UiState = {
@@ -90,6 +91,7 @@ export type UiState = {
   update: { tag_name: string; html_url: string } | null;
   updateChecked: string | null;
   issues: string[];
+  reportsAvailable: boolean;
   firstRun: boolean;
 };
 
@@ -127,6 +129,7 @@ export const api = {
   openLink: (which: "token-page" | "release") => invoke<void>("open_link", { which }),
   netlog: () => invoke<NetEntry[]>("netlog"),
   openDataFolder: () => invoke<void>("open_data_folder"),
+  revealLog: () => invoke<void>("reveal_log"),
   exportData: () => invoke<string>("export_data"),
   deleteEverything: (confirm: string) => invoke<void>("delete_everything", { confirm }),
   openWindow: (kind: "settings" | "setup" | "adopt" | "welcome", arg?: string) => invoke<void>("open_window", { kind, arg }),

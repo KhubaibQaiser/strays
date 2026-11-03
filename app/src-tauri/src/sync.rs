@@ -61,7 +61,7 @@ fn watch(folders: &[String], tx: &Sender<Cmd>) -> (Option<notify::RecommendedWat
     let w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
         // the loop has exited when this fails: the app is quitting
         Ok(_) => drop(tx.send(Cmd::Folders)),
-        Err(e) => eprintln!("folder watch error: {e}"),
+        Err(e) => crate::log::warn(&format!("folder watch error: {e}")),
     });
     let mut w = match w {
         Ok(w) => w,
@@ -106,6 +106,7 @@ pub fn run(
     let mut watched: Vec<String> = Vec::new();
     let mut watcher = None;
     let mut last_scan: Option<Time> = None;
+    let mut sent_today = (now_day(), 0usize);
     // a new clone or `git init` writes .git a moment after the folder appears, so rescan shortly after events
     let mut rescan_at: Option<Time> = None;
     loop {
@@ -246,6 +247,46 @@ pub fn run(
             app.save_all();
             changed = true;
         }
+        if !app.settings.error_reports {
+            // turning reports off forgets the id, so turning them on again starts a new one
+            app.reports.clear();
+            if app.sync.report_id.take().is_some() {
+                app.save_all();
+            }
+        } else if !app.settings.offline && !app.reports.is_empty() && crate::report::available() {
+            let day = now.date_naive();
+            if sent_today.0 != day {
+                sent_today = (day, 0);
+            }
+            let room = crate::report::PER_DAY.saturating_sub(sent_today.1);
+            let batch: Vec<_> = std::mem::take(&mut app.reports).into_iter().take(room).collect();
+            let id = *app.sync.report_id.get_or_insert_with(strays_core::uuid::Uuid::new_v4);
+            app.save_all();
+            drop(app);
+            let os = crate::platform::os_version();
+            let mut log = Vec::new();
+            let mut failed = None;
+            match crate::report::reporter() {
+                Ok(rep) => {
+                    for r in &batch {
+                        let (result, entry) = rep.send(id, env!("CARGO_PKG_VERSION"), &os, r);
+                        log.push(entry);
+                        sent_today.1 += 1;
+                        if let Err(e) = result {
+                            failed = Some(e);
+                            break;
+                        }
+                    }
+                }
+                Err(e) => failed = Some(e),
+            }
+            app = shared.lock().unwrap();
+            app.append_netlog(log);
+            // a report that can't be sent is dropped, not retried: it's never worth a loop of failures
+            if let Some(e) = failed {
+                crate::log::warn(&format!("error reports not sent: {e}"));
+            }
+        }
         let nudge = app.next_nudge(now, full_screen());
         if changed || nudge.is_some() {
             let was_visible = app.visible.clone();
@@ -270,6 +311,10 @@ pub fn run(
             Err(RecvTimeoutError::Disconnected) => return,
         }
     }
+}
+
+fn now_day() -> strays_core::chrono::NaiveDate {
+    Utc::now().date_naive()
 }
 
 /// Keeps `app.repos` as the latest view of every repo, newest push first.

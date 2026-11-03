@@ -6,8 +6,10 @@ use macos as platform;
 
 mod audio;
 mod commands;
+mod log;
 mod menu;
 mod overlay;
+mod report;
 mod state;
 mod sync;
 mod token;
@@ -123,11 +125,11 @@ fn refresh_tray(h: &AppHandle) {
     let app = shared.app.lock().unwrap();
     // the tray is where problems are shown, so its own failures can only go to the log
     if let Err(e) = tray.set_title(Some(menu::tray_title(&app))) {
-        eprintln!("could not update the menu-bar title: {e}");
+        log::warn(&format!("could not update the menu-bar title: {e}"));
     }
     match menu::build(h, &app).and_then(|m| tray.set_menu(Some(m))) {
         Ok(()) => {}
-        Err(e) => eprintln!("could not rebuild the menu: {e}"),
+        Err(e) => log::warn(&format!("could not rebuild the menu: {e}")),
     }
 }
 
@@ -267,6 +269,7 @@ pub fn run() {
             commands::netlog,
             commands::open_link,
             commands::open_data_folder,
+            commands::reveal_log,
             commands::export_data,
             commands::delete_everything,
             commands::open_window,
@@ -279,8 +282,14 @@ pub fn run() {
             tauri_app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let h = tauri_app.handle().clone();
 
+            let dir = data_dir(&h);
+            // the log is best-effort: without it problems still show in the menu and Settings
+            if let Err(e) = log::init(&dir) {
+                eprintln!("no log file: {e}");
+            }
+            report::install_crash_hook(dir.clone());
             #[allow(unused_mut)]
-            let mut app = App::load(data_dir(&h)).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            let mut app = App::load(dir).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             #[cfg(target_os = "macos")]
             app.open_bookmarks(platform::open_bookmark);
             #[cfg(debug_assertions)]

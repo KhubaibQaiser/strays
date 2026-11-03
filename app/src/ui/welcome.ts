@@ -1,6 +1,7 @@
 // First run (§8.1): three skippable screens, then adoption.
 import { api, Settings, UiState } from "./api";
 import { el, row } from "./dom";
+import { REPORTS_TEXT } from "./settings";
 
 export function renderWelcome(root: HTMLElement, state: UiState, notice: (msg: string, error?: boolean) => void) {
   let step = 0;
@@ -57,11 +58,16 @@ export function renderWelcome(root: HTMLElement, state: UiState, notice: (msg: s
       };
       const quiet = el("input", { type: "checkbox", checked: s.quietHours, id: "quiet" });
       quiet.addEventListener("change", () => (s.quietHours = quiet.checked));
+      // asked, never assumed: the box starts unticked
+      const reports = el("input", { type: "checkbox", checked: s.errorReports, id: "reports" });
+      reports.addEventListener("change", () => (s.errorReports = reports.checked));
       return [
         el("h1", {}, "Comfort"),
         row("Nudges per day, at most", num("nudgesDaily", 0, 20)),
         el("div", { class: "check" }, quiet, el("label", { for: "quiet" }, "Quiet hours, 22:00–08:00")),
         row("Most pets on screen", num("maxVisible", 1, 8)),
+        state.reportsAvailable ? el("div", { class: "check" }, reports, el("label", { for: "reports" }, "Help fix bugs: send anonymous error and crash reports")) : null,
+        state.reportsAvailable ? el("p", { class: "muted small" }, REPORTS_TEXT) : null,
         el("p", { class: "muted small" }, "Sound and launch at login arrive later; both will start switched off."),
         el("div", { class: "buttons" }, el("button", { class: "primary", onclick: () => void finish() }, "Adopt your first pet…")),
       ];

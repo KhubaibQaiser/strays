@@ -43,6 +43,12 @@ pub fn low_power_mode() -> bool {
     NSProcessInfo::processInfo().isLowPowerModeEnabled()
 }
 
+/// "26.5.0", for error reports.
+pub fn os_version() -> String {
+    let v = NSProcessInfo::processInfo().operatingSystemVersion();
+    format!("{}.{}.{}", v.majorVersion, v.minorVersion, v.patchVersion)
+}
+
 /// Bounds of the frontmost app's frontmost normal window, in global points with a top-left origin.
 /// Window bounds are readable without Screen Recording (titles aren't, and we don't ask for them).
 pub fn frontmost_window() -> Option<CGRect> {
@@ -97,7 +103,7 @@ pub fn open_bookmark(data: &[u8]) -> Result<(String, Option<Vec<u8>>), String> {
     unsafe { url.startAccessingSecurityScopedResource() };
     let path = url.path().ok_or("the folder has no path")?.to_string();
     // a stale bookmark still works for this run; failing to refresh it only matters after the next restart
-    let fresh = if stale.as_bool() { bookmark(&path).inspect_err(|e| eprintln!("could not refresh the bookmark for {path}: {e}")).ok() } else { None };
+    let fresh = if stale.as_bool() { bookmark(&path).inspect_err(|e| crate::log::warn(&format!("could not refresh the bookmark for {path}: {e}"))).ok() } else { None };
     Ok((path, fresh))
 }
 
