@@ -84,6 +84,7 @@ export const STATE = {
   loginItem: "off",
   update: null as { tag_name: string; html_url: string } | null,
   updateChecked: null as string | null,
+  issues: [] as string[],
   firstRun: false,
 };
 

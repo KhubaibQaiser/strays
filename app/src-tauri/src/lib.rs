@@ -58,12 +58,17 @@ fn pet_click(id: Uuid, shift: bool, shared: State<'_, Shared>, h: AppHandle) {
         let _ = shared.tx.send(Cmd::SyncNow(Some(id)));
         return;
     }
-    if let Ok(app) = shared.app.lock()
-        && audio::allowed(&app.settings, None, app.flags.presentation, shared.overlay.is_full_screen(), state::local_minute()) {
-            shared.audio.play(audio::Sound::Tick, app.settings.volume);
+    let mut app = shared.app.lock().unwrap();
+    if audio::allowed(&app.settings, None, app.flags.presentation, shared.overlay.is_full_screen(), state::local_minute()) {
+        shared.audio.play(audio::Sound::Tick, app.settings.volume);
+    }
+    match windows::open_card(&h, &id.to_string(), shared.overlay.pet_rect(id)) {
+        Ok(()) => app.resolve("window"),
+        Err(e) => {
+            app.warn("window", format!("Couldn't open the pet's card: {e}"));
+            drop(app);
+            let _ = shared.tx.send(Cmd::Changed);
         }
-    if let Err(e) = windows::open_card(&h, &id.to_string(), shared.overlay.pet_rect(id)) {
-        eprintln!("could not open the info card: {e}");
     }
 }
 
@@ -116,10 +121,26 @@ fn refresh_tray(h: &AppHandle) {
     let Some(tray) = h.tray_by_id(TRAY) else { return };
     let shared = h.state::<Shared>();
     let app = shared.app.lock().unwrap();
-    let _ = tray.set_title(Some(menu::tray_title(&app)));
-    if let Ok(m) = menu::build(h, &app) {
-        let _ = tray.set_menu(Some(m));
+    // the tray is where problems are shown, so its own failures can only go to the log
+    if let Err(e) = tray.set_title(Some(menu::tray_title(&app))) {
+        eprintln!("could not update the menu-bar title: {e}");
     }
+    match menu::build(h, &app).and_then(|m| tray.set_menu(Some(m))) {
+        Ok(()) => {}
+        Err(e) => eprintln!("could not rebuild the menu: {e}"),
+    }
+}
+
+/// Opens a window from the menu; a failure is shown in the menu, as the menu is where it was asked for.
+fn open_from_menu(h: &AppHandle, opened: tauri::Result<()>) {
+    let shared = h.state::<Shared>();
+    let mut app = shared.app.lock().unwrap();
+    match opened {
+        Ok(()) => app.resolve("window"),
+        Err(e) => app.warn("window", format!("Couldn't open the window: {e}")),
+    }
+    drop(app);
+    let _ = shared.tx.send(Cmd::Changed);
 }
 
 fn handle_menu(h: &AppHandle, id: &str) {
@@ -161,7 +182,7 @@ fn handle_menu(h: &AppHandle, id: &str) {
             }
             if adopt {
                 drop(app);
-                let _ = windows::adopt(h, &format!("folder={}", windows::encode(&path)));
+                open_from_menu(h, windows::adopt(h, &format!("folder={}", windows::encode(&path))));
                 return;
             }
             app.ignore_folder(&path);
@@ -169,23 +190,27 @@ fn handle_menu(h: &AppHandle, id: &str) {
         }
         menu::Event::Settings => {
             drop(app);
-            let _ = windows::settings(h, "pets");
+            open_from_menu(h, windows::settings(h, "pets"));
             return;
         }
         menu::Event::Update => {
             drop(app);
-            let _ = windows::settings(h, "about");
+            open_from_menu(h, windows::settings(h, "about"));
             return;
         }
         menu::Event::Setup => {
             drop(app);
-            let _ = windows::setup(h);
+            open_from_menu(h, windows::setup(h));
             return;
         }
         menu::Event::AdoptWindow => {
             drop(app);
-            let _ = windows::adopt(h, "");
+            open_from_menu(h, windows::adopt(h, ""));
             return;
+        }
+        menu::Event::Dismiss => {
+            app.issues.clear();
+            Ok(None)
         }
         menu::Event::Quit => {
             app.save_all();
@@ -193,15 +218,21 @@ fn handle_menu(h: &AppHandle, id: &str) {
             return;
         }
     };
-    drop(app);
+    // success shows in the menu itself; a refusal ("All adoption slots are full") is shown at its top
     match result {
-        Ok(Some(msg)) | Err(msg) => {
+        Ok(Some(msg)) => {
             #[cfg(debug_assertions)]
             println!("ACTION {msg}");
-            let _ = h.emit("notice", msg);
+            app.resolve("action");
+        }
+        Err(msg) => {
+            #[cfg(debug_assertions)]
+            println!("ACTION {msg}");
+            app.warn("action", msg);
         }
         Ok(None) => {}
     }
+    drop(app);
     let _ = shared.tx.send(Cmd::Changed);
 }
 
@@ -224,6 +255,7 @@ pub fn run() {
             commands::save_settings,
             commands::set_flag,
             commands::sync_now,
+            commands::dismiss_issues,
             commands::test_sound,
             commands::set_login_item,
             commands::token_check,
@@ -312,8 +344,8 @@ pub fn run() {
                     println!("STATE visible={} pets={} sync={}", app.visible.len(), app.pets.len(), menu::status_line(app));
                 });
             });
-            if first_run {
-                let _ = windows::welcome(&h);
+            if first_run && let Err(e) = windows::welcome(&h) {
+                h.state::<Shared>().app.lock().unwrap().warn("window", format!("Couldn't open the welcome window: {e}"));
             }
             Ok(())
         })
@@ -324,9 +356,7 @@ pub fn run() {
             tauri::RunEvent::ExitRequested { api, code: None, .. } => api.prevent_exit(),
             // opening the app again (Finder, Spotlight) shows Settings, the way in when the notch hides the icon
             #[cfg(target_os = "macos")]
-            tauri::RunEvent::Reopen { .. } => {
-                let _ = windows::settings(h, "pets");
-            }
+            tauri::RunEvent::Reopen { .. } => open_from_menu(h, windows::settings(h, "pets")),
             _ => {}
         });
 }

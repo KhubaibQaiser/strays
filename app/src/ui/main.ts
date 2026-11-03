@@ -12,8 +12,8 @@ let route = location.hash.slice(1);
 let state: UiState | null = null;
 
 function notice(msg: string, error = false) {
-  const n = document.getElementById("notice");
-  if (!n) return;
+  // views without a notice line (setup, an error page) still get one
+  const n = document.getElementById("notice") ?? root.appendChild(Object.assign(document.createElement("p"), { id: "notice", role: "status" }));
   n.textContent = msg;
   n.className = `small ${error ? "error" : "ok"}`;
 }
@@ -46,8 +46,17 @@ const SCROLLERS = "main, .infocard";
 // a text field the user is in; fields save on change, so skipping redraws there loses nothing
 const typing = () => root.contains(document.activeElement) && !!document.activeElement?.matches("textarea, input:not([type=checkbox], [type=radio], [type=range], [type=button])");
 
+// anything that fails without its own handler still reaches the user
+addEventListener("unhandledrejection", (e) => notice(String(e.reason), true));
+addEventListener("error", (e) => notice(e.message, true));
+
 async function refresh() {
-  state = await api.state();
+  try {
+    state = await api.state();
+  } catch (e) {
+    root.replaceChildren(Object.assign(document.createElement("p"), { className: "error", textContent: `Strays couldn't load its state: ${e}` }));
+    return;
+  }
   // forms keep what the user is typing; only views that just display state redraw on changes
   const live = route.startsWith("card") || route.startsWith("settings");
   if (!root.firstChild) return render();

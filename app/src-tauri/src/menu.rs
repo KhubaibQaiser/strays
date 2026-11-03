@@ -145,7 +145,7 @@ fn token_reminder(days: i64) -> String {
 
 /// The badge next to the menu-bar paw icon: hidden needy pets and a soon-expiring token, or a warning when syncing fails.
 pub fn tray_title(app: &App) -> String {
-    if app.sync_error.is_some() {
+    if app.sync_error.is_some() || !app.issues.is_empty() {
         return "⚠".into();
     }
     let needy = (app.hidden_needy > 0).then(|| app.hidden_needy.to_string());
@@ -159,8 +159,11 @@ pub fn build<Rt: Runtime>(h: &AppHandle<Rt>, app: &App) -> R<Menu<Rt>> {
     if let Some(days) = token_days_left(app, now) {
         items.push(item(h, "setup", &token_reminder(days))?);
     }
-    if app.load_problems > 0 {
-        items.push(label(h, &format!("⚠ {} pet file(s) couldn't be read and were left untouched", app.load_problems))?);
+    for i in &app.issues {
+        items.push(label(h, &format!("⚠ {}", i.text))?);
+    }
+    if !app.issues.is_empty() {
+        items.push(item(h, "dismiss", "Dismiss warnings")?);
     }
     items.push(sep(h)?);
     let on_screen: Vec<&Pet> = app.visible.iter().filter_map(|id| app.pets.iter().find(|p| p.id == *id)).collect();
@@ -254,6 +257,7 @@ pub enum Event {
     Update,
     Setup,
     AdoptWindow,
+    Dismiss,
     Quit,
 }
 
@@ -272,6 +276,7 @@ pub fn parse(id: &str) -> Option<Event> {
         ["update"] => Event::Update,
         ["setup"] => Event::Setup,
         ["adopt"] => Event::AdoptWindow,
+        ["dismiss"] => Event::Dismiss,
         ["pet", pet, action] => {
             let pet: Uuid = pet.parse().ok()?;
             let action = match *action {
