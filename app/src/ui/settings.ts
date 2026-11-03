@@ -1,5 +1,5 @@
 // Settings window (§8.4) including Privacy & Permissions (§8.5). Every change saves straight away.
-import { api, Settings, Species, UiState } from "./api";
+import { api, saveChanged, Settings, Species, UiState } from "./api";
 import { PACE_LABEL, confirmButton, date, el, row } from "./dom";
 
 const SECTIONS: [string, string][] = [
@@ -22,12 +22,19 @@ type Notice = (msg: string, error?: boolean) => void;
 
 export function renderSettings(root: HTMLElement, state: UiState, section: string, go: (section: string) => void, notice: Notice) {
   const s = structuredClone(state.settings);
-  const save = () => api.saveSettings(s).then(() => notice("Saved")).catch((e) => notice(String(e), true));
+  const base = structuredClone(state.settings);
+  const save = () => saveChanged(s, base).then(() => notice("Saved")).catch((e) => notice(String(e), true));
 
   const num = (key: keyof Settings, min: number, max: number) => {
     const i = el("input", { type: "number", min, max, value: s[key] as number, "aria-label": String(key) });
     i.addEventListener("change", () => {
-      (s[key] as number) = Math.round(Number(i.value));
+      const v = Math.round(i.valueAsNumber);
+      // an emptied or out-of-range field is put back rather than sent
+      if (!Number.isFinite(v) || v < min || v > max) {
+        i.value = String(s[key]);
+        return notice(`${String(key)} must be a number from ${min} to ${max}`, true);
+      }
+      (s[key] as number) = v;
       void save();
     });
     return i;

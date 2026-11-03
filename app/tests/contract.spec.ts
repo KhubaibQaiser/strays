@@ -99,6 +99,8 @@ test("each window may call exactly the commands its pages use, and no wrapper is
   for (const [file, window] of Object.entries(views)) {
     const src = (await source(`/src/ui/${file}.ts`)) + shared;
     used[window] = new Set([...src.matchAll(/api\.(\w+)\(/g)].map((m) => wrappers.get(m[1])).filter((c): c is string => !!c));
+    // saveChanged (api.ts) reads the latest settings, then saves
+    if (src.includes("saveChanged(")) ["ui_state", "save_settings"].forEach((c) => used[window].add(c));
   }
   used.overlay = new Set([...(await source("/src/main.ts")).matchAll(/invoke\("(\w+)"/g)].map((m) => m[1]));
   const problems: string[] = [];

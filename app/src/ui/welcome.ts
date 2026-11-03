@@ -1,11 +1,12 @@
 // First run (§8.1): three skippable screens, then adoption.
-import { api, Settings, UiState } from "./api";
+import { api, saveChanged, Settings, UiState } from "./api";
 import { el, row } from "./dom";
 import { REPORTS_TEXT } from "./settings";
 
 export function renderWelcome(root: HTMLElement, state: UiState, notice: (msg: string, error?: boolean) => void) {
   let step = 0;
   const s: Settings = structuredClone(state.settings);
+  const base: Settings = structuredClone(state.settings);
 
   const next = () => {
     step++;
@@ -13,7 +14,7 @@ export function renderWelcome(root: HTMLElement, state: UiState, notice: (msg: s
   };
   const finish = async () => {
     try {
-      await api.saveSettings(s);
+      await saveChanged(s, base);
       await api.openWindow("adopt");
       void api.closeWindow("welcome");
     } catch (e) {
@@ -53,7 +54,14 @@ export function renderWelcome(root: HTMLElement, state: UiState, notice: (msg: s
     () => {
       const num = (key: "nudgesDaily" | "maxVisible", min: number, max: number) => {
         const i = el("input", { type: "number", min, max, value: s[key] });
-        i.addEventListener("change", () => (s[key] = Math.round(Number(i.value))));
+        i.addEventListener("change", () => {
+          const v = Math.round(i.valueAsNumber);
+          if (Number.isFinite(v) && v >= min && v <= max) s[key] = v;
+          else {
+            i.value = String(s[key]);
+            notice(`Enter a number from ${min} to ${max}`, true);
+          }
+        });
         return i;
       };
       const quiet = el("input", { type: "checkbox", checked: s.quietHours, id: "quiet" });
