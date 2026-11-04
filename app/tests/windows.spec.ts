@@ -138,6 +138,9 @@ test("adoption needs a project, then sends every choice", async ({ page }) => {
   await page.getByLabel("Name").fill("Biscuit");
   await page.getByLabel("Goal").fill("Launch it");
   await page.getByLabel("Pace").selectOption("slowBurn");
+  // the preview is the 3D pet itself, once its shape is built
+  await expect(page.getByRole("img", { name: "Preview of your parrot" }).locator("canvas")).toHaveCount(1, { timeout: 30_000 });
+  await page.waitForTimeout(1000);
   await page.screenshot({ path: `${shots}/adopt.png`, fullPage: true });
   await page.getByRole("button", { name: "Adopt", exact: true }).click();
   expect((await calls(page, "adopt")).at(-1)?.args.request).toEqual({

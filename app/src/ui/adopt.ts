@@ -5,6 +5,8 @@ import { artFor } from "../art";
 import { api, Pace, Species, UiState } from "./api";
 import { PACE_LABEL, SPECIES_ICON, ago, el } from "./dom";
 import { deriveLook, hexToArgb, looksFor } from "./look";
+import { Pet3DRig, SPECIES_3D } from "../pet3d/rig";
+import { meshReady } from "../pet3d/meshes";
 
 RuntimeLoader.setWasmUrl(riveWasmUrl);
 
@@ -64,15 +66,50 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
     );
   drawSpecies();
 
-  // colour + preview
-  const canvas = el("canvas", { class: "preview", width: 320, height: 320, "aria-label": "Preview" });
+  // colour + preview: the pet as it will look on screen, in 3D (in 2D if this Mac can't draw 3D)
+  const stage = el("div", { class: "preview", role: "img" });
+  const report = (key: string, text: string) => api.reportProblem(key, text).catch((e) => notice(`${text} (and it couldn't be recorded: ${e})`, true));
+  let shown: { cleanup(): void } | null = null;
   let rive: Rive | null = null;
+  let asked = 0;
   function loadPreview() {
-    rive?.cleanup();
-    rive = new Rive({ src: artFor(species), canvas, autoplay: true, stateMachine: "Idle", autoBind: true, onLoad: () => paint() });
+    const mine = ++asked;
+    stage.setAttribute("aria-label", `Preview of your ${species}`);
+    void meshReady(species, report).then(() => {
+      if (mine !== asked) return; // a newer choice came in meanwhile
+      shown?.cleanup();
+      rive = null;
+      const canvas = el("canvas", { class: "preview" });
+      stage.replaceChildren(canvas);
+      try {
+        const rig = new Pet3DRig(canvas, SPECIES_3D[species], colors, report, () => drawIn2d());
+        rig.setLiveliness("gentle", matchMedia("(prefers-reduced-motion: reduce)").matches);
+        rig.resize(160);
+        rig.play();
+        shown = rig;
+      } catch (e) {
+        void report("preview-3d", `The adoption preview can't draw in 3D (${e}), so it's drawn in 2D`);
+        drawIn2d();
+      }
+    });
   }
+  function drawIn2d() {
+    shown?.cleanup();
+    const canvas = el("canvas", { class: "preview", width: 320, height: 320 });
+    stage.replaceChildren(canvas);
+    rive = new Rive({ src: artFor(species), canvas, autoplay: true, stateMachine: "Idle", autoBind: true, onLoad: () => paint() });
+    shown = rive;
+  }
+  // a new colour rebuilds the 3D pet (its coat is baked into its materials); dragging the picker
+  // only rebuilds once it settles
+  let repaint = 0;
   const paint = () => {
-    const vmi = rive?.viewModelInstance;
+    if (!rive) {
+      window.clearTimeout(repaint);
+      repaint = window.setTimeout(loadPreview, 120);
+      return;
+    }
+    const vmi = rive.viewModelInstance;
     for (const [k, v] of Object.entries(colors)) {
       const prop = vmi?.color(k);
       if (prop) prop.value = hexToArgb(v);
@@ -126,7 +163,7 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
       el("h2", {}, "2. Species"),
       speciesRow,
       el("h2", {}, "3. Colour"),
-      el("div", { class: "row" }, canvas, swatches),
+      el("div", { class: "row" }, stage, swatches),
       el("h2", {}, "4. Name"),
       name,
       el("h2", {}, "5. Goal"),
