@@ -29,6 +29,7 @@ export class Pet3DRig {
   private cost = 0;
   private quality: Quality;
   private size = 0;
+  private disposed = false;
 
   /** Throws if WebGL isn't available. `onLost` runs if the GPU drops the context later. */
   constructor(
@@ -43,6 +44,7 @@ export class Pet3DRig {
     this.quality = { shells: this.pet.shells, dpr: devicePixelRatio, slow: 1 };
     if (this.pet.software) log(`WARN no GPU for the 3D pet (${this.pet.software}); drawing it with less coat, light and frames`);
     canvas.addEventListener("webglcontextlost", (e) => {
+      if (this.disposed) return; // cleanup gives the context back on purpose
       e.preventDefault();
       this.pause();
       onLost();
@@ -130,6 +132,7 @@ export class Pet3DRig {
   }
 
   cleanup() {
+    this.disposed = true;
     this.pause();
     this.pet.dispose();
     this.canvas.remove();

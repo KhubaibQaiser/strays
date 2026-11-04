@@ -38,6 +38,11 @@ canvas {
   position: absolute;
 }
 
+/* a full-screen app is in front: pets stay loaded but out of sight (and stop drawing) */
+body.hidden > * {
+  visibility: hidden;
+}
+
 .tooltip {
   position: absolute;
   transform: translate(-50%, 0);
