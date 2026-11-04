@@ -1,7 +1,8 @@
 // Signed-distance modelling for the 3D pet prototype: a pet is a list of primitives, each bound to a bone.
 // `build` turns them into a smooth mesh (surface nets, snapped onto the surface) with per-vertex normals,
 // skin weights derived from which primitives a vertex sits on, and material values (fur length, light coat,
-// bare pink skin, position along a chain) blended the same way, so colours and fur change smoothly.
+// bare pink skin, dark, accents, feather bars, position along a chain) blended the same way, so colours
+// and fur change smoothly.
 export type V3 = [number, number, number];
 
 export type Prim = {
@@ -11,8 +12,8 @@ export type Prim = {
   c: V3;
   r: number;
   bone: number;
-  /** [fur length factor, light-coat amount, bare pink skin amount] */
-  m: V3;
+  /** material: [fur length factor, light coat, bare pink skin, dark, accent, accent 2, feather bars] (see MAT) */
+  m: number[];
   /** smooth-union radius with the shape so far (0 = hard edge) */
   k: number;
   /** carve this shape out instead of adding it */
@@ -90,7 +91,12 @@ export type Mesh = {
   skinWeight: Float32Array;
   /** per vertex: fur, light, pink, chain */
   mat: Float32Array;
+  /** per vertex: dark, accent, accent 2, feather bars */
+  mat2: Float32Array;
 };
+
+/** How many material values a primitive carries. */
+export const MAT = 7;
 
 /** Meshes the surface of `prims` inside the box [lo, hi] with cells of size h. */
 export function build(prims: Prim[], lo: V3, hi: V3, h: number): Mesh {
@@ -197,12 +203,14 @@ export function build(prims: Prim[], lo: V3, hi: V3, h: number): Mesh {
   const skinIndex = new Uint16Array(count * 4);
   const skinWeight = new Float32Array(count * 4);
   const mat = new Float32Array(count * 4);
+  const mat2 = new Float32Array(count * 4);
   const bones = 1 + Math.max(...prims.map((p) => p.bone));
   const w = new Float32Array(bones);
   for (let i = 0; i < count; i++) {
     const x = position[i * 3], y = position[i * 3 + 1], z = position[i * 3 + 2];
     w.fill(0);
-    const m = [0, 0, 0, 0];
+    const m = new Array(MAT).fill(0);
+    let chain = 0;
     let total = 0;
     const carved: [number, Prim][] = [];
     for (const p of prims) {
@@ -213,16 +221,16 @@ export function build(prims: Prim[], lo: V3, hi: V3, h: number): Mesh {
       }
       w[p.bone] += Math.exp(-Math.max(d, 0) / 0.018);
       const om = Math.exp(-Math.max(d, 0) / 0.01);
-      m[0] += om * p.m[0];
-      m[1] += om * p.m[1];
-      m[2] += om * p.m[2];
-      m[3] += om * (p.t ?? 0);
+      for (let o = 0; o < MAT; o++) m[o] += om * (p.m[o] ?? 0);
+      chain += om * (p.t ?? 0);
       total += om;
     }
-    for (let o = 0; o < 4; o++) m[o] /= total || 1;
-    // a carved surface (inner ear, eye socket) takes the carving shape's material
-    for (const [s, p] of carved) for (let o = 0; o < 3; o++) m[o] += (p.m[o] - m[o]) * s;
-    mat.set(m, i * 4);
+    for (let o = 0; o < MAT; o++) m[o] /= total || 1;
+    chain /= total || 1;
+    // a carved surface (inner ear, eye socket, mouth) takes the carving shape's material
+    for (const [s, p] of carved) for (let o = 0; o < MAT; o++) m[o] += ((p.m[o] ?? 0) - m[o]) * s;
+    mat.set([m[0], m[1], m[2], chain], i * 4);
+    mat2.set([m[3], m[4], m[5], m[6]], i * 4);
     const top = [...w.keys()].sort((a, b) => w[b] - w[a]).slice(0, 4);
     const sum = top.reduce((s, b) => s + w[b], 0) || 1;
     top.forEach((b, n) => {
@@ -230,5 +238,5 @@ export function build(prims: Prim[], lo: V3, hi: V3, h: number): Mesh {
       skinWeight[i * 4 + n] = w[b] / sum;
     });
   }
-  return { position, normal, index, skinIndex, skinWeight, mat };
+  return { position, normal, index, skinIndex, skinWeight, mat, mat2 };
 }

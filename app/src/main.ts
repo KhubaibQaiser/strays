@@ -1,11 +1,11 @@
 // Pet overlay: draws the pets the Rust core places, and plays their moments at the chosen liveliness.
-// The core owns all state; this page only renders and reports ⌥-clicks. Cats are the realistic 3D
-// Persian (src/pet3d); the other species, and any cat whose WebGL fails, are drawn by their Rive rigs.
+// The core owns all state; this page only renders and reports ⌥-clicks. Species with a 3D model
+// (src/pet3d) draw in 3D; the rest, and any pet whose WebGL fails, are drawn by their Rive rigs.
 import { setFps } from "./throttle";
 import { Rive, RuntimeLoader } from "@rive-app/canvas";
 import riveWasmUrl from "@rive-app/canvas/rive.wasm?url";
 import { artFor } from "./art";
-import { Cat3DRig } from "./pet3d/rig";
+import { Pet3DRig, SPECIES_3D } from "./pet3d/rig";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -195,13 +195,13 @@ function riveRig(p: Pet): Rig {
   };
 }
 
-/** The 3D Persian, or null (logged) when WebGL isn't available; if the GPU drops it later, the pet
- *  is rebuilt with its Rive rig. */
-function cat3dRig(p: Pet): Rig | null {
+/** The 3D pet, or null (logged) when WebGL isn't available; if the GPU drops it later, the pet is
+ *  rebuilt with its Rive rig. */
+function rig3d(p: Pet): Rig | null {
   const { placed } = p;
   try {
-    const rig = new Cat3DRig(p.el, placed.colors, log, () => {
-      log(`WARN pet=${placed.id} lost its 3D drawing; switching to the drawn cat`);
+    const rig = new Pet3DRig(p.el, SPECIES_3D[placed.species], placed.colors, log, () => {
+      log(`WARN pet=${placed.id} lost its 3D drawing; switching to the drawn one`);
       const current = pets.get(placed.id);
       if (current?.rig !== cat) return;
       remove(placed.id);
@@ -213,17 +213,18 @@ function cat3dRig(p: Pet): Rig | null {
     log(`LOADED pet=${placed.id} colours=${Object.keys(placed.colors).length}/${Object.keys(placed.colors).length} rig=3d`);
     return cat;
   } catch (e) {
-    log(`ERROR pet=${placed.id} can't draw the 3D cat (${String(e)}); using the drawn cat`);
+    log(`ERROR pet=${placed.id} can't draw in 3D (${String(e)}); using the drawn one`);
     return null;
   }
 }
 
 function add(placed: Placed, forceRive = false) {
   const p = { el: canvasFor(placed.id), placed, playing: false, busy: false, leaving: false, run: 0 } as Pet;
-  let rig = placed.species === "cat" && !forceRive ? cat3dRig(p) : null;
+  const want3d = placed.species in SPECIES_3D && !forceRive;
+  let rig = want3d ? rig3d(p) : null;
   if (!rig) {
     // a canvas that tried WebGL can't give Rive a 2D context, so start from a fresh one
-    if (placed.species === "cat" && !forceRive) {
+    if (want3d) {
       p.el.remove();
       p.el = canvasFor(placed.id);
     }
