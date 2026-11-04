@@ -1,13 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "overlay",
-  "description": "The pet overlay shows web content all the time, so it may only report clicks and ask for frames",
+  "description": "The pet overlay shows web content all the time, so it may only report clicks and drags and ask for frames",
   "windows": [
     "overlay"
   ],
   "permissions": [
     "core:event:default",
     "allow-pet-click",
+    "allow-pet-press",
+    "allow-pet-drop",
     "allow-overlay-ready",
     "allow-pet-log",
     "allow-report-problem"

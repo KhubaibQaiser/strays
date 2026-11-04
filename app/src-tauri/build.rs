@@ -14,6 +14,8 @@ const COMMANDS: &[&str] = &[
     "pet_action",
     "pet_click",
     "report_problem",
+    "pet_press",
+    "pet_drop",
     "pet_log",
     "pick_folder",
     "reveal",

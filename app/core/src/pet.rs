@@ -135,6 +135,17 @@ pub struct Pet {
     /// How lively this pet is, if not the app's setting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub liveliness: Option<crate::settings::Liveliness>,
+    /// Where the user dragged the pet (§7.2), kept across restarts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home: Option<Home>,
+}
+
+/// A home spot: the bottom centre of the pet's grid cell, as a fraction (0–1) of the screen's free
+/// area (no menu bar or Dock), so it survives a resolution or display change.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Home {
+    pub x: f64,
+    pub y: f64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -196,6 +207,7 @@ impl Pet {
             goal: Goal::default(),
             missing_since: None,
             liveliness: None,
+            home: None,
         }
     }
 

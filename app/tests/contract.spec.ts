@@ -9,7 +9,7 @@ import type { Feedback, Frame, Hover } from "../src/main";
 
 // compile-time half: the mock samples are what the app's types say they are
 const state: UiState = STATE;
-const frame: Frame = { pets: [{ ...placed("a", "content", 0), confused: true }], liveliness: "calm", reduceMotion: false, hidden: false };
+const frame: Frame = { pets: [{ ...placed("a", "content", 0), confused: true }], grid: { x0: 0, y0: 0, cw: 1, ch: 1, cols: 1, rows: 1, s: 1 }, liveliness: "calm", reduceMotion: false, hidden: false };
 const hover: Hover = { id: null, held: true };
 const feedback: Feedback = { id: "a", ok: true, text: "✓" };
 const entry: NetEntry = { at: "2026-11-01T10:00:00Z", method: "GET", host: "api.github.com", path: "/user/repos", status: 200, reason: "scheduled" };

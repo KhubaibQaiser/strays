@@ -17,6 +17,15 @@
     "status": "number"
   },
   "overlay": {
+    "grid": {
+      "ch": "number",
+      "cols": "number",
+      "cw": "number",
+      "rows": "number",
+      "s": "number",
+      "x0": "number",
+      "y0": "number"
+    },
     "hidden": "boolean",
     "liveliness": "string",
     "pets": [

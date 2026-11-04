@@ -12,8 +12,10 @@ import { listen } from "@tauri-apps/api/event";
 
 type Liveliness = "calm" | "gentle" | "lively";
 export type Placed = { id: string; species: string; colors: Record<string, string>; label: string; mood: string; confused: boolean; liveliness: Liveliness | null; x: number; y: number; s: number };
+/** The screen grid pets stand on (Rust's `overlay::Grid`): cell (0, 0) is bottom right, columns go left, rows up. */
+export type Grid = { x0: number; y0: number; cw: number; ch: number; cols: number; rows: number; s: number };
 /** `hidden`: a full-screen app is in front, so the pets are kept but not shown or drawn. */
-export type Frame = { pets: Placed[]; liveliness: Liveliness; reduceMotion: boolean; hidden: boolean };
+export type Frame = { pets: Placed[]; grid: Grid; liveliness: Liveliness; reduceMotion: boolean; hidden: boolean };
 export type Hover = { id: string | null; held: boolean };
 export type Feedback = { id: string; ok: boolean; text: string };
 
@@ -64,6 +66,10 @@ let frozen = false;
 let hidden = false;
 /** WebKit keeps only so many WebGL contexts and drops the oldest past that; pets beyond this draw in 2D. */
 const MAX_3D = 12;
+let grid: Grid = { x0: 0, y0: 0, cw: 0, ch: 0, cols: 0, rows: 0, s: 0 };
+/** A press on a pet: it becomes a drag once the cursor moves this many points (§7.2). */
+const DRAG_PT = 4;
+let press: { p: Pet; x: number; y: number; shift: boolean; dragging: boolean } | null = null;
 
 /** Seconds between short moments per pet (§7.4); Lively plays continuously instead. */
 const GAP: Record<Exclude<Liveliness, "lively">, [number, number]> = { calm: [20, 60], gentle: [5, 15] };
@@ -158,6 +164,7 @@ function schedule(p: Pet) {
 }
 
 function position(p: Pet) {
+  if (press?.dragging && press.p === p) return;
   const { x, y, s } = p.placed;
   Object.assign(p.el.style, { left: `${x}px`, top: `${y}px`, width: `${s}px`, height: `${s}px` });
   if (p.el.width !== Math.round(s * devicePixelRatio)) p.rig.resize(s);
@@ -258,11 +265,13 @@ function add(placed: Placed, forceRive = false) {
   position(p);
   if (rig.continuous) void play(p, []);
   // the window only takes clicks while the user's chosen modifier is held (Rust decides, and says so
-  // through "hover"), so any click that arrives here is meant for the pet, whichever modifier that is
+  // through "hover"), so any press that arrives here is meant for the pet, whichever modifier that is.
+  // Let go where it was pressed and it's a click; move it and it's a drag onto the grid.
   p.el.addEventListener("mousedown", (e) => {
-    if (!frozen) return;
+    if (!frozen || e.button !== 0 || press) return;
     e.preventDefault();
-    invoke("pet_click", { id: placed.id, shift: e.shiftKey }).catch(unreached("pet_click"));
+    press = { p, x: e.clientX, y: e.clientY, shift: e.shiftKey, dragging: false };
+    invoke("pet_press", { id: p.placed.id, down: true }).catch(unreached("pet_press"));
   });
   p.el.addEventListener("contextmenu", (e) => e.preventDefault());
 }
@@ -280,6 +289,80 @@ function addWhenReady(placed: Placed) {
     if (now.confused) bubble(now.id, "❓ Where did my repo go?", 0, "ask");
   });
 }
+
+/** Grid cell nearest a canvas top-left (the same rule as Rust's `Grid::cell`). */
+function cellAt(x: number, y: number): [number, number] {
+  const pick = (d: number, step: number, n: number) => (step > 0 ? Math.min(n - 1, Math.max(0, Math.round(d / step))) : 0);
+  return [pick(grid.x0 - x, grid.cw, grid.cols), pick(grid.y0 - y, grid.ch, grid.rows)];
+}
+
+/** While a pet is dragged, a faint grid shows where it can stand: taken cells dimmer, the target lit. */
+function drawGrid(dragged: Pet) {
+  let layer = document.getElementById("grid");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = "grid";
+    if (reduceMotion) layer.classList.add("still");
+    document.body.prepend(layer);
+    for (let r = 0; r < grid.rows; r++)
+      for (let c = 0; c < grid.cols; c++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.dataset.cell = `${c},${r}`;
+        // the cell marks where the pet's body stands: the lower middle of its canvas
+        Object.assign(cell.style, {
+          left: `${grid.x0 - c * grid.cw + grid.s * 0.15}px`,
+          top: `${grid.y0 - r * grid.ch + grid.s * 0.3}px`,
+          width: `${grid.s * 0.7}px`,
+          height: `${grid.s * 0.7}px`,
+        });
+        layer.appendChild(cell);
+      }
+    requestAnimationFrame(() => layer?.classList.add("shown"));
+  }
+  const taken = new Set([...pets.values()].filter((o) => o !== dragged).map((o) => cellAt(o.placed.x, o.placed.y).join(",")));
+  const target = cellAt(parseFloat(dragged.el.style.left), parseFloat(dragged.el.style.top)).join(",");
+  for (const cell of layer.children as HTMLCollectionOf<HTMLElement>) {
+    cell.classList.toggle("taken", taken.has(cell.dataset.cell!));
+    cell.classList.toggle("target", cell.dataset.cell === target);
+  }
+}
+
+function hideGrid() {
+  document.getElementById("grid")?.remove();
+}
+
+/** Ends a press: a click if it never moved, else a drop that Rust snaps to the nearest free cell. */
+function endPress() {
+  if (!press) return;
+  const { p, shift, dragging } = press;
+  press = null;
+  hideGrid();
+  p.el.classList.remove("dragging");
+  if (!dragging) {
+    invoke("pet_press", { id: p.placed.id, down: false }).catch(unreached("pet_press"));
+    invoke("pet_click", { id: p.placed.id, shift }).catch(unreached("pet_click"));
+  } else {
+    // the pet stays where it was let go until the next frame puts it in its cell
+    invoke("pet_drop", { id: p.placed.id, x: parseFloat(p.el.style.left), y: parseFloat(p.el.style.top) }).catch(unreached("pet_drop"));
+  }
+}
+
+addEventListener("mousemove", (e) => {
+  if (!press) return;
+  const dx = e.clientX - press.x, dy = e.clientY - press.y;
+  if (!press.dragging && Math.hypot(dx, dy) < DRAG_PT) return;
+  const p = press.p;
+  if (!press.dragging) {
+    press.dragging = true;
+    p.el.classList.add("dragging");
+    document.querySelectorAll(".tooltip, .bubble, .ask").forEach((b) => b.remove());
+  }
+  p.el.style.left = `${p.placed.x + dx}px`;
+  p.el.style.top = `${p.placed.y + dy}px`;
+  drawGrid(p);
+});
+addEventListener("mouseup", (e) => e.button === 0 && endPress());
 
 function remove(id: string) {
   const p = pets.get(id);
@@ -307,6 +390,8 @@ function bubble(id: string, text: string, ms: number, className = "bubble") {
 }
 
 const ready: Promise<unknown>[] = [];
+// Rust saw the button let go without the page hearing it: drop the pet where it is
+ready.push(listen("drag-end", endPress));
 ready.push(listen<Frame>("overlay", ({ payload }) => {
   const modeChanged = payload.liveliness !== mode || payload.reduceMotion !== reduceMotion || payload.hidden !== hidden;
   hidden = payload.hidden;
@@ -314,6 +399,7 @@ ready.push(listen<Frame>("overlay", ({ payload }) => {
   mode = payload.liveliness;
   reduceMotion = payload.reduceMotion;
   // ponytail: the Rive cap is one for the page, so a Rive (fallback) pet follows the app's liveliness
+  grid = payload.grid;
   setFps(mode === "lively" && !reduceMotion ? 15 : 24);
   const keep = new Set(payload.pets.map((p) => p.id));
   // a leaving pet stays until its clip ends (play() removes it)
