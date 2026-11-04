@@ -95,7 +95,8 @@ export function renderCard(root: HTMLElement, state: UiState, id: string, notice
   const buttons: (HTMLElement | null)[] = [
     el("button", { onclick: () => void act("sync") }, "Sync now"),
     p.state === "active" ? snooze : null,
-    p.state === "active" ? el("button", { onclick: () => void act("release") }, "Mark release") : null,
+    // a release sends the pet away for days, so a slip of the mouse mustn't do it
+    p.state === "active" ? confirmButton("Mark release…", "Shipped it? Click again", () => void act("release")) : null,
     p.state === "active" ? el("button", { onclick: () => void act("pause") }, "Pause") : null,
     p.state === "paused" ? el("button", { onclick: () => void act("resume") }, "Resume") : null,
     p.state === "snoozed" ? el("button", { onclick: () => void act("wake") }, "Wake now") : null,

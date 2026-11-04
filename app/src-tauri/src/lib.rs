@@ -242,6 +242,7 @@ fn handle_menu(h: &AppHandle, id: &str) {
                 menu::Window::Settings(section) => windows::settings(h, section),
                 menu::Window::Setup => windows::setup(h),
                 menu::Window::Adopt(query) => windows::adopt(h, &query),
+                menu::Window::Card(pet) => windows::open_card(h, &pet.to_string(), shared.overlay.pet_rect(pet)),
             },
         ),
         menu::Outcome::Quit => return h.exit(0),

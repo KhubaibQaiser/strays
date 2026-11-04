@@ -64,7 +64,9 @@ Every action is also in the 🐾 menu. The modifier key can be changed in **Sett
 - **Snooze** hides a pet for a while. Its hunger keeps counting.
 - **Pause** is for a deliberate break. Its hunger stops.
 - **Vacation mode** (menu bar) pauses every pet.
-- **Mark release** sends the pet on a short holiday.
+- **Mark release…** sends the pet on a short holiday. It asks for a second click first.
+- Without GitHub, Strays tracks your folders only, and the menu says **Folders only**. Each pet's menu has **Open card…**, so everything works from the keyboard too.
+- When syncing fails, moods are on hold until it works again. Being offline isn't shown as a warning, and a refused token shows **Paste a new token…** right under it.
 - **Graduate** is for a finished project. The pet puts on an accessory, says goodbye and joins the **Graduates** list.
 
 ## Can't see the menu bar icon?

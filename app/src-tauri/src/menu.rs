@@ -50,6 +50,10 @@ pub fn pet_entries<Rt: Runtime>(h: &AppHandle<Rt>, app: &App, p: &Pet, now: Time
     let id = |a: &str| format!("pet/{}/{a}", p.id);
     let repo = p.project.github.as_ref().map(|g| g.full_name.clone()).unwrap_or_else(|| "local folder".into());
     let mut v = vec![label(h, &format!("{repo} · last activity {}", ago(p.activity.last, now)))?];
+    // the card is otherwise only a modifier-click away, which keyboard and VoiceOver users can't do
+    if !matches!(p.state.kind, StateKind::LetGo | StateKind::Graduated) {
+        v.push(item(h, &id("card"), "Open card…")?);
+    }
     let confirm = |what: &str, yes: &str, action: &str| -> R<MenuItemKind<Rt>> { sub(h, what, vec![item(h, &id(action), yes)?]) };
     if p.missing_since.is_some() && !matches!(p.state.kind, StateKind::LetGo | StateKind::Graduated) {
         v.push(label(h, "❓ GitHub can't find this repo. Deleted, or can't your token see it?")?);
@@ -72,7 +76,7 @@ pub fn pet_entries<Rt: Runtime>(h: &AppHandle<Rt>, app: &App, p: &Pet, now: Time
                 ],
             )?);
             v.push(item(h, &id("sync"), "Sync now")?);
-            v.push(item(h, &id("release"), "Mark release")?);
+            v.push(confirm("Mark release…", "Yes, I shipped a release", "release")?);
             v.push(item(h, &id("pause"), "Pause")?);
             v.push(item(h, &id("hide-today"), "Hide for today")?);
             v.push(confirm("Graduate…", "Yes, this project is finished", "graduate")?);
@@ -124,12 +128,22 @@ fn accessory_label(a: &str) -> &'static str {
     }
 }
 
+/// Being offline is a normal state, not a fault: it gets no ⚠.
+fn offline(app: &App) -> bool {
+    matches!(app.sync_error.as_deref(), Some("Offline" | "Offline mode is on"))
+}
+
 pub fn status_line(app: &App) -> String {
+    // while syncs fail, moods are frozen at the last good check (§5.3), so nobody gets sadder meanwhile
+    if offline(app) {
+        return format!("{} · moods are on hold", app.sync_error.as_deref().unwrap_or_default());
+    }
     if let Some(e) = &app.sync_error {
-        return format!("⚠ {e}");
+        return format!("⚠ {e} · moods are on hold");
     }
     match app.sync.last_successful_check {
         Some(t) => format!("Last synced {}", t.with_timezone(&Local).format("%H:%M")),
+        None if app.account.is_none() => "Folders only (connect GitHub for repos)".into(),
         None => "Not synced yet".into(),
     }
 }
@@ -153,7 +167,7 @@ fn token_reminder(days: i64) -> String {
 
 /// The badge next to the menu-bar paw icon: hidden needy pets and a soon-expiring token, or a warning when syncing fails.
 pub fn tray_title(app: &App) -> String {
-    if app.sync_error.is_some() || !app.issues.is_empty() {
+    if (app.sync_error.is_some() && !offline(app)) || !app.issues.is_empty() {
         return "⚠".into();
     }
     let needy = (app.hidden_needy > 0).then(|| app.hidden_needy.to_string());
@@ -163,7 +177,12 @@ pub fn tray_title(app: &App) -> String {
 
 pub fn build<Rt: Runtime>(h: &AppHandle<Rt>, app: &App) -> R<Menu<Rt>> {
     let now = Utc::now();
-    let mut items = vec![label(h, &status_line(app))?, item(h, "sync", "Sync now")?];
+    let mut items = vec![label(h, &status_line(app))?];
+    // a refused token is fixed by pasting a new one, so the fix sits right under the problem
+    if app.sync.disconnected && app.account.is_some() {
+        items.push(item(h, "setup", "Paste a new token…")?);
+    }
+    items.push(item(h, "sync", "Sync now")?);
     if let Some(days) = token_days_left(app, now) {
         items.push(item(h, "setup", &token_reminder(days))?);
     }
@@ -192,6 +211,9 @@ pub fn build<Rt: Runtime>(h: &AppHandle<Rt>, app: &App) -> R<Menu<Rt>> {
             continue;
         }
         items.push(label(h, &format!("{title} ({})", pets.len()))?);
+        if title.starts_with("🐾") {
+            items.push(label(h, &format!("Hold {} and click a pet for its card, or drag it to move it", app.settings.modifier.symbol()))?);
+        }
         for p in pets {
             items.push(sub(h, &pet_title(app, p, now), pet_entries(h, app, p, now)?)?);
         }
@@ -257,6 +279,7 @@ pub fn build<Rt: Runtime>(h: &AppHandle<Rt>, app: &App) -> R<Menu<Rt>> {
 pub enum Event {
     Pet(Uuid, Action),
     SyncPet(Uuid),
+    Card(Uuid),
     Repo(u64, Option<Species>),
     IgnoreRepo(u64),
     Sync,
@@ -285,6 +308,7 @@ pub enum Outcome {
 #[derive(Debug, PartialEq)]
 pub enum Window {
     Settings(&'static str),
+    Card(Uuid),
     Setup,
     /// The adoption window's query, e.g. `folder=…`.
     Adopt(String),
@@ -296,6 +320,7 @@ pub fn apply(app: &mut App, event: Event, now: Time) -> Outcome {
     let result = match event {
         Event::Pet(pet, action) => app.act(pet, action, now).map(Some),
         Event::SyncPet(pet) => return Outcome::Sync(Some(pet)),
+        Event::Card(pet) => return Outcome::Open(Window::Card(pet)),
         Event::Sync => return Outcome::Sync(None),
         Event::Repo(repo, species) => app.adopt_repo(repo, species, now).map(Some),
         Event::IgnoreRepo(repo) => {
@@ -376,6 +401,7 @@ pub fn parse(id: &str) -> Option<Event> {
             let pet: Uuid = pet.parse().ok()?;
             let action = match *action {
                 "sync" => return Some(Event::SyncPet(pet)),
+                "card" => return Some(Event::Card(pet)),
                 "snooze-1h" => Action::Snooze(Snooze::Hours(1)),
                 "snooze-4h" => Action::Snooze(Snooze::Hours(4)),
                 "snooze-tomorrow" | "hide-today" => Action::Snooze(Snooze::Tomorrow),
@@ -509,6 +535,18 @@ mod tests {
         assert_eq!(token_days_left(&app, now), None, "expired: the 401 warning takes over");
         app.account = None;
         assert_eq!(token_days_left(&app, now), None);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn being_offline_is_not_a_warning_but_a_refused_token_is() {
+        let dir = std::env::temp_dir().join(format!("strays-menu-{}", Uuid::new_v4()));
+        let mut app = App::load(dir.clone()).unwrap();
+        assert_eq!(status_line(&app), "Folders only (connect GitHub for repos)");
+        app.sync_error = Some("Offline".into());
+        assert_eq!((status_line(&app).as_str(), tray_title(&app).as_str()), ("Offline · moods are on hold", ""));
+        app.sync_error = Some("Token expired or revoked".into());
+        assert_eq!((status_line(&app).as_str(), tray_title(&app).as_str()), ("⚠ Token expired or revoked · moods are on hold", "⚠"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

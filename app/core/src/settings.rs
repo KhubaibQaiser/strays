@@ -41,6 +41,18 @@ pub enum Modifier {
     OptionShift,
 }
 
+impl Modifier {
+    /// How the key reads in a hint: "⌥", "⌃", "⇧" or "⌥⇧".
+    pub fn symbol(self) -> &'static str {
+        match self {
+            Modifier::Option => "⌥",
+            Modifier::Control => "⌃",
+            Modifier::Shift => "⇧",
+            Modifier::OptionShift => "⌥⇧",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum NudgeStyle {

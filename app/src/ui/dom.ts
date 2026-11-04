@@ -39,7 +39,8 @@ export function row(label: string, ...controls: Child[]): HTMLElement {
 /** A button that asks "Sure?" on the first click and acts on the second, so no modal dialog steals focus. */
 export function confirmButton(text: string, sure: string, act: () => void, cls = ""): HTMLButtonElement {
   let armed = false;
-  const b = el("button", { class: cls }, text);
+  // the "click again" text is announced, so screen-reader users know a second click is needed
+  const b = el("button", { class: cls, "aria-live": "polite" }, text);
   b.addEventListener("click", () => {
     if (!armed) {
       armed = true;

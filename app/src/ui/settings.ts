@@ -150,7 +150,7 @@ export function renderSettings(root: HTMLElement, state: UiState, section: strin
     ],
     syncing: () => [
       el("h1", {}, "Syncing"),
-      el("p", {}, state.lastSync ? `Last synced ${new Date(state.lastSync).toLocaleTimeString()}` : "Not synced yet", " · ", `${state.requestsToday} requests today`, state.rateRemaining != null ? ` · ${state.rateRemaining} left this hour` : "", state.syncError ? el("span", { class: "error" }, ` · ⚠ ${state.syncError}`) : null),
+      el("p", {}, state.lastSync ? `Last synced ${new Date(state.lastSync).toLocaleTimeString()}` : "Not synced yet", " · ", `${state.requestsToday} requests today`, state.rateRemaining != null ? ` · ${state.rateRemaining} left this hour` : "", state.syncError ? (/^Offline/.test(state.syncError) ? ` · ${state.syncError}` : el("span", { class: "error" }, ` · ⚠ ${state.syncError}`)) : null),
       row("Check GitHub", select("syncInterval", [[5, "Every 5 minutes"], [15, "Every 15 minutes"], [30, "Every 30 minutes"], [60, "Every hour"], [180, "Every 3 hours"], [720, "Every 12 hours"], [null, "Only when I ask"]])),
       toggle("syncOnWake", "Also when the Mac wakes"),
       toggle("syncOnLaunch", "Also when Strays starts"),

@@ -178,8 +178,13 @@ pub fn run(
                     app.sync_error = Some(e);
                     outcome = Some(SyncOutcome { ok: false, for_pet });
                 }
+                // never connected: folders-only is a fine way to use Strays, not a problem
+                Ok(None) if app.account.is_none() => {
+                    app.sync_error = None;
+                    outcome = Some(SyncOutcome { ok: true, for_pet });
+                }
                 Ok(None) => {
-                    app.sync_error = Some("No GitHub token yet".into());
+                    app.sync_error = Some("The GitHub token is gone from the Keychain; connect GitHub again".into());
                     outcome = Some(SyncOutcome { ok: false, for_pet });
                 }
                 Ok(Some(token)) => {
@@ -229,6 +234,10 @@ pub fn run(
                             app.sync_error = Some(e.to_string());
                             if let GhError::RateLimited { retry_after, reset_at } = e {
                                 not_before = retry_after.map(|d| now + d).max(*reset_at);
+                                if let Some(t) = not_before {
+                                    let at = t.with_timezone(&strays_core::chrono::Local).format("%H:%M");
+                                    app.sync_error = Some(format!("GitHub's hourly limit is used up; trying again at {at}"));
+                                }
                             }
                         }
                     }
@@ -522,13 +531,13 @@ mod tests {
     }
 
     #[test]
-    fn without_a_token_nothing_is_scheduled_and_the_user_is_told_on_a_manual_sync() {
+    fn without_a_token_nothing_is_scheduled_and_folders_only_is_not_a_problem() {
         let dir = temp();
         let (shared, tx, seen, _thread) = start(App::load(dir.clone()).unwrap(), deps("http://127.0.0.1:9", Ok(None)));
         let s = next_sync(&seen);
-        assert_eq!((s.ok, s.error.as_deref()), (Some(false), Some("No GitHub token yet")));
+        assert_eq!((s.ok, s.error.as_deref()), (Some(true), None), "never connected: no warning");
         tx.send(Cmd::SyncNow(None)).unwrap();
-        assert_eq!(next_sync(&seen).error.as_deref(), Some("No GitHub token yet"));
+        assert_eq!(next_sync(&seen).error, None);
         assert!(shared.lock().unwrap().netlog().is_empty(), "no request without a token");
         std::fs::remove_dir_all(dir).unwrap();
     }
