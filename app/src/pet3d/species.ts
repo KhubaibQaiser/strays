@@ -57,6 +57,10 @@ export type AnimCtx = {
   sleepy: number;
   /** extra eye closing (0..1) the species wants, e.g. a hamster grooming */
   close: number;
+  /** this pet's own scratch values, kept between frames (timers, phases) */
+  mem: Record<string, number>;
+  /** set true while the species' own motion is quick, so the page draws more frames */
+  fast: boolean;
 };
 
 export type SpeciesDef = {

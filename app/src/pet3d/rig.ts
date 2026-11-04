@@ -4,9 +4,11 @@ import { Action, Pet3D, type Mood } from "./pet";
 import type { SpeciesDef } from "./species";
 import { cat } from "./cat";
 import { dog } from "./dog";
+import { hamster } from "./hamster";
+import { budgie } from "./budgie";
 
 /** The species drawn in 3D; the others keep their Rive rigs. */
-export const SPECIES_3D: Record<string, SpeciesDef> = { cat, dog };
+export const SPECIES_3D: Record<string, SpeciesDef> = { cat, dog, hamster, parrot: budgie };
 
 const MOODS: Mood[] = ["content", "joyful", "content", "peckish", "hungry", "gloomy"]; // index = the rig's mood number
 type Liveliness = "calm" | "gentle" | "lively";

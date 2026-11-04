@@ -312,6 +312,8 @@ export class Pet3D {
   private action: Action = Action.none;
   private actionT0 = 0;
   private wagging = false;
+  private mem: Record<string, number> = {};
+  private ownFast = false;
   mood: Mood = "content";
   /** Reduce Motion: only blinks and breathing, no glances, twitches or tail */
   still = false;
@@ -550,9 +552,10 @@ export class Pet3D {
 
     let close = Math.max(gloomy ? 0.3 : 0, sleepy, purr * 0.85);
     if (def.animate) {
-      const c: AnimCtx = { t, dt, bones: b, joyful, gloomy, asleep, still: this.still, action: A, at, sleepy, close: 0 };
+      const c: AnimCtx = { t, dt, bones: b, joyful, gloomy, asleep, still: this.still, action: A, at, sleepy, close: 0, mem: this.mem, fast: false };
       def.animate(c);
       close = Math.max(close, c.close);
+      this.ownFast = c.fast;
     }
 
     // eyelids: a blink closes both lids, a slow blink holds them half-shut
@@ -602,7 +605,7 @@ export class Pet3D {
   get fast() {
     const turning = Math.abs(this.yaw.v) + Math.abs(this.pitch.v) + Math.abs(this.roll.v) > 0.35;
     const twitching = this.ears.some((e) => Math.abs(e.v) > 1.5) || Math.abs(this.flick.v) > 0.6;
-    return turning || twitching || this.wagging || this.blink.start >= 0;
+    return turning || twitching || this.wagging || this.ownFast || this.blink.start >= 0;
   }
 
   render() {

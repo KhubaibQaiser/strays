@@ -117,7 +117,8 @@ fn data_dir(h: &AppHandle) -> PathBuf {
     h.path().app_data_dir().expect("app data dir")
 }
 
-/// Debug only: `STRAYS_SPAWN=n` adds n local cats (not saved) so the overlay can be tested without GitHub.
+/// Debug only: `STRAYS_SPAWN=n` adds n local pets (not saved; cat, dog, hamster, parrot in turn, or only
+/// cats with `STRAYS_SPAWN_CATS=1`) so the overlay can be tested without GitHub.
 #[cfg(debug_assertions)]
 fn spawn_test_pets(app: &mut App) {
     use strays_core::pet::{Activity, ActivitySource, LocalRef, Pet, Project, Species};
@@ -127,7 +128,8 @@ fn spawn_test_pets(app: &mut App) {
     for i in 0..n {
         let local = LocalRef { bookmark_id: Uuid::new_v4(), display_path: format!("~/Code/test-{i}"), path: String::new() };
         let project = Project { github: None, local: Some(local) };
-        let mut p = Pet::new(now, &format!("Test {i}"), Species::Cat, project, Activity { last: now, source: ActivitySource::LocalCommit }, app.settings.default_pace);
+        let species = if std::env::var_os("STRAYS_SPAWN_CATS").is_some() { Species::Cat } else { [Species::Cat, Species::Dog, Species::Hamster, Species::Parrot][i % 4] };
+        let mut p = Pet::new(now, &format!("Test {i}"), species, project, Activity { last: now, source: ActivitySource::LocalCommit }, app.settings.default_pace);
         for (name, hex) in ["coatBase", "coatShade", "coatHighlight", "outline"].iter().zip(looks[i % 3]) {
             p.colors.insert((*name).into(), hex.into());
         }
