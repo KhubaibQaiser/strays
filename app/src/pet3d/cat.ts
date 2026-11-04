@@ -237,6 +237,10 @@ class Spring {
 
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 
+/** The app's action numbers (the Rive rigs' `action` view-model value, art/STYLE.md). */
+export const Action = { none: 0, eat: 1, petted: 2, celebrate: 3, exit: 4, enter: 5, fallAsleep: 6, sleep: 7, wake: 8, postcard: 9 } as const;
+export type Action = (typeof Action)[keyof typeof Action];
+
 export type Mood = "joyful" | "content" | "peckish" | "hungry" | "gloomy";
 
 // ---- the pet ---------------------------------------------------------------------------------------
@@ -263,7 +267,15 @@ export class Cat3D {
   private pupil = Object.assign(new Spring(3, 1), { x: 0.32 });
   private blink = { start: -1, len: 0.16, next: rand(1, 4) };
   private next = { glance: rand(1, 3), ear: rand(3, 8), flick: rand(4, 10), tilt: rand(6, 14) };
+  private sleepy = new Spring(1.6, 1);
+  private scale = Object.assign(new Spring(7, 0.55), { x: 1, target: 1 });
+  private turn = new Spring(2.5, 0.9);
+  private root!: THREE.Group;
+  private action: Action = Action.none;
+  private actionT0 = 0;
   mood: Mood = "content";
+  /** Reduce Motion: only blinks and breathing, no glances, twitches or tail */
+  still = false;
   /** where the user's cursor is, in this pet's view (-1..1), or null to let the cat look around */
   cursor: { x: number; y: number } | null = null;
 
@@ -287,7 +299,7 @@ export class Cat3D {
     this.camera.position.set(0, 0.6, 2.6);
     this.camera.lookAt(0, 0.5, 0);
 
-    const root = new THREE.Group();
+    const root = (this.root = new THREE.Group());
     root.rotation.y = -0.45;
     this.scene.add(root);
 
@@ -376,74 +388,125 @@ export class Cat3D {
     this.renderer.setSize(px, px, false);
   }
 
+  /** Starts one of the app's actions (art/STYLE.md numbering); `Action.none` returns to idling. */
+  act(a: Action) {
+    this.action = a;
+    this.actionT0 = this.t;
+    if (a === Action.enter) this.scale.x = 0;
+    if (a === Action.wake) this.ears[0].v += 20;
+  }
+
+  /** True while an action is running, so the page keeps the frame rate up. */
+  get acting() {
+    return this.action !== Action.none && this.action !== Action.sleep;
+  }
+
   /** Advances the motion by `dt` seconds. */
   update(dt: number) {
     dt = Math.min(dt, 1 / 20);
     const t = (this.t += dt);
+    const at = t - this.actionT0;
+    const A = this.action;
     const gloomy = this.mood === "gloomy" || this.mood === "hungry";
-    const joyful = this.mood === "joyful";
+    const joyful = this.mood === "joyful" || A === Action.celebrate || A === Action.postcard;
+    const asleep = A === Action.fallAsleep || A === Action.sleep;
+    const lively = !this.still && !asleep;
 
     // decisions: glances, ear twitches, tail flicks, head tilts, blinks
-    if (t > this.next.glance) {
+    if (lively && t > this.next.glance) {
       this.next.glance = t + rand(1.8, 5.5);
       this.yaw.target = rand(-0.55, 0.55);
       this.pitch.target = rand(-0.12, 0.18) - (gloomy ? 0.22 : 0);
     }
-    if (this.cursor) {
+    if (lively && this.cursor) {
       this.yaw.target = THREE.MathUtils.clamp(this.cursor.x * 0.9, -0.8, 0.8);
       this.pitch.target = THREE.MathUtils.clamp(this.cursor.y * 0.5, -0.3, 0.35);
     }
-    if (t > this.next.ear) {
+    if (lively && t > this.next.ear) {
       this.next.ear = t + rand(3, 11);
       this.ears[Math.random() < 0.5 ? 0 : 1].v += rand(14, 24);
     }
-    if (t > this.next.flick) {
+    if (lively && t > this.next.flick) {
       this.next.flick = t + rand(4, 12);
       this.flick.v += rand(4, 8) * (Math.random() < 0.5 ? -1 : 1);
     }
-    if (t > this.next.tilt) {
+    if (lively && t > this.next.tilt) {
       this.next.tilt = t + rand(5, 13);
       this.roll.target = Math.random() < 0.4 ? rand(-0.22, 0.22) : 0;
     }
-    if (t > this.blink.next) {
+    if (!asleep && t > this.blink.next) {
       const slow = Math.random() < 0.15;
       this.blink = { start: t, len: slow ? 0.9 : 0.17, next: t + rand(2.5, 7) };
     }
+
+    // actions steer the same springs, so every pose blends in and out
+    let nod = 0, hop = 0, purr = 0;
+    this.sleepy.target = asleep ? 1 : 0;
+    this.scale.target = A === Action.exit ? 0 : 1;
+    this.turn.target = A === Action.exit ? 1.2 : 0;
+    if (A === Action.eat) {
+      this.pitch.target = -0.5;
+      this.yaw.target = 0;
+      nod = 0.05 * Math.sin(at * 14) * Math.min(1, at); // chewing
+    } else if (A === Action.petted) {
+      this.pitch.target = 0.2;
+      this.roll.target = 0.18;
+      purr = Math.min(1, at * 2);
+    } else if (A === Action.celebrate) {
+      this.yaw.target = 0.25 * Math.sin(at * 3);
+      this.pitch.target = 0.15;
+      hop = at < 2.4 ? 0.06 * Math.max(0, Math.sin((at * Math.PI * 2) / 0.6)) ** 1.5 : 0;
+    } else if (A === Action.wake) {
+      this.pitch.target = at < 1 ? 0.35 : 0; // a stretch up, then back to looking around
+    } else if (A === Action.postcard) {
+      this.yaw.target = 0;
+      this.pitch.target = 0.05;
+      if (at > 0.8 && at < 1.0 && this.blink.start < 0) this.blink = { start: t, len: 0.9, next: t + 4 };
+    }
+    if (asleep) {
+      this.pitch.target = -0.38;
+      this.yaw.target = 0.1;
+      this.roll.target = 0.15;
+    }
     this.pupil.target = joyful ? 0.45 : gloomy ? 0.2 : 0.32;
-    for (const s of [this.yaw, this.pitch, this.roll, ...this.ears, this.flick, this.pupil]) s.step(dt);
+    for (const s of [this.yaw, this.pitch, this.roll, ...this.ears, this.flick, this.pupil, this.sleepy, this.scale, this.turn]) s.step(dt);
 
     const b = this.bones;
-    // breathing: the chest swells, and the neck undoes the scale so the head keeps its size
-    const breath = Math.sin((t * Math.PI * 2) / 3.4);
+    const sleepy = this.sleepy.x;
+    this.root.scale.setScalar(Math.max(0.001, this.scale.x));
+    this.root.rotation.y = -0.45 + this.turn.x;
+    b[HIPS].position.y = PIVOT[HIPS][1] + hop;
+    // breathing: slower and deeper asleep; the chest swells and the neck undoes the scale for the head
+    const breath = Math.sin((t * Math.PI * 2) / (3.4 + sleepy * 1.6)) * (1 + sleepy * 0.6) + purr * 0.25 * Math.sin(t * 50);
     b[SPINE].scale.set(1 + 0.012 * breath, 1 + 0.006 * breath, 1 + 0.02 * breath);
     b[NECK].scale.set(1 / b[SPINE].scale.x, 1 / b[SPINE].scale.y, 1 / b[SPINE].scale.z);
-    b[HIPS].rotation.z = 0.012 * Math.sin(t * 0.55);
+    b[HIPS].rotation.z = this.still ? 0 : 0.012 * Math.sin(t * 0.55);
     b[NECK].rotation.set(-this.pitch.x * 0.35, this.yaw.x * 0.35, 0);
-    b[HEAD].rotation.set(-this.pitch.x * 0.6, this.yaw.x * 0.65, this.roll.x);
-    const earBase = gloomy ? 0.45 : joyful ? -0.1 : 0;
+    b[HEAD].rotation.set(-this.pitch.x * 0.6 + nod, this.yaw.x * 0.65, this.roll.x);
+    const earBase = (gloomy ? 0.45 : joyful ? -0.1 : 0) + sleepy * 0.3;
     b[EAR_L].rotation.set(-this.ears[0].x * 0.05 - earBase * 0.5, 0, this.ears[0].x * 0.03 + earBase * 0.6);
     b[EAR_R].rotation.set(-this.ears[1].x * 0.05 - earBase * 0.5, 0, -this.ears[1].x * 0.03 - earBase * 0.6);
 
-    // tail: a slow wave down its length, a flick now and then, and the tip lifting off the floor
-    const speed = gloomy ? 0.5 : 1;
+    // tail: a slow wave down its length, a flick now and then, the tip lifting (high when happy)
+    const speed = this.still ? 0 : (gloomy ? 0.5 : 1) * (1 - sleepy * 0.8);
+    const tipUp = (joyful ? 1.6 : 1) * (1 - sleepy * 0.7) + (A === Action.celebrate ? 1.2 : 0);
     for (let i = 0; i < 8; i++) {
       const along = i / 7;
-      const sway = (0.08 * Math.sin(t * 1.1 * speed - i * 0.55) + this.flick.x * 0.05) * (0.25 + 0.75 * along);
-      const lift = i >= 5 ? (i - 4) * (0.1 + 0.08 * Math.sin(t * 0.6)) * (joyful ? 1.6 : 1) : 0;
+      const sway = (0.08 * Math.sin(t * 1.1 * speed - i * 0.55) * Math.min(1, speed * 2) + this.flick.x * 0.05) * (0.25 + 0.75 * along);
+      const lift = i >= 5 ? (i - 4) * (0.1 + 0.08 * Math.sin(t * 0.6 * speed)) * tipUp : 0;
       this.q.setFromAxisAngle(this.up, sway);
       this.q2.setFromAxisAngle(this.tailAxes[i], lift + Math.abs(this.flick.x) * 0.04 * along);
       b[TAIL + i].quaternion.copy(this.q).multiply(this.q2);
     }
 
-    // eyelids: open almond shape; a blink closes both lids, a slow blink holds them half-shut
+    // eyelids: a blink closes both lids, a slow blink holds them half-shut; sleep and petting close them
     let shut = 0;
     if (this.blink.start >= 0) {
       const p = (t - this.blink.start) / this.blink.len;
       if (p >= 1) this.blink.start = -1;
       else shut = Math.sin(p * Math.PI) ** (this.blink.len > 0.5 ? 0.6 : 1);
     }
-    const rest = gloomy ? 0.3 : 0;
-    const close = Math.max(shut, rest);
+    const close = Math.max(shut, gloomy ? 0.3 : 0, sleepy, purr * 0.85);
     for (const e of this.eyes) {
       e.u.uOpen.value = 1 - close;
       e.u.uPupil.value = this.pupil.x;

@@ -68,6 +68,8 @@ test("each species draws with its own rig", async ({ page }) => {
   await page.screenshot({ path: `${shots}/overlay-species.png` });
   const logs = await page.evaluate(() => (window as unknown as { __calls: { cmd: string; args: { msg?: string } }[] }).__calls.filter((c) => c.cmd === "pet_log").map((c) => c.args.msg));
   expect(logs.filter((m) => m?.startsWith("LOADED"))).toHaveLength(4);
+  // cats are the 3D Persian; the other species keep their Rive rigs
+  expect(logs.filter((m) => m?.includes("rig=3d"))).toEqual([expect.stringContaining("pet=cat ")]);
 });
 
 test("a pet whose repo GitHub can't find keeps asking until it's answered", async ({ page }) => {

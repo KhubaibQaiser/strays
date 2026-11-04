@@ -1,7 +1,7 @@
 // Prototype page for realistic 3D pets: renders N cats and reports their frame cost. Everything is a
 // query parameter, so CPU can be measured per setting: pets, size (pt), fps, idle (fps when only slow
 // motion is happening), shells, dpr, fur, density, mood, look.
-import { Cat3D, catShape, type Look, type Mood } from "./cat";
+import { Cat3D, catShape, type Look, type Mood } from "../pet3d/cat";
 import { invoke } from "@tauri-apps/api/core";
 
 // inside the app's overlay, stats go to the app log (the page itself is click-through and unseen)
