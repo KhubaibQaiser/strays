@@ -76,6 +76,7 @@ let shape: Mesh | undefined;
 export const dog: SpeciesDef = {
   shape: () => (shape ??= build(prims(), [-0.38, -0.03, -0.52], [0.38, 1.02, 0.38], 0.0105)),
   pivot: PIVOT,
+  wear: { top: head([0, 0.83, 0.1]), r: 0.18, neck: [0, 0.46, 0.07], neckR: 0.25, chest: [0.04, 0.36, 0.335], badge: 0.05 },
   parent: PARENT,
   hips: HIPS,
   spine: SPINE,

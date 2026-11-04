@@ -1,6 +1,7 @@
 // The 3D pet engine: draws any species definition (species.ts) with shell fur or feathers, painted-lid
 // eyes, whiskers and a soft shadow, and moves it procedurally with springs, so nothing ever snaps.
 import * as THREE from "three";
+import { accessory } from "./accessories";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { AnimCtx, Palette, SpeciesDef } from "./species";
 
@@ -340,6 +341,8 @@ export class Pet3D {
   private ownFast = false;
   /** why the graphics card refused to draw this pet, if it did */
   shaderError: string | null = null;
+  /** the accessory being worn (0 none) and what it's made of */
+  private worn = { n: 0, pieces: [] as THREE.Object3D[], parts: [] as { dispose(): void }[] };
   /** how many fur layers are drawn now */
   shells = 0;
   mood: Mood = "content";
@@ -351,7 +354,7 @@ export class Pet3D {
   constructor(
     canvas: HTMLCanvasElement,
     private def: SpeciesDef,
-    palette: Palette,
+    private palette: Palette,
   ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "low-power" });
     this.renderer.setClearColor(0, 0);
@@ -491,6 +494,23 @@ export class Pet3D {
   setSize(px: number, dpr: number) {
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(px, px, false);
+  }
+
+  /** Puts on graduation accessory `n` (1 cap … 5 flower crown; 0 takes it off). */
+  wear(n: number) {
+    if (n === this.worn.n) return;
+    this.worn.pieces.forEach((p) => p.removeFromParent());
+    this.worn.parts.forEach((d) => d.dispose());
+    const parts: { dispose(): void }[] = [];
+    const bone = { head: this.def.head, neck: this.def.neck, chest: this.def.spine };
+    const coat = [this.palette.base, this.palette.light, this.palette.accent].map((c) => new THREE.Color(c));
+    const pieces = accessory(n, this.def.wear, coat, (d) => parts.push(d)).map(({ on, at, obj }) => {
+      const pivot = this.def.pivot[bone[on]];
+      obj.position.add(new THREE.Vector3(at[0] - pivot[0], at[1] - pivot[1], at[2] - pivot[2]));
+      this.bones[bone[on]].add(obj);
+      return obj;
+    });
+    this.worn = { n, pieces, parts };
   }
 
   /** Starts one of the app's actions (art/STYLE.md numbering); `Action.none` returns to idling. */
@@ -670,6 +690,7 @@ export class Pet3D {
   }
 
   dispose() {
+    this.worn.parts.forEach((d) => d.dispose());
     this.disposables.forEach((d) => d.dispose());
     this.renderer.dispose();
     // give the context back now: WebKit only frees it on garbage collection, and caps how many live

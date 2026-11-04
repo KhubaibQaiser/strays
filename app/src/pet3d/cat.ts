@@ -70,6 +70,7 @@ let shape: Mesh | undefined;
 export const cat: SpeciesDef = {
   shape: () => (shape ??= build(prims(), [-0.32, -0.03, -0.5], [0.42, 1.0, 0.32], 0.0105)),
   pivot: PIVOT,
+  wear: { top: [0, 0.905, 0.1], r: 0.18, neck: [0, 0.52, 0.07], neckR: 0.2, chest: [0, 0.45, 0.27], badge: 0.05 },
   parent: PARENT,
   hips: HIPS,
   spine: SPINE,
