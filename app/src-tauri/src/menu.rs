@@ -408,9 +408,9 @@ pub fn parse(id: &str) -> Option<Event> {
                 "snooze-3d" => Action::Snooze(Snooze::Days(3)),
                 "snooze-wake" => Action::Snooze(Snooze::UntilWake),
                 "wake" => Action::Wake,
-                "pause" => Action::Pause,
+                "pause" => Action::Pause(None),
                 "resume" => Action::Resume,
-                "release" => Action::Release,
+                "release" => Action::Release(None),
                 "graduate" => Action::Graduate,
                 "letgo" => Action::LetGo,
                 "undo" => Action::UndoLetGo,
@@ -488,6 +488,24 @@ mod tests {
     }
 
     #[test]
+    fn picked_times_must_be_ahead_and_a_release_keeps_its_version() {
+        use strays_core::chrono::Duration;
+        let dir = std::env::temp_dir().join(format!("strays-menu-{}", Uuid::new_v4()));
+        let mut app = App::load(dir.clone()).unwrap();
+        let now = Utc::now();
+        let id = pet(&mut app, now);
+        assert!(app.act(id, Action::Snooze(Snooze::At(now - Duration::hours(1))), now).is_err(), "not in the past");
+        assert!(app.act(id, Action::Pause(Some(now + Duration::days(400))), now).is_err(), "not more than a year off");
+        app.act(id, Action::Snooze(Snooze::At(now + Duration::hours(2))), now).unwrap();
+        assert_eq!(app.pets[0].state.until, Some(now + Duration::hours(2)));
+        app.act(id, Action::Wake, now).unwrap();
+        let msg = app.act(id, Action::Release(Some("  v1.2\n".into())), now).unwrap();
+        assert!(msg.starts_with("Shipped v1.2!"), "{msg}");
+        assert_eq!(app.pets[0].releases.last().unwrap().label.as_deref(), Some("v1.2"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn clicks_change_state_refusals_are_shown_and_windows_are_asked_for() {
         let dir = std::env::temp_dir().join(format!("strays-menu-{}", Uuid::new_v4()));
         let mut app = App::load(dir.clone()).unwrap();
@@ -499,7 +517,7 @@ mod tests {
         apply(&mut app, Event::Pet(id, Action::Wake), now);
         assert_eq!(apply(&mut app, Event::Pet(id, Action::Wake), now), Outcome::Done);
         assert!(app.issues.iter().any(|i| i.key == "action"), "{:?}", app.issues);
-        apply(&mut app, Event::Pet(id, Action::Pause), now);
+        apply(&mut app, Event::Pet(id, Action::Pause(None)), now);
         assert!(!app.issues.iter().any(|i| i.key == "action"));
         assert_eq!(apply(&mut app, Event::SyncPet(id), now), Outcome::Sync(Some(id)));
         assert_eq!(apply(&mut app, Event::Presentation, now), Outcome::Done);

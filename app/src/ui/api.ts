@@ -125,7 +125,8 @@ export const api = {
   state: () => invoke<UiState>("ui_state"),
   /** a problem this window hit, for the menu, Settings and the log */
   reportProblem: (key: string, text: string) => invoke<void>("report_problem", { key, text }),
-  petAction: (id: string, action: string) => invoke<string>("pet_action", { id, action }),
+  /** `until` (ISO time) for a picked snooze or pause end, `label` for a release's version */
+  petAction: (id: string, action: string, extra: { until?: string; label?: string } = {}) => invoke<string>("pet_action", { id, action, until: extra.until ?? null, label: extra.label ?? null }),
   setGoal: (id: string, goal: Goal) => invoke<void>("set_goal", { id, goal }),
   setPet: (id: string, name: string, pace: Pace, liveliness: Liveliness | null) => invoke<void>("set_pet", { id, name, pace, liveliness }),
   adopt: (request: AdoptRequest) => invoke<string>("adopt", { request }),

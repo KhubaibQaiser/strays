@@ -23,7 +23,7 @@ test("info card shows mood, tracking and goal, and saves checklist changes", asy
   await page.getByRole("button", { name: "Graduate…" }).click();
   expect(await calls(page, "pet_action")).toHaveLength(0);
   await page.getByRole("button", { name: "Finished? Click again" }).click();
-  expect((await calls(page, "pet_action")).at(-1)?.args).toEqual({ id: PET_ID, action: "graduate" });
+  expect((await calls(page, "pet_action")).at(-1)?.args).toMatchObject({ id: PET_ID, action: "graduate" });
 
   await page.keyboard.press("Escape");
   expect((await calls(page, "close_window")).at(-1)?.args).toEqual({ label: "card" });
@@ -209,14 +209,14 @@ test("the card asks what happened to a repo GitHub can't find", async ({ page })
   await expect(page.getByText(/GitHub can't find me\/strays any more/)).toBeVisible();
   await page.screenshot({ path: `${shots}/card-missing.png` });
   await page.getByRole("button", { name: "Look again" }).click();
-  expect((await calls(page, "pet_action")).at(-1)?.args).toEqual({ id: PET_ID, action: "sync" });
+  expect((await calls(page, "pet_action")).at(-1)?.args).toMatchObject({ id: PET_ID, action: "sync" });
   await page.getByRole("button", { name: "Check the token…" }).click();
   expect((await calls(page, "open_window")).at(-1)?.args).toMatchObject({ kind: "setup" });
   // letting go needs a second click, like every other way out
   await page.getByRole("button", { name: "It was deleted: let go" }).click();
   expect(await calls(page, "pet_action")).toHaveLength(1);
   await page.getByRole("button", { name: "Let go? Click again" }).click();
-  expect((await calls(page, "pet_action")).at(-1)?.args).toEqual({ id: PET_ID, action: "letgo" });
+  expect((await calls(page, "pet_action")).at(-1)?.args).toMatchObject({ id: PET_ID, action: "letgo" });
 });
 
 test("error reports are opt-in, explained, and unavailable without a key", async ({ page }) => {
@@ -299,5 +299,24 @@ test("marking a release takes a second click, so a slip can't send a pet away", 
   await page.getByRole("button", { name: "Mark release…" }).click();
   expect(await calls(page, "pet_action")).toHaveLength(0);
   await page.getByRole("button", { name: "Shipped it? Click again" }).click();
-  expect((await calls(page, "pet_action")).at(-1)?.args).toEqual({ id: PET_ID, action: "release" });
+  expect((await calls(page, "pet_action")).at(-1)?.args).toMatchObject({ id: PET_ID, action: "release" });
+});
+
+test("snooze until a picked time, pause until a date, and a release with its version", async ({ page }) => {
+  await mockApp(page);
+  await page.goto(`/ui.html#card/${PET_ID}`);
+  await page.getByLabel("Snooze", { exact: true }).selectOption("custom");
+  await page.getByLabel("Snooze until").fill("2030-01-02T10:30");
+  await page.getByRole("button", { name: "Snooze", exact: true }).click();
+  const last = async () => (await calls(page, "pet_action")).at(-1)?.args as { action: string; until: string | null; label: string | null };
+  await expect.poll(last).toMatchObject({ action: "snooze-until", until: new Date("2030-01-02T10:30").toISOString() });
+
+  await page.getByLabel("Pause until (optional)").fill("2030-02-01");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect.poll(last).toMatchObject({ action: "pause", until: new Date("2030-02-01T09:00").toISOString() });
+
+  await page.getByLabel("Release version (optional)").fill("v1.2");
+  await page.getByRole("button", { name: "Mark release…" }).click();
+  await page.getByRole("button", { name: "Shipped it? Click again" }).click();
+  await expect.poll(last).toMatchObject({ action: "release", label: "v1.2" });
 });
