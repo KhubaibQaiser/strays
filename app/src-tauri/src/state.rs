@@ -181,6 +181,8 @@ pub struct PetView {
     pub mood: Mood,
     /// GitHub can't find its repo; the overlay asks the user what happened.
     pub confused: bool,
+    /// Its own liveliness, if it doesn't follow the app's.
+    pub liveliness: Option<strays_core::settings::Liveliness>,
 }
 
 pub fn mood_word(m: Mood) -> &'static str {
@@ -477,7 +479,7 @@ impl App {
                     Some(r) => format!("{} · {r} · {}", p.name, mood_word(mood)),
                     None => format!("{} · {}", p.name, mood_word(mood)),
                 };
-                PetView { id: p.id, species: p.species, colors: p.colors.clone(), label, mood, confused: p.missing_since.is_some() }
+                PetView { id: p.id, species: p.species, colors: p.colors.clone(), label, mood, confused: p.missing_since.is_some(), liveliness: p.liveliness }
             })
             .collect()
     }
@@ -885,12 +887,13 @@ impl App {
     }
 
     /// Pet settings: name and pace.
-    pub fn set_pet(&mut self, id: Uuid, name: String, pace: Pace) -> Result<(), String> {
+    pub fn set_pet(&mut self, id: Uuid, name: String, pace: Pace, liveliness: Option<strays_core::settings::Liveliness>) -> Result<(), String> {
         let p = self.pets.iter_mut().find(|p| p.id == id).ok_or("No such pet")?;
         if !name.trim().is_empty() {
             p.name = name.trim().chars().take(40).collect();
         }
         p.pace = pace;
+        p.liveliness = liveliness;
         self.save_pet(id);
         Ok(())
     }

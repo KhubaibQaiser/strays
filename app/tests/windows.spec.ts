@@ -249,3 +249,13 @@ test("a settings change lands on top of what another window saved meanwhile, and
   await expect(page.getByLabel("slots")).toHaveValue("5");
   expect(await calls(page, "save_settings")).toHaveLength(1);
 });
+
+test("a pet can have its own liveliness, or follow Settings again", async ({ page }) => {
+  await mockApp(page);
+  await page.goto(`/ui.html#card/${PET_ID}`);
+  await page.getByText("Pet settings").click();
+  await page.getByLabel("Liveliness").selectOption("lively");
+  await expect.poll(async () => (await calls(page, "set_pet")).at(-1)?.args).toMatchObject({ id: PET_ID, liveliness: "lively" });
+  await page.getByLabel("Liveliness").selectOption("");
+  await expect.poll(async () => (await calls(page, "set_pet")).at(-1)?.args).toMatchObject({ liveliness: null });
+});

@@ -10,7 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 type Liveliness = "calm" | "gentle" | "lively";
-export type Placed = { id: string; species: string; colors: Record<string, string>; label: string; mood: string; confused: boolean; x: number; y: number; s: number };
+export type Placed = { id: string; species: string; colors: Record<string, string>; label: string; mood: string; confused: boolean; liveliness: Liveliness | null; x: number; y: number; s: number };
 export type Frame = { pets: Placed[]; liveliness: Liveliness; reduceMotion: boolean };
 export type Hover = { id: string | null; held: boolean };
 export type Feedback = { id: string; ok: boolean; text: string };
@@ -44,7 +44,9 @@ const ACT = { eat: 1, petted: 2, celebrate: 3, exit: 4, enter: 5, fallAsleep: 6,
 const CLIP_S: Record<number, number> = { 1: 4.2, 2: 2.7, 3: 5.8, 4: 3.2, 5: 3.2, 6: 3.2, 8: 3.2, 9: 4.2 };
 const ASLEEP_BEFORE_WAKE_S = 60;
 const pets = new Map<string, Pet>();
-let mode: Liveliness = "calm";
+let mode: Liveliness = "gentle";
+/** A pet's own liveliness, or the app's. */
+const levelOf = (p: { placed: Placed }) => p.placed.liveliness ?? mode;
 let reduceMotion = false;
 let frozen = false;
 
@@ -128,9 +130,9 @@ function cue(p: Pet, c: Cue) {
 function schedule(p: Pet) {
   if (p.busy) return;
   window.clearTimeout(p.timer);
-  p.rig.setLiveliness?.(mode, reduceMotion);
+  p.rig.setLiveliness?.(levelOf(p), reduceMotion);
   if (frozen) return setPlaying(p, false);
-  const level = reduceMotion ? "calm" : mode;
+  const level = reduceMotion ? "calm" : levelOf(p);
   if (level === "lively" || (p.rig.continuous && !reduceMotion)) return setPlaying(p, true);
   setPlaying(p, false);
   const [lo, hi] = GAP[level];
@@ -209,7 +211,7 @@ function rig3d(p: Pet): Rig | null {
     });
     const pet3d: Rig = Object.assign(rig, { continuous: true });
     rig.number("mood", MOOD[placed.mood] ?? 2);
-    rig.setLiveliness(mode, reduceMotion);
+    rig.setLiveliness(levelOf(p), reduceMotion);
     log(`LOADED pet=${placed.id} colours=${Object.keys(placed.colors).length}/${Object.keys(placed.colors).length} rig=3d`);
     return pet3d;
   } catch (e) {
@@ -275,6 +277,7 @@ ready.push(listen<Frame>("overlay", ({ payload }) => {
   const modeChanged = payload.liveliness !== mode || payload.reduceMotion !== reduceMotion;
   mode = payload.liveliness;
   reduceMotion = payload.reduceMotion;
+  // ponytail: the Rive cap is one for the page, so a Rive (fallback) pet follows the app's liveliness
   setFps(mode === "lively" && !reduceMotion ? 15 : 24);
   const keep = new Set(payload.pets.map((p) => p.id));
   // a leaving pet stays until its clip ends (play() removes it)
@@ -284,13 +287,14 @@ ready.push(listen<Frame>("overlay", ({ payload }) => {
     if (!p) add(placed);
     else {
       const moodChanged = p.placed.mood !== placed.mood;
+      const ownChanged = p.placed.liveliness !== placed.liveliness;
       p.placed = placed;
       position(p);
       if (moodChanged) {
         // play briefly so the pose blends in, then hold it
         setNumber(p, "mood", MOOD[placed.mood] ?? 2);
         if (!p.busy) void play(p, []);
-      } else if (modeChanged) schedule(p);
+      } else if (modeChanged || ownChanged) schedule(p);
     }
   }
   // GitHub can't find its repo: the question stays over the pet until the user answers it (card or menu)

@@ -5,7 +5,7 @@ use strays_core::clock::Time;
 use strays_core::github::{self, Github, NetEntry};
 use strays_core::mood::Pace;
 use strays_core::pet::{Goal, Pet, Species, StateKind};
-use strays_core::settings::Settings;
+use strays_core::settings::{Liveliness, Settings};
 use strays_core::uuid::Uuid;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -39,6 +39,7 @@ pub struct UiPet {
     last_source: String,
     goal: Goal,
     pace: Pace,
+    liveliness: Option<Liveliness>,
     on_screen: bool,
     releases: usize,
     /// GitHub can't find the repo: deleted, or the token can't see it.
@@ -119,6 +120,7 @@ fn ui_pet(app: &App, p: &Pet, now: Time) -> UiPet {
         last_source: format!("{:?}", p.activity.source),
         goal: p.goal.clone(),
         pace: p.pace,
+        liveliness: p.liveliness,
         on_screen: app.visible.contains(&p.id),
         releases: p.releases.len(),
         missing: p.missing_since.is_some(),
@@ -196,8 +198,8 @@ pub fn set_goal(id: Uuid, goal: Goal, shared: State<'_, Shared>) -> Res<()> {
 }
 
 #[tauri::command]
-pub fn set_pet(id: Uuid, name: String, pace: Pace, shared: State<'_, Shared>) -> Res<()> {
-    shared.app.lock().unwrap().set_pet(id, name, pace)?;
+pub fn set_pet(id: Uuid, name: String, pace: Pace, liveliness: Option<Liveliness>, shared: State<'_, Shared>) -> Res<()> {
+    shared.app.lock().unwrap().set_pet(id, name, pace, liveliness)?;
     changed(&shared);
     Ok(())
 }
@@ -584,7 +586,7 @@ mod tests {
         let full = full_app(&dir.join("full"));
         let empty = App::load(dir.join("empty")).unwrap();
         let ui = merge(&shape(&serde_json::to_value(snapshot(&full)).unwrap()), &shape(&serde_json::to_value(snapshot(&empty)).unwrap()));
-        let placed = |confused| crate::overlay::Placed { view: crate::state::PetView { id: Uuid::new_v4(), species: Species::Cat, colors: Default::default(), label: "Miso".into(), mood: strays_core::mood::Mood::Content, confused }, x: 1.0, y: 2.0, s: 3.0 };
+        let placed = |confused| crate::overlay::Placed { view: crate::state::PetView { id: Uuid::new_v4(), species: Species::Cat, colors: Default::default(), label: "Miso".into(), mood: strays_core::mood::Mood::Content, confused, liveliness: None }, x: 1.0, y: 2.0, s: 3.0 };
         let frame = crate::overlay::Frame { pets: vec![placed(true)], liveliness: strays_core::settings::Liveliness::Calm, reduce_motion: false };
         let hovers = [crate::overlay::Hover { id: Some(Uuid::new_v4()), held: true }, crate::overlay::Hover { id: None, held: false }];
         let hover = merge(&shape(&serde_json::to_value(&hovers[0]).unwrap()), &shape(&serde_json::to_value(&hovers[1]).unwrap()));

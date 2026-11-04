@@ -132,6 +132,9 @@ pub struct Pet {
     /// more. GitHub can't tell which, so the pet is confused and the user decides; its mood is frozen meanwhile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missing_since: Option<Time>,
+    /// How lively this pet is, if not the app's setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liveliness: Option<crate::settings::Liveliness>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -192,6 +195,7 @@ impl Pet {
             releases: Vec::new(),
             goal: Goal::default(),
             missing_since: None,
+            liveliness: None,
         }
     }
 

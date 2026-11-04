@@ -145,9 +145,16 @@ function missing(p: Pet, act: (action: string) => Promise<unknown>): HTMLElement
 function petSettings(p: Pet, notice: (msg: string, error?: boolean) => void): HTMLElement {
   const name = el("input", { type: "text", value: p.name, "aria-label": "Name" });
   const pace = el("select", { "aria-label": "Pace" }, ...Object.entries(PACE_LABEL).map(([v, t]) => el("option", { value: v, selected: v === p.pace }, t)));
-  const save = () => api.setPet(p.id, name.value, pace.value as Pet["pace"]).then(() => notice("Saved")).catch((e) => notice(String(e), true));
-  name.addEventListener("change", save);
-  pace.addEventListener("change", save);
-  return el("details", {}, el("summary", {}, "Pet settings"), el("div", { class: "row" }, name, pace));
+  const motion = el(
+    "select",
+    { "aria-label": "Liveliness" },
+    ...[["", "Liveliness: as in Settings"], ["calm", "Calm"], ["gentle", "Gentle"], ["lively", "Lively"]].map(([v, t]) => el("option", { value: v, selected: v === (p.liveliness ?? "") }, t)),
+  );
+  const save = () => {
+    const own = (motion.value || null) as Pet["liveliness"];
+    return api.setPet(p.id, name.value, pace.value as Pet["pace"], own).then(() => notice("Saved")).catch((e) => notice(String(e), true));
+  };
+  for (const c of [name, pace, motion]) c.addEventListener("change", save);
+  return el("details", {}, el("summary", {}, "Pet settings"), el("div", { class: "row" }, name, pace, motion));
 }
 
