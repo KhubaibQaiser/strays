@@ -482,33 +482,33 @@ pub(crate) fn shareable_log(app: &App, tail: Option<usize>) -> String {
 /// Settings → Privacy → "Save log for a bug report": the scrubbed log as one file, revealed in Finder.
 #[tauri::command]
 pub fn save_log(shared: State<'_, Shared>, h: AppHandle) -> Res<String> {
-    logged("save_log", (move || -> Res<String> {
+    logged("save_log", move || -> Res<String> {
         let app = shared.app.lock().unwrap();
         let path = app.dir.join(format!("strays-log-{}.txt", Utc::now().format("%Y%m%d-%H%M%S")));
         std::fs::write(&path, shareable_log(&app, None)).map_err(|e| format!("Couldn't save the log: {e}"))?;
         drop(app);
         h.opener().reveal_item_in_dir(&path).map_err(|e| e.to_string())?;
         Ok(path.display().to_string())
-    })())
+    })
 }
 
 /// What "Send log" would send, for the user to read first.
 #[tauri::command]
 pub fn log_preview(shared: State<'_, Shared>) -> Res<String> {
-    logged("log_preview", (move || -> Res<String> {
+    logged("log_preview", move || -> Res<String> {
         if !crate::report::available() {
             return Err("This build can't send logs; save it for a bug report instead".into());
         }
         let text = shareable_log(&shared.app.lock().unwrap(), Some(SENT_LINES));
         *PREVIEWED.lock().unwrap() = Some(text.clone());
         Ok(text)
-    })())
+    })
 }
 
 /// Sends the log the user just previewed to the developer (PostHog), once, when they ask.
 #[tauri::command]
 pub async fn send_log(shared: State<'_, Shared>) -> Res<()> {
-    logged("send_log", async move {
+    logged_async("send_log", async move {
         let text = PREVIEWED.lock().unwrap().take().ok_or("Look at the log first (Send log…)")?;
         let id = {
             let mut app = shared.app.lock().unwrap();
@@ -534,7 +534,8 @@ pub async fn send_log(shared: State<'_, Shared>) -> Res<()> {
         drop(app);
         let _ = shared.tx.send(crate::Cmd::Changed);
         result.map_err(|e| format!("The log wasn't sent: {e}"))
-    }.await)
+    })
+    .await
 }
 
 /// Settings → Privacy → "Show log": the file to attach to a bug report.
