@@ -166,7 +166,11 @@ pub fn run(
             }
         } else if (forced.is_some() || scheduled) && allowed {
             let for_pet = forced.take().flatten();
+            // the Keychain can block (an access prompt, a keychain still locked after wake), so it's
+            // read without the state: menus and windows wait on that lock
+            drop(app);
             let token = (deps.token)();
+            app = shared.lock().unwrap();
             app.has_token = matches!(token, Ok(Some(_)));
             match token {
                 Err(e) => {
@@ -481,6 +485,30 @@ mod tests {
         assert_eq!((s.ok, s.error.as_deref()), (Some(false), Some("Keychain locked")));
         assert!(s.issues.contains(&"keychain".to_string()));
         assert!(!shared.lock().unwrap().has_token);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_keychain_is_read_without_holding_the_state() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let dir = temp();
+        let slot: Arc<std::sync::OnceLock<Arc<Mutex<App>>>> = Default::default();
+        let held = Arc::new(AtomicBool::new(false));
+        let (s, h) = (slot.clone(), held.clone());
+        // a Keychain read that finds the state locked would block every menu and window meanwhile
+        let token = move || {
+            if s.get().is_some_and(|app| app.try_lock().is_err()) {
+                h.store(true, Ordering::SeqCst);
+            }
+            Ok(None)
+        };
+        let deps = Deps { token: Box::new(token), api: "http://127.0.0.1:9".into(), full_screen: Box::new(|| false), low_power: Box::new(|| false) };
+        let (shared, tx, seen, _thread) = start(App::load(dir.clone()).unwrap(), deps);
+        assert!(slot.set(shared.clone()).is_ok());
+        next_sync(&seen);
+        tx.send(Cmd::SyncNow(None)).unwrap();
+        next_sync(&seen);
+        assert!(!held.load(Ordering::SeqCst));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

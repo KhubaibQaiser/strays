@@ -774,11 +774,21 @@ impl App {
         if entries.is_empty() || self.is_closed() {
             return;
         }
-        let mut all = self.netlog();
-        all.extend(entries);
-        let start = all.len().saturating_sub(NETLOG_KEEP);
-        let text: String = all[start..].iter().filter_map(|e| serde_json::to_string(e).ok()).map(|l| l + "\n").collect();
-        match std::fs::write(self.dir.join(NETLOG_FILE), text) {
+        let path = self.dir.join(NETLOG_FILE);
+        let written = match self.read_netlog() {
+            Ok(mut all) => {
+                all.extend(entries);
+                let start = all.len().saturating_sub(NETLOG_KEEP);
+                std::fs::write(&path, lines(&all[start..]))
+            }
+            // the file is there but couldn't be read: add to it rather than replace what it holds
+            Err(e) => {
+                crate::log::warn(&format!("could not read the network log, so new entries are added to it untrimmed: {e}"));
+                use std::io::Write;
+                std::fs::OpenOptions::new().append(true).open(&path).and_then(|mut f| f.write_all(lines(&entries).as_bytes()))
+            }
+        };
+        match written {
             Ok(()) => self.resolve("save:netlog"),
             Err(e) => self.warn("save:netlog", format!("Couldn't write the network log: {e}")),
         }
@@ -786,20 +796,24 @@ impl App {
 
     /// The network activity log. Unreadable lines are skipped (and logged): one bad line mustn't hide the rest.
     pub fn netlog(&self) -> Vec<NetEntry> {
+        self.read_netlog().unwrap_or_else(|e| {
+            crate::log::warn(&format!("could not read the network log: {e}"));
+            Vec::new()
+        })
+    }
+
+    fn read_netlog(&self) -> std::io::Result<Vec<NetEntry>> {
         let text = match std::fs::read_to_string(self.dir.join(NETLOG_FILE)) {
             Ok(t) => t,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
-            Err(e) => {
-                crate::log::warn(&format!("could not read the network log: {e}"));
-                return Vec::new();
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e),
         };
         let mut bad = 0;
         let entries = text.lines().filter_map(|l| serde_json::from_str(l).inspect_err(|_| bad += 1).ok()).collect();
         if bad > 0 {
             crate::log::warn(&format!("{bad} unreadable line(s) in the network log were skipped"));
         }
-        entries
+        Ok(entries)
     }
 
     /// The adoption flow (§8.2): a GitHub repo or a local folder (matched to its GitHub repo when the
@@ -911,6 +925,11 @@ impl App {
         }
         self.save_all();
     }
+}
+
+/// Network log entries as JSON lines.
+fn lines(entries: &[NetEntry]) -> String {
+    entries.iter().filter_map(|e| serde_json::to_string(e).ok()).map(|l| l + "\n").collect()
 }
 
 fn load<T: serde::de::DeserializeOwned + Default>(store: &Store, name: &str, what: &str, issues: &mut Vec<Issue>) -> T {
@@ -1117,6 +1136,20 @@ mod tests {
         // the next write keeps only readable lines
         app.append_netlog(vec![entry.clone()]);
         assert!(!std::fs::read_to_string(dir.join(NETLOG_FILE)).unwrap().contains("half"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_network_log_is_added_to_not_replaced() {
+        let dir = std::env::temp_dir().join(format!("strays-netlog-{}", Uuid::new_v4()));
+        let mut app = App::load(dir.clone()).unwrap();
+        let entry = NetEntry { at: strays_core::chrono::Utc::now(), method: "GET".into(), host: "api.github.com".into(), path: "/".into(), status: 200, reason: "scheduled".into() };
+        // not UTF-8, so it can't be read as text
+        std::fs::write(dir.join(NETLOG_FILE), b"\xff history\n").unwrap();
+        app.append_netlog(vec![entry.clone()]);
+        let bytes = std::fs::read(dir.join(NETLOG_FILE)).unwrap();
+        assert!(bytes.starts_with(b"\xff history\n"), "the old contents are kept");
+        assert!(String::from_utf8_lossy(&bytes).contains("api.github.com"), "and the new entry is added");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
