@@ -6,7 +6,8 @@
     "setup"
   ],
   "permissions": [
-    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "allow-ui-state",
     "allow-close-window",
     "allow-open-link",

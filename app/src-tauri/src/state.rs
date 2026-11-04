@@ -100,6 +100,8 @@ pub struct App {
     nudge_log: strays_core::nudge::NudgeLog,
     /// Security-scoped bookmarks for folders the user picked, by path (§9): the sandbox's way back in after a restart.
     bookmarks: std::collections::BTreeMap<String, Vec<u8>>,
+    /// Folders picked in the folder dialog this session (bookmarked or not).
+    picked: std::collections::BTreeSet<String>,
     /// Problems the user should know about, shown in the menu and Settings until fixed or dismissed.
     pub issues: Vec<Issue>,
     /// Error reports waiting for the sync thread to send them (only collected while the user opted in).
@@ -265,6 +267,7 @@ impl App {
             known_folders,
             nudge_log,
             bookmarks,
+            picked: Default::default(),
         };
         // problems found while loading go through the same log and reports as later ones
         for i in std::mem::take(&mut app.issues) {
@@ -352,6 +355,21 @@ impl App {
             Ok(()) => self.resolve(key),
             Err(e) => self.warn(key, format!("Couldn't save {what}: {e}")),
         }
+    }
+
+    /// The user picked this folder in the folder dialog, so it may be adopted.
+    pub fn allow_folder(&mut self, path: String) {
+        self.picked.insert(path);
+    }
+
+    /// Whether the user gave Strays this folder: picked it, or it's inside a watched or bookmarked
+    /// folder. A page can't name any other folder for a pet (spec §9: access stays visible).
+    fn folder_allowed(&self, folder: &str) -> bool {
+        let p = std::path::Path::new(folder);
+        if !p.is_absolute() || p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return false;
+        }
+        self.picked.contains(folder) || self.local_repos.iter().any(|r| r == folder) || self.bookmarks.keys().chain(&self.settings.watched_folders).any(|b| p.starts_with(b))
     }
 
     pub fn remember_bookmark(&mut self, path: String, data: Vec<u8>) {
@@ -851,6 +869,9 @@ impl App {
             last = Some(repo.pushed_at.unwrap_or(repo.created_at));
         }
         if let Some(folder) = &req.folder {
+            if !self.folder_allowed(folder) {
+                return Err("Strays can only adopt a folder you picked or one in your watched folders".into());
+            }
             if self.tracked_folder(folder) {
                 return Err("This folder already has a pet".into());
             }
@@ -1166,6 +1187,23 @@ mod tests {
         // the next write keeps only readable lines
         app.append_netlog(vec![entry.clone()]);
         assert!(!std::fs::read_to_string(dir.join(NETLOG_FILE)).unwrap().contains("half"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn only_folders_the_user_gave_strays_can_be_adopted() {
+        let dir = std::env::temp_dir().join(format!("strays-folders-{}", Uuid::new_v4()));
+        let mut app = App::load(dir.clone()).unwrap();
+        let req = |folder: &str| AdoptRequest { repo_id: None, folder: Some(folder.into()), species: Species::Cat, colors: Default::default(), name: "Miso".into(), goal: String::new(), pace: Pace::Normal };
+        let refused = "Strays can only adopt a folder you picked or one in your watched folders";
+        let now = strays_core::chrono::Utc::now();
+        assert_eq!(app.adopt(req("/etc"), now), Err(refused.into()));
+        app.settings.watched_folders = vec!["/Users/me/Code".into()];
+        assert_eq!(app.adopt(req("/Users/me/Code/../../../etc"), now), Err(refused.into()), "no climbing out");
+        // inside a watched folder it gets as far as reading git (there's no repo there)
+        assert!(app.adopt(req("/Users/me/Code/nope"), now).unwrap_err().starts_with("Not a git repository"));
+        app.allow_folder("/tmp/picked".into());
+        assert!(app.adopt(req("/tmp/picked"), now).unwrap_err().starts_with("Not a git repository"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

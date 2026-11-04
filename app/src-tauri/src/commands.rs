@@ -389,6 +389,7 @@ pub async fn pick_folder(h: AppHandle) -> Option<String> {
     {
         let shared = h.state::<Shared>();
         let mut app = shared.app.lock().unwrap();
+        app.allow_folder(path.clone());
         match crate::platform::bookmark(&path) {
             Ok(data) => {
                 app.resolve(&format!("access:{path}"));
@@ -631,8 +632,12 @@ pub fn open_window(kind: String, arg: Option<String>, h: AppHandle) -> Res<()> {
 }
 
 #[tauri::command]
-pub fn close_window(label: String, h: AppHandle) -> Res<()> {
+pub fn close_window(label: String, window: tauri::Window, h: AppHandle) -> Res<()> {
     logged("close_window", move || -> Res<()> {
+        // a page closes its own window, never another (the overlay, Settings)
+        if label != window.label() {
+            return Err(format!("The {} window can't close the {label} window", window.label()));
+        }
         match h.get_webview_window(&label) {
             Some(w) => w.close().map_err(|e| e.to_string()),
             None => Ok(()),
