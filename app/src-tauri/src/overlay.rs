@@ -130,7 +130,7 @@ impl Grid {
         Home { x: (screen.frame.x + x + self.s / 2.0 - w.x) / w.w, y: (screen.frame.y + y + self.s - w.y) / w.h }
     }
     /// The cell a home spot falls in on this screen.
-    fn from_home(&self, h: Home, screen: &Screen) -> (u32, u32) {
+    fn home_cell(&self, h: Home, screen: &Screen) -> (u32, u32) {
         let w = screen.work;
         self.cell((w.x + h.x * w.w - self.s / 2.0 - screen.frame.x, w.y + h.y * w.h - self.s - screen.frame.y))
     }
@@ -149,7 +149,7 @@ pub fn place(views: &[PetView], screen: &Screen, front: Option<Rect>, pet_height
     let mut cells: Vec<Option<(u32, u32)>> = vec![None; views.len()];
     for (i, v) in views.iter().enumerate() {
         if let Some(h) = v.home
-            && let Some(c) = g.nearest_free(g.from_home(h, screen), &taken)
+            && let Some(c) = g.nearest_free(g.home_cell(h, screen), &taken)
         {
             taken.push(c);
             cells[i] = Some(c);
@@ -593,11 +593,11 @@ mod tests {
         // the same display at a bigger resolution: the pet stays in about the same place on it
         let big = Screen { frame: Rect { x: 0.0, y: 0.0, w: 2056.0, h: 1329.0 }, work: Rect { x: 0.0, y: 33.0, w: 2056.0, h: 1226.0 } };
         let g = Grid::new(&big, 160.0);
-        let (x, y) = g.at(g.from_home(home, &big));
+        let (x, y) = g.at(g.home_cell(home, &big));
         let (fx, fy) = ((x + 80.0) / 2056.0, (y + 160.0 - 33.0) / 1226.0);
         assert!((fx - home.x).abs() < 0.05 && (fy - home.y).abs() < 0.05, "moved from {home:?} to {fx},{fy}");
         // and a home is exact on the screen it was made on
-        assert_eq!(mid.from_home(home, &screen()), (5, 3));
+        assert_eq!(mid.home_cell(home, &screen()), (5, 3));
     }
 
     #[test]
