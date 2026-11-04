@@ -92,6 +92,8 @@ pub struct Settings {
     pub ignore: Vec<String>,
     pub pet_size: PetSize,
     pub modifier: Modifier,
+    /// Keys that hide or show every pet from anywhere, like "Control+Alt+S"; None is off (the default).
+    pub hide_shortcut: Option<String>,
     pub hide_in_full_screen: bool,
     pub nudge_style: NudgeStyle,
     pub nudges_per_pet_daily: u32,
@@ -139,6 +141,7 @@ impl Default for Settings {
             ignore: Vec::new(),
             pet_size: PetSize::Medium,
             modifier: Modifier::Option,
+            hide_shortcut: None,
             hide_in_full_screen: true,
             nudge_style: NudgeStyle::Gentle,
             nudges_per_pet_daily: 1,
@@ -163,6 +166,8 @@ impl Settings {
     pub fn validate(&self) -> Result<(), String> {
         let check = |ok: bool, what: &str| if ok { Ok(()) } else { Err(format!("invalid setting: {what}")) };
         check(Thresholds::new(self.thresholds.0).is_some(), "thresholds")?;
+        // at least one modifier and a key, in plain words (the shell checks the keys themselves)
+        check(self.hide_shortcut.as_ref().is_none_or(|k| k.len() <= 40 && k.contains('+') && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '+')), "hideShortcut")?;
         check((1..=20).contains(&self.slots), "slots (1–20)")?;
         check((1..=14).contains(&self.holiday_days), "holidayDays (1–14)")?;
         check((1..=8).contains(&self.max_visible), "maxVisible (1–8)")?;
@@ -271,5 +276,15 @@ mod tests {
         assert!(!s.ignored("dotfiles2"));
         assert!(!s.ignored("acb"));
         assert!(!s.ignored("strays"));
+    }
+
+    #[test]
+    fn a_hide_shortcut_needs_a_modifier_and_plain_key_names() {
+        let with = |k: Option<&str>| Settings { hide_shortcut: k.map(String::from), ..Settings::default() }.validate();
+        assert!(with(None).is_ok());
+        assert!(with(Some("Control+Alt+S")).is_ok());
+        assert!(with(Some("S")).is_err(), "no modifier");
+        assert!(with(Some("Control+Alt+<script>")).is_err());
+        assert!(with(Some(&"Control+".repeat(10))).is_err(), "too long");
     }
 }

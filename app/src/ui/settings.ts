@@ -147,6 +147,7 @@ export function renderSettings(root: HTMLElement, state: UiState, section: strin
       el("h1", {}, "Interaction"),
       el("p", { class: "muted" }, "Clicks pass straight through pets. Hold this key to hover, click or sync a pet."),
       row("Key", select("modifier", [["option", "⌥ Option"], ["control", "⌃ Control"], ["shift", "⇧ Shift"], ["optionShift", "⌥⇧ Option-Shift"]])),
+      shortcutRow(s, save, notice),
     ],
     syncing: () => [
       el("h1", {}, "Syncing"),
@@ -399,6 +400,48 @@ function logButtons(notice: (msg: string, error?: boolean) => void, canSend: boo
       canSend ? el("button", { onclick: send }, "Send log to the developer…") : null,
     ),
     box,
+  );
+}
+
+const SUGGESTED_SHORTCUT = "Control+Alt+S";
+/** "Control+Alt+S" as macOS writes it: ⌃⌥S */
+const keysLabel = (keys: string) =>
+  keys.split("+").map((k) => ({ Control: "⌃", Alt: "⌥", Shift: "⇧", Super: "⌘" })[k] ?? k).join("");
+
+/** Hide or show every pet from anywhere: off by default; a recorder takes the next key combination. */
+function shortcutRow(s: Settings, save: () => Promise<unknown>, notice: Notice): HTMLElement {
+  const on = el("input", { type: "checkbox", id: "hide-shortcut", checked: !!s.hideShortcut });
+  const keys = el("button", { "aria-label": "Shortcut keys, click to record new ones" }, keysLabel(s.hideShortcut ?? SUGGESTED_SHORTCUT));
+  keys.disabled = !s.hideShortcut;
+  const set = (value: string | null) => {
+    s.hideShortcut = value;
+    keys.textContent = keysLabel(value ?? SUGGESTED_SHORTCUT);
+    keys.disabled = !value;
+    void save();
+  };
+  on.addEventListener("change", () => set(on.checked ? SUGGESTED_SHORTCUT : null));
+  keys.addEventListener("click", () => {
+    keys.textContent = "Press the keys…";
+    const take = (e: KeyboardEvent) => {
+      e.preventDefault();
+      if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return; // still holding modifiers
+      removeEventListener("keydown", take, true);
+      if (e.key === "Escape") return set(s.hideShortcut);
+      const mods = [e.ctrlKey && "Control", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Super"].filter(Boolean) as string[];
+      const key = e.code.replace(/^Key|^Digit/, "");
+      if (!mods.length || !/^[A-Z0-9]$|^F\d{1,2}$/.test(key)) {
+        notice("Use at least one of ⌃ ⌥ ⇧ ⌘ with a letter, number or F-key.", true);
+        return set(s.hideShortcut);
+      }
+      set([...mods, key].join("+"));
+    };
+    addEventListener("keydown", take, true);
+  });
+  return el(
+    "div",
+    {},
+    el("div", { class: "check" }, on, el("label", { for: "hide-shortcut" }, "Hide or show all pets with a shortcut"), keys),
+    el("p", { class: "muted small" }, "Works from any app. Click the keys to record others; Esc keeps the old ones."),
   );
 }
 
