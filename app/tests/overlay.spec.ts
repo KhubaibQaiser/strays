@@ -7,6 +7,8 @@ const emit = (page: import("@playwright/test").Page, event: string, payload: unk
   page.evaluate(([e, p]) => (window as unknown as { __emit: (e: string, p: unknown) => void }).__emit(e as string, p), [event, payload]);
 
 test("moods pick poses, and a release cue celebrates then leaves", async ({ page }) => {
+  // the celebrate, exit and fade sequence alone runs ~17 s, more than half the default limit
+  test.setTimeout(60_000);
   await mockApp(page);
   await page.setViewportSize({ width: 660, height: 240 });
   await page.goto("/index.html");
@@ -68,6 +70,8 @@ test("each species draws with its own rig", async ({ page }) => {
   await page.screenshot({ path: `${shots}/overlay-species.png` });
   const logs = await page.evaluate(() => (window as unknown as { __calls: { cmd: string; args: { msg?: string } }[] }).__calls.filter((c) => c.cmd === "pet_log").map((c) => c.args.msg));
   expect(logs.filter((m) => m?.startsWith("LOADED"))).toHaveLength(4);
+  // cats are the 3D Persian; the other species keep their Rive rigs
+  expect(logs.filter((m) => m?.includes("rig=3d"))).toEqual([expect.stringContaining("pet=cat ")]);
 });
 
 test("a pet whose repo GitHub can't find keeps asking until it's answered", async ({ page }) => {

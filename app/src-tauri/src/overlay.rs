@@ -176,7 +176,9 @@ impl Overlay {
     /// Must run on the main thread (window creation and NSWindow setup).
     pub fn create(h: &AppHandle) -> tauri::Result<Self> {
         let screen = main_screen(h).ok_or(tauri::Error::WindowNotFound)?;
-        let window = WebviewWindowBuilder::new(h, LABEL, WebviewUrl::App("index.html".into()))
+        // debug builds can load another page in the overlay, e.g. proto3d.html to measure 3D pets' CPU
+        let page = std::env::var("STRAYS_OVERLAY_PAGE").ok().filter(|_| cfg!(debug_assertions)).unwrap_or_else(|| "index.html".into());
+        let window = WebviewWindowBuilder::new(h, LABEL, WebviewUrl::App(page.into()))
             .transparent(true)
             .decorations(false)
             .always_on_top(true)

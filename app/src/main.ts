@@ -1,9 +1,11 @@
 // Pet overlay: draws the pets the Rust core places, and plays their moments at the chosen liveliness.
-// The core owns all state; this page only renders and reports ⌥-clicks.
+// The core owns all state; this page only renders and reports ⌥-clicks. Cats are the realistic 3D
+// Persian (src/pet3d); the other species, and any cat whose WebGL fails, are drawn by their Rive rigs.
 import { setFps } from "./throttle";
 import { Rive, RuntimeLoader } from "@rive-app/canvas";
 import riveWasmUrl from "@rive-app/canvas/rive.wasm?url";
 import { artFor } from "./art";
+import { Cat3DRig } from "./pet3d/rig";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -21,7 +23,17 @@ log(`BOOT ${location.href}`);
 // Bundled locally: the runtime must never fetch its WASM from a CDN.
 RuntimeLoader.setWasmUrl(riveWasmUrl);
 
-type Pet = { el: HTMLCanvasElement; rive: Rive; placed: Placed; timer?: number; playing: boolean; busy: boolean; leaving: boolean; run: number };
+/** What draws one pet. `continuous` rigs animate between moments too (their own frame rate keeps CPU in check). */
+type Rig = {
+  play(): void;
+  pause(): void;
+  number(name: string, value: number): void;
+  resize(s: number): void;
+  cleanup(): void;
+  continuous?: boolean;
+  setLiveliness?(level: Liveliness, still: boolean): void;
+};
+type Pet = { el: HTMLCanvasElement; rig: Rig; placed: Placed; timer?: number; playing: boolean; busy: boolean; leaving: boolean; run: number };
 type Cue = "eat" | "fallAsleep" | "wake" | "postcard" | "hello" | { celebrate: { leave: boolean } } | { graduate: { accessory: number } };
 
 // The rig's `mood` and `action` view-model numbers (art/STYLE.md).
@@ -47,13 +59,12 @@ function hexToArgb(hex: string): number {
 function setPlaying(p: Pet, on: boolean) {
   if (on === p.playing) return;
   p.playing = on;
-  if (on) p.rive.play();
-  else p.rive.pause();
+  if (on) p.rig.play();
+  else p.rig.pause();
 }
 
 function setNumber(p: Pet, name: string, value: number) {
-  const prop = p.rive.viewModelInstance?.number(name);
-  if (prop) prop.value = value;
+  p.rig.number(name, value);
 }
 
 const wait = (s: number) => new Promise((r) => setTimeout(r, s * 1000));
@@ -117,9 +128,10 @@ function cue(p: Pet, c: Cue) {
 function schedule(p: Pet) {
   if (p.busy) return;
   window.clearTimeout(p.timer);
+  p.rig.setLiveliness?.(mode, reduceMotion);
   if (frozen) return setPlaying(p, false);
   const level = reduceMotion ? "calm" : mode;
-  if (level === "lively") return setPlaying(p, true);
+  if (level === "lively" || (p.rig.continuous && !reduceMotion)) return setPlaying(p, true);
   setPlaying(p, false);
   const [lo, hi] = GAP[level];
   p.timer = window.setTimeout(() => {
@@ -131,18 +143,19 @@ function schedule(p: Pet) {
 function position(p: Pet) {
   const { x, y, s } = p.placed;
   Object.assign(p.el.style, { left: `${x}px`, top: `${y}px`, width: `${s}px`, height: `${s}px` });
-  const size = Math.round(s * devicePixelRatio);
-  if (p.el.width !== size) {
-    p.el.width = p.el.height = size;
-    p.rive.resizeDrawingSurfaceToCanvas();
-  }
+  if (p.el.width !== Math.round(s * devicePixelRatio)) p.rig.resize(s);
 }
 
-function add(placed: Placed) {
+function canvasFor(id: string) {
   const el = document.createElement("canvas");
-  el.dataset.id = placed.id;
-  el.width = el.height = Math.round(placed.s * devicePixelRatio);
+  el.dataset.id = id;
   document.body.appendChild(el);
+  return el;
+}
+
+function riveRig(p: Pet): Rig {
+  const { placed, el } = p;
+  el.width = el.height = Math.round(placed.s * devicePixelRatio);
   const rive: Rive = new Rive({
     src: artFor(placed.species),
     canvas: el,
@@ -167,24 +180,75 @@ function add(placed: Placed) {
       void play(p, []);
     },
   });
-  const p: Pet = { el, rive, placed, playing: true, busy: false, leaving: false, run: 0 };
+  return {
+    play: () => rive.play(),
+    pause: () => rive.pause(),
+    number: (name, value) => {
+      const prop = rive.viewModelInstance?.number(name);
+      if (prop) prop.value = value;
+    },
+    resize: (s) => {
+      el.width = el.height = Math.round(s * devicePixelRatio);
+      rive.resizeDrawingSurfaceToCanvas();
+    },
+    cleanup: () => rive.cleanup(),
+  };
+}
+
+/** The 3D Persian, or null (logged) when WebGL isn't available; if the GPU drops it later, the pet
+ *  is rebuilt with its Rive rig. */
+function cat3dRig(p: Pet): Rig | null {
+  const { placed } = p;
+  try {
+    const rig = new Cat3DRig(p.el, placed.colors, log, () => {
+      log(`WARN pet=${placed.id} lost its 3D drawing; switching to the drawn cat`);
+      const current = pets.get(placed.id);
+      if (current?.rig !== cat) return;
+      remove(placed.id);
+      add(current.placed, true);
+    });
+    const cat: Rig = Object.assign(rig, { continuous: true });
+    rig.number("mood", MOOD[placed.mood] ?? 2);
+    rig.setLiveliness(mode, reduceMotion);
+    log(`LOADED pet=${placed.id} colours=${Object.keys(placed.colors).length}/${Object.keys(placed.colors).length} rig=3d`);
+    return cat;
+  } catch (e) {
+    log(`ERROR pet=${placed.id} can't draw the 3D cat (${String(e)}); using the drawn cat`);
+    return null;
+  }
+}
+
+function add(placed: Placed, forceRive = false) {
+  const p = { el: canvasFor(placed.id), placed, playing: false, busy: false, leaving: false, run: 0 } as Pet;
+  let rig = placed.species === "cat" && !forceRive ? cat3dRig(p) : null;
+  if (!rig) {
+    // a canvas that tried WebGL can't give Rive a 2D context, so start from a fresh one
+    if (placed.species === "cat" && !forceRive) {
+      p.el.remove();
+      p.el = canvasFor(placed.id);
+    }
+    rig = riveRig(p);
+    p.playing = true;
+  }
+  p.rig = rig;
   pets.set(placed.id, p);
   position(p);
+  if (rig.continuous) void play(p, []);
   // the window only takes clicks while the user's chosen modifier is held (Rust decides, and says so
   // through "hover"), so any click that arrives here is meant for the pet, whichever modifier that is
-  el.addEventListener("mousedown", (e) => {
+  p.el.addEventListener("mousedown", (e) => {
     if (!frozen) return;
     e.preventDefault();
     void invoke("pet_click", { id: placed.id, shift: e.shiftKey });
   });
-  el.addEventListener("contextmenu", (e) => e.preventDefault());
+  p.el.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
 function remove(id: string) {
   const p = pets.get(id);
   if (!p) return;
   window.clearTimeout(p.timer);
-  p.rive.cleanup();
+  p.rig.cleanup();
   p.el.remove();
   pets.delete(id);
 }
