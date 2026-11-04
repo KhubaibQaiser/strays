@@ -1,9 +1,10 @@
-// Caps the frame rate of everything that animates through requestAnimationFrame (the Rive runtime).
-// Must be imported before the runtime. Rive advances by elapsed time, so motion speed is unchanged.
+// Caps the frame rate of the Rive runtime, which animates through requestAnimationFrame. Must be
+// imported before the runtime. Rive advances by elapsed time, so motion speed is unchanged.
+// 3D pets keep their own pace in step with the display, through `nativeRaf`.
 let interval = 0;
 let next = performance.now();
-const nativeRaf = window.requestAnimationFrame.bind(window);
-const nativeCancel = window.cancelAnimationFrame.bind(window);
+export const nativeRaf = window.requestAnimationFrame.bind(window);
+export const nativeCancel = window.cancelAnimationFrame.bind(window);
 
 /** 0 or ≥ 60 = uncapped (display rate). */
 export function setFps(fps: number) {
