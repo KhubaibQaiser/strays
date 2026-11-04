@@ -46,6 +46,7 @@ let shape: Mesh | undefined;
 export const hamster: SpeciesDef = {
   shape: () => (shape ??= build(prims(), [-0.3, -0.03, -0.3], [0.3, 0.9, 0.32], 0.0095)),
   pivot: PIVOT,
+  wear: { top: [0, 0.79, 0.04], r: 0.19, neck: [0, 0.43, 0.03], neckR: 0.21, chest: [0.06, 0.25, 0.235], badge: 0.042 },
   parent: PARENT,
   hips: HIPS,
   spine: SPINE,

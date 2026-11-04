@@ -19,7 +19,6 @@ export class Pet3DRig {
   private sleep = 0;
   private last = 0;
   private level: Liveliness = "gentle";
-  private warnedAccessory = false;
   private software = false;
   /** smoothed milliseconds per drawn frame, and what's been given up because of it */
   private cost = 0;
@@ -122,10 +121,7 @@ export class Pet3DRig {
   number(name: string, value: number) {
     if (name === "mood") this.pet.mood = MOODS[value] ?? "content";
     else if (name === "action") this.pet.act(value as Action);
-    else if (name === "accessory" && value && !this.warnedAccessory) {
-      this.warnedAccessory = true;
-      this.problem("3d-accessory", "3D pets don't wear accessories yet, so this one leaves without its graduation accessory");
-    }
+    else if (name === "accessory") this.pet.wear(value);
   }
 
   resize(s: number) {

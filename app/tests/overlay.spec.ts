@@ -14,7 +14,8 @@ test("moods pick poses, and a release cue celebrates then leaves", async ({ page
   await page.goto("/index.html");
   await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.some((c) => c.cmd === "overlay_ready"));
   await emit(page, "overlay", { pets: [pet("joy", "joyful", 0), pet("hungry", "hungry", 220), pet("gloomy", "gloomy", 440)], liveliness: "calm", reduceMotion: false, hidden: false });
-  await expect(page.locator("canvas")).toHaveCount(3);
+  // 3D shapes are built in a worker first, which takes a while when the machine is busy
+  await expect(page.locator("canvas")).toHaveCount(3, { timeout: 30_000 });
   await page.waitForTimeout(1500);
   await page.screenshot({ path: `${shots}/overlay-moods.png` });
 

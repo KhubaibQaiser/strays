@@ -99,6 +99,8 @@ export type SpeciesDef = {
   shadow: { at: V3; size: [number, number] };
   bounds: { centre: V3; r: number };
   palette: (colors: Record<string, string>) => Palette;
+  /** where graduation accessories sit (accessories.ts) */
+  wear: import("./accessories").Wear;
   /** extra meshes (a perch), added once */
   extras?: (root: THREE.Group, bones: THREE.Bone[], palette: Palette, keep: (d: { dispose(): void }) => void) => void;
   /** the species' own motion, run after the shared motion each frame */
