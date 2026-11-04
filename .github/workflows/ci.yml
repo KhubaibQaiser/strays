@@ -34,7 +34,7 @@ jobs:
       - run: cargo audit --file Cargo.lock && cargo audit --file ../src-tauri/Cargo.lock
       # licences and sources (app/deny.toml); both crates' dependency trees
       - run: cargo install cargo-deny --version 0.20.2 --locked
-      - run: cargo deny --manifest-path Cargo.toml check licenses sources bans --config ../deny.toml && cargo deny --manifest-path ../src-tauri/Cargo.toml check licenses sources bans --config ../deny.toml
+      - run: cargo deny --manifest-path Cargo.toml check --config ../deny.toml licenses sources bans && cargo deny --manifest-path ../src-tauri/Cargo.toml check --config ../deny.toml licenses sources bans
 
   ui:
     runs-on: ubuntu-latest
