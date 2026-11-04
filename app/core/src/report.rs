@@ -1,6 +1,6 @@
 //! Opt-in error and crash reports (off by default). Each report is one PostHog `$exception` event:
-//! a category, a scrubbed message, the app and macOS versions and a random install id. No repo,
-//! folder, pet or account names, no paths and no token ever leave in a report.
+//! a category and a short error code (never message text), the app and macOS versions and a random
+//! install id, with PostHog's IP location turned off. A log the user chooses to send goes the same way.
 use std::time::Duration as StdDuration;
 
 use chrono::Utc;
@@ -33,9 +33,13 @@ pub fn scrub(text: &str, private: &[&str]) -> String {
     out.chars().take(MAX_MESSAGE).collect()
 }
 
+/// A PostHog ingestion host: `https://<something>.posthog.com` and nothing else, checked on the parsed
+/// URL so `https://evil.example?.posthog.com` and friends can't pass.
 fn host_allowed(host: &str) -> bool {
-    let https_posthog = host.strip_prefix("https://").is_some_and(|h| !h.contains('/') && h.ends_with(".posthog.com"));
-    https_posthog || (cfg!(any(test, feature = "devtools")) && host.starts_with("http://127.0.0.1:"))
+    let Ok(url) = reqwest::Url::parse(host) else { return false };
+    let bare = url.username().is_empty() && url.password().is_none() && url.query().is_none() && url.fragment().is_none() && url.path() == "/";
+    let posthog = url.scheme() == "https" && url.port().is_none() && url.host_str().is_some_and(|h| h.ends_with(".posthog.com"));
+    bare && (posthog || (cfg!(any(test, feature = "devtools")) && url.scheme() == "http" && url.host_str() == Some("127.0.0.1")))
 }
 
 pub struct Reporter {
@@ -69,6 +73,7 @@ impl Reporter {
             "properties": {
                 "$exception_list": [{ "type": r.kind, "value": r.message, "mechanism": { "handled": r.handled, "synthetic": false } }],
                 "$process_person_profile": false,
+                "$geoip_disable": true,
                 "$lib": "strays",
                 "app_version": version,
                 "os_version": os,
@@ -128,6 +133,9 @@ mod tests {
         assert!(Reporter::new("https://evil.example", "k").is_err());
         assert!(Reporter::new("http://us.i.posthog.com", "k").is_err());
         assert!(Reporter::new("https://posthog.com.evil.example", "k").is_err());
+        for sneaky in ["https://evil.example?.posthog.com", "https://evil.example#.posthog.com", "https://evil.example\\.posthog.com", "https://me@evil.example/.posthog.com", "https://us.i.posthog.com:8443"] {
+            assert!(Reporter::new(sneaky, "k").is_err(), "{sneaky}");
+        }
     }
 
     #[test]

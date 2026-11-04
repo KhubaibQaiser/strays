@@ -1,6 +1,6 @@
 //! Error and crash reports, sent only when the user opted in (Settings → Privacy, or the welcome screen).
 //! Builds without a PostHog key (`STRAYS_POSTHOG_KEY` at compile time) can't send any and hide the option.
-use strays_core::report::{Reporter, scrub};
+use strays_core::report::Reporter;
 
 pub use strays_core::report::Report;
 
@@ -26,10 +26,17 @@ pub fn reporter() -> Result<Reporter, String> {
     Reporter::new(host(), KEY.filter(|k| !k.is_empty()).ok_or("this build can't send error reports")?)
 }
 
-/// A report for a problem shown to the user, or `None` when it's not an error. `key` is `category:detail`.
-pub fn for_issue(key: &str, text: &str, private: &[&str]) -> Option<Report> {
+/// A report for a problem shown to the user, or `None` when it's not an error. `key` is
+/// `category:detail`; the report carries only that code (a pet's id becomes `pet`), never the
+/// message, so nothing typed, named or found on the Mac can leave in one.
+pub fn for_issue(key: &str) -> Option<Report> {
     let kind = key.split(':').next().unwrap_or(key);
-    (!NOT_ERRORS.contains(&kind)).then(|| Report { kind: kind.into(), message: scrub(text, private), handled: true })
+    let code: Vec<String> = key.split(':').map(|part| {
+        let part = part.strip_prefix("3d-").filter(|rest| rest.parse::<strays_core::uuid::Uuid>().is_ok()).map_or(part, |_| "3d-pet");
+        let part = part.strip_prefix("draw-").filter(|rest| rest.parse::<strays_core::uuid::Uuid>().is_ok()).map_or(part, |_| "draw-pet");
+        if part.parse::<strays_core::uuid::Uuid>().is_ok() { "pet".into() } else { part.chars().take(40).collect() }
+    }).collect();
+    (!NOT_ERRORS.contains(&kind)).then(|| Report { kind: kind.into(), message: code.join(":"), handled: true })
 }
 
 /// Saves what a panic said for the next launch to show and report (the app aborts right after this).
@@ -47,12 +54,12 @@ pub fn install_crash_hook(dir: std::path::PathBuf) {
     }));
 }
 
-/// The report for a crash file's text: where it happened (our source, not personal) and the scrubbed message.
-pub fn for_crash(text: &str, private: &[&str]) -> Report {
-    let mut lines = text.lines();
-    let at = lines.next().unwrap_or_default();
-    let msg = lines.next().unwrap_or_default();
-    Report { kind: "crash".into(), message: format!("{} at {at}", scrub(msg, private)), handled: false }
+/// The report for a crash file's text: only where it happened, as a source file name and line (no
+/// folders, not even the build machine's), never the panic message.
+pub fn for_crash(text: &str) -> Report {
+    let at = text.lines().next().unwrap_or_default();
+    let at = at.rsplit(['/', '\\']).next().unwrap_or(at);
+    Report { kind: "crash".into(), message: format!("at {at}"), handled: false }
 }
 
 #[cfg(test)]
@@ -61,10 +68,14 @@ mod tests {
 
     #[test]
     fn decisions_arent_reported_and_crashes_keep_their_location() {
-        assert_eq!(for_issue("missing", "GitHub can't find Miso's repo", &["Miso"]), None);
-        assert_eq!(for_issue("action", "All slots are full", &[]), None);
-        assert_eq!(for_issue("save:1234", "Couldn't save Miso: disk full", &["Miso"]).unwrap().message, "Couldn't save <name>: disk full");
-        let r = for_crash("src/state.rs:42\ncalled unwrap on /Users/me/x\n\nbacktrace…", &[]);
-        assert_eq!((r.kind.as_str(), r.message.as_str(), r.handled), ("crash", "called unwrap on <path> at src/state.rs:42", false));
+        assert_eq!(for_issue("missing"), None);
+        assert_eq!(for_issue("action"), None);
+        // codes only: a pet's id becomes `pet`, and no message text goes at all
+        let id = strays_core::uuid::Uuid::new_v4();
+        assert_eq!(for_issue(&format!("save:{id}")).unwrap().message, "save:pet");
+        assert_eq!(for_issue(&format!("overlay:3d-{id}")).unwrap().message, "overlay:3d-pet");
+        assert_eq!(for_issue("overlay:3d-gpu").unwrap().message, "overlay:3d-gpu");
+        let r = for_crash("/Users/builder/strays/app/src-tauri/src/state.rs:42\ncalled unwrap on /Users/me/ClientX\n\nbacktrace…");
+        assert_eq!((r.kind.as_str(), r.message.as_str(), r.handled), ("crash", "at state.rs:42", false));
     }
 }
