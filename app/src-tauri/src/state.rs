@@ -286,7 +286,7 @@ impl App {
         // logged when it starts or changes: a problem that persists mustn't push older lines out of the log
         crate::log::warn(&format!("{key}: {text}"));
         // reported once when it starts or changes, not on every repeat
-        self.queue_report(key, &text);
+        self.queue_report(key);
     }
 
     /// Names that must never leave the Mac in a report or a sent log: pets, repos, the account, and
@@ -313,13 +313,11 @@ impl App {
         v
     }
 
-    fn queue_report(&mut self, key: &str, text: &str) {
+    fn queue_report(&mut self, key: &str) {
         if !self.settings.error_reports || !crate::report::available() {
             return;
         }
-        let private = self.private_words();
-        let private: Vec<&str> = private.iter().map(String::as_str).collect();
-        if let Some(r) = crate::report::for_issue(key, text, &private) {
+        if let Some(r) = crate::report::for_issue(key) {
             self.reports.push(r);
             let extra = self.reports.len().saturating_sub(crate::report::QUEUE);
             self.reports.drain(..extra);
@@ -332,9 +330,7 @@ impl App {
         let Ok(text) = std::fs::read_to_string(&path) else { return };
         self.issues.push(Issue { key: "crash".into(), text: "Strays quit unexpectedly last time. The details are in logs/strays.log in the data folder (Settings → Privacy).".into() });
         if self.settings.error_reports && crate::report::available() {
-            let private = self.private_words();
-            let private: Vec<&str> = private.iter().map(String::as_str).collect();
-            self.reports.push(crate::report::for_crash(&text, &private));
+            self.reports.push(crate::report::for_crash(&text));
         }
         if let Err(e) = std::fs::remove_file(&path) {
             self.warn("crash-file", format!("Couldn't clear the crash note, so this warning may show again: {e}"));
@@ -1316,12 +1312,12 @@ mod tests {
         std::fs::write(dir.join(crate::report::CRASH_FILE), crash).unwrap();
         let mut app = App::load(dir.clone()).unwrap();
         let r = app.reports.pop().unwrap();
-        assert_eq!((r.kind.as_str(), r.message.as_str()), ("crash", "no pet called <name> in <path> at src/state.rs:42"));
+        assert_eq!((r.kind.as_str(), r.message.as_str()), ("crash", "at state.rs:42"), "where, never what it said");
         // a repeat of a known problem isn't reported again; a decision is never reported
         app.warn("save:x", "Couldn't save Miso: disk full");
         app.warn("save:x", "Couldn't save Miso: disk full");
         app.warn("action", "All adoption slots are full");
-        assert_eq!(app.reports.iter().map(|r| r.message.as_str()).collect::<Vec<_>>(), ["Couldn't save <name>: disk full"]);
+        assert_eq!(app.reports.iter().map(|r| r.message.as_str()).collect::<Vec<_>>(), ["save:x"], "the code, not the message");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

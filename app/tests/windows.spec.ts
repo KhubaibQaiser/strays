@@ -224,7 +224,7 @@ test("error reports are opt-in, explained, and unavailable without a key", async
   await page.goto("/ui.html#settings/privacy");
   const box = page.getByLabel("Send anonymous error and crash reports");
   await expect(box).not.toBeChecked();
-  await expect(page.getByText(/every path and every pet, repo and account name removed/).first()).toBeVisible();
+  await expect(page.getByText(/a short code \(never its message, so no names or paths\)/).first()).toBeVisible();
   await box.check();
   await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ errorReports: true });
   await page.getByRole("button", { name: "Show log" }).click();

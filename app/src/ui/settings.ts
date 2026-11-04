@@ -199,7 +199,7 @@ function issues(state: UiState, notice: Notice): HTMLElement | null {
 
 /** What an error report holds, word for word the same in Settings and the welcome screen. */
 export const REPORTS_TEXT =
-  "Sent to PostHog: what kind of error it was, its message with every path and every pet, repo and account name removed, the Strays and macOS versions, and a random id. At most 20 a day; each one shows in the activity log. Nothing is sent while this is off or Strays is offline.";
+  "Sent to PostHog: what kind of error it was and a short code (never its message, so no names or paths), the Strays and macOS versions, and a random id, with location lookup turned off. At most 20 a day; each one shows in the activity log. Nothing is sent while this is off or Strays is offline.";
 
 function thresholdRows(s: Settings, save: () => Promise<unknown>): HTMLElement {
   const names = ["Joyful", "Content", "Peckish", "Hungry"];
