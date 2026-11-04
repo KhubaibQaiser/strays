@@ -50,6 +50,21 @@ impl std::fmt::Display for GhError {
     }
 }
 
+/// Largest GitHub reply read: a page of 100 repos is a few hundred KB, so this is plenty, and a broken
+/// or hostile reply can't fill memory.
+const MAX_BODY: u64 = 8 << 20;
+
+/// Reads a JSON reply, at most `MAX_BODY` bytes of it.
+fn json<T: serde::de::DeserializeOwned>(res: Response) -> Result<T, GhError> {
+    use std::io::Read;
+    let mut body = Vec::new();
+    res.take(MAX_BODY + 1).read_to_end(&mut body).map_err(|e| GhError::Network(e.to_string()))?;
+    if body.len() as u64 > MAX_BODY {
+        return Err(GhError::Parse(format!("a reply over {} MB", MAX_BODY >> 20)));
+    }
+    serde_json::from_slice(&body).map_err(|e| GhError::Parse(e.to_string()))
+}
+
 /// Response metadata worth keeping from every reply.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Meta {
@@ -227,12 +242,12 @@ impl Github {
         struct User {
             login: String,
         }
-        let user: User = res.json().map_err(|e| GhError::Parse(e.to_string()))?;
+        let user: User = json(res)?;
         let res = self.get(&format!("/user/repos?per_page=1&{AFFILIATION}"), None)?;
         let last = link(res.headers(), "last").and_then(|u| query_param(&u, "page")).and_then(|p| p.parse().ok());
         let repo_count = match last {
             Some(n) => n,
-            None => res.json::<Vec<serde_json::Value>>().map_err(|e| GhError::Parse(e.to_string()))?.len() as u64,
+            None => json::<Vec<serde_json::Value>>(res)?.len() as u64,
         };
         Ok(Validation { login: user.login, repo_count, expires: self.meta().token_expires })
     }
@@ -260,7 +275,7 @@ impl Github {
                 first = false;
             }
             next = link(res.headers(), "next");
-            let page: Vec<Repo> = res.json().map_err(|e| GhError::Parse(e.to_string()))?;
+            let page: Vec<Repo> = json(res)?;
             let reached_since = since.is_some_and(|s| page.iter().any(|r| r.pushed_at.is_none_or(|p| p < s)));
             repos.extend(page);
             if reached_since {
@@ -276,7 +291,7 @@ impl Github {
         if res.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
-        res.json().map(Some).map_err(|e| GhError::Parse(e.to_string()))
+        json(res).map(Some)
     }
 
     /// The newest published release of `repo`. `None` = nothing published yet (404).
@@ -285,7 +300,7 @@ impl Github {
         if res.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
-        res.json().map(Some).map_err(|e| GhError::Parse(e.to_string()))
+        json(res).map(Some)
     }
 }
 
@@ -762,5 +777,20 @@ mod tests {
         let r = apply(Err(GhError::Network("offline".into())), &Meta::default(), &mut st, &mut [], &Settings::default(), now);
         assert!(r.is_err());
         assert!(st.disconnected);
+    }
+
+    #[test]
+    fn a_reply_too_big_to_be_real_is_refused_not_read_whole() {
+        use std::io::{Read, Write};
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = server.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let (mut c, _) = server.accept().unwrap();
+            let _ = c.read(&mut [0; 4096]);
+            let body = format!("[{}0]", "0,".repeat((MAX_BODY / 2) as usize));
+            let _ = c.write_all(format!("HTTP/1.1 200 OK\r\ncontent-length: {}\r\n\r\n{body}", body.len()).as_bytes());
+        });
+        let res = Client::new().get(format!("http://127.0.0.1:{port}/")).send().unwrap();
+        assert!(matches!(json::<Vec<u8>>(res), Err(GhError::Parse(m)) if m.contains("MB")));
     }
 }
