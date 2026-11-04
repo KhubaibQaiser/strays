@@ -9,7 +9,7 @@ import { deriveLook, hexToArgb, looksFor } from "./look";
 RuntimeLoader.setWasmUrl(riveWasmUrl);
 
 const NAMES = ["Miso", "Biscuit", "Pixel", "Nori", "Mochi", "Pepper", "Tofu", "Juniper", "Waffle", "Echo", "Clover", "Sprout", "Fig", "Bean"];
-const SPECIES: [Species, string][] = [["cat", "Cat (Persian)"], ["dog", "Dog (Corgi)"], ["hamster", "Hamster (Syrian)"], ["parrot", "Parrot (budgie)"]];
+const SPECIES: [Species, string][] = [["cat", "Cat (Persian)"], ["dog", "Dog (Corgi)"], ["hamster", "Hamster (Syrian)"], ["parrot", "Parrot (macaw)"]];
 
 export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchParams, notice: (msg: string, error?: boolean) => void) {
   let repoId: number | null = query.get("repo") ? Number(query.get("repo")) : null;

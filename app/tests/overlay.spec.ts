@@ -56,7 +56,9 @@ test("with Reduce Motion a leaving pet only fades", async ({ page }) => {
   await expect(page.locator('canvas[data-id="a"]')).toHaveCount(0, { timeout: 2000 });
 });
 
-test("each species draws with its own rig", async ({ page }) => {
+test("each species draws with its own model", async ({ page }) => {
+  // four 3D pets, each with its own WebGL context; CI draws them in software
+  test.setTimeout(60_000);
   await mockApp(page);
   await page.setViewportSize({ width: 880, height: 240 });
   await page.goto("/index.html");
@@ -70,8 +72,8 @@ test("each species draws with its own rig", async ({ page }) => {
   await page.screenshot({ path: `${shots}/overlay-species.png` });
   const logs = await page.evaluate(() => (window as unknown as { __calls: { cmd: string; args: { msg?: string } }[] }).__calls.filter((c) => c.cmd === "pet_log").map((c) => c.args.msg));
   expect(logs.filter((m) => m?.startsWith("LOADED"))).toHaveLength(4);
-  // cats are the 3D Persian; the other species keep their Rive rigs
-  expect(logs.filter((m) => m?.includes("rig=3d"))).toEqual([expect.stringContaining("pet=cat ")]);
+  // every species has a 3D model now
+  expect(logs.filter((m) => m?.includes("rig=3d"))).toHaveLength(4);
 });
 
 test("a pet whose repo GitHub can't find keeps asking until it's answered", async ({ page }) => {

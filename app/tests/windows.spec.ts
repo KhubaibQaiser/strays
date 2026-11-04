@@ -144,7 +144,7 @@ test("adoption needs a project, then sends every choice", async ({ page }) => {
     repoId: 2,
     folder: null,
     species: "parrot",
-    colors: looksFor("parrot")[2], // budgies get their own swatches
+    colors: looksFor("parrot")[2], // parrots (macaws) get their own swatches
     name: "Biscuit",
     goal: "Launch it",
     pace: "slowBurn",

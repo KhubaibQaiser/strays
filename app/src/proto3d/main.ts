@@ -1,7 +1,9 @@
-// Prototype page for realistic 3D pets: renders N cats and reports their frame cost. Everything is a
-// query parameter, so CPU can be measured per setting: pets, size (pt), fps, idle (fps when only slow
-// motion is happening), shells, dpr, fur, density, mood, look.
-import { Cat3D, catShape, type Look, type Mood } from "../pet3d/cat";
+// Prototype page for realistic 3D pets: renders N pets and reports their frame cost. Everything is a
+// query parameter, so CPU can be measured per setting: species (comma list, cycled), pets, size (pt),
+// fps, idle (fps when only slow motion is happening), shells, dpr, mood, look, face (close-up), bg.
+import { Pet3D, type Mood } from "../pet3d/pet";
+import { SPECIES_3D } from "../pet3d/rig";
+import type { Palette } from "../pet3d/species";
 import { invoke } from "@tauri-apps/api/core";
 
 // inside the app's overlay, stats go to the app log (the page itself is click-through and unseen)
@@ -15,30 +17,44 @@ const fps = num("fps", 60);
 /** frame rate while only slow motion (breathing, sway) is happening */
 const idleFps = num("idle", fps);
 const dpr = num("dpr", devicePixelRatio);
-const quality = { shells: num("shells", 28), furLen: num("fur", 0.07), density: num("density", 150) };
+const species = (q.get("species") ?? "cat").split(",");
 if (q.get("bg") === "1") document.body.classList.add("bg");
 
-const LOOKS: Look[] = [
-  { base: "#ecd3ad", shade: "#c49a68", light: "#f8eedd", pink: "#d97a80", iris: "#c8701f", stripes: 0, tipping: 0 }, // cream, copper eyes
-  { base: "#eceef0", shade: "#5b5f66", light: "#fafafa", pink: "#e2a0a2", iris: "#3f9a5a", stripes: 0, tipping: 0.8 }, // silver chinchilla
-  { base: "#d2893f", shade: "#8d4a1c", light: "#f0d2ad", pink: "#d98c85", iris: "#c46a1c", stripes: 0.8, tipping: 0 }, // red tabby
-];
+type Look = { colors: Record<string, string>; extra?: Partial<Palette> };
+const coat = (coatBase: string, coatShade: string, coatHighlight: string, outline = "#333333") => ({ coatBase, coatShade, coatHighlight, outline });
+/** A few coats per species, as the app would send them (plus palette tweaks for demos). */
+const LOOKS: Record<string, Look[]> = {
+  cat: [
+    { colors: coat("#ecd3ad", "#c49a68", "#f8eedd"), extra: { tipping: 0 } }, // cream, copper eyes
+    { colors: coat("#eceef0", "#5b5f66", "#fafafa"), extra: { iris: "#3f9a5a", irisOuter: "#2c4a22", tipping: 0.8 } }, // silver chinchilla
+    { colors: coat("#d2893f", "#8d4a1c", "#f0d2ad"), extra: { stripes: 0.8, tipping: 0 } }, // red tabby
+  ],
+  dog: [{ colors: coat("#D98A4A", "#B86C2E", "#F2B57E") }, { colors: coat("#2c2522", "#1a1513", "#c98a4b") }, { colors: coat("#e8d2b0", "#c9aa80", "#fbf3e6") }],
+  hamster: [{ colors: coat("#E3A564", "#C4843F", "#F3C98F") }, { colors: coat("#d9d4cc", "#a59d92", "#f6f3ee") }, { colors: coat("#8a7464", "#5f4e42", "#e8ddd0") }],
+  parrot: [{ colors: coat("#D2232A", "#A3161C", "#E9503F") }, { colors: coat("#1F6FC0", "#154F8F", "#F2C12E") }, { colors: coat("#5E9A3A", "#3F7024", "#8CC05A") }],
+};
 
 const t0 = performance.now();
-catShape();
+for (const s of species) SPECIES_3D[s]?.shape();
 const buildMs = performance.now() - t0;
 
 const cats = Array.from({ length: pets }, (_, i) => {
+  const name = species[i % species.length];
+  const def = SPECIES_3D[name];
   const canvas = document.createElement("canvas");
   Object.assign(canvas.style, { left: `${40 + i * (size + 30)}px`, top: "40px", width: `${size}px`, height: `${size}px` });
   document.body.appendChild(canvas);
-  const cat = new Cat3D(canvas, LOOKS[(num("look", 0) + i) % LOOKS.length], quality);
+  const looks = LOOKS[name] ?? LOOKS.cat;
+  const look = looks[(num("look", 0) + Math.floor(i / species.length)) % looks.length];
+  const cat = new Pet3D(canvas, def, { ...def.palette(look.colors), ...look.extra });
+  if (q.has("shells")) cat.setShells(num("shells", def.fur.shells));
   cat.mood = (q.get("mood") as Mood) ?? "content";
   cat.setSize(size, dpr);
   // ?face=1 frames the head, for checking detail
   if (q.get("face") === "1") {
-    cat.camera.position.set(-0.25, 0.72, 0.95);
-    cat.camera.lookAt(0.02, 0.68, 0);
+    const h = def.eyes.at;
+    cat.camera.position.set(-0.25, h[1] - 0.06, h[2] + 0.8);
+    cat.camera.lookAt(0.02, h[1] - 0.1, 0);
   }
   return { cat, canvas };
 });
@@ -81,9 +97,9 @@ function frame(now: number) {
     windowStart = now;
   }
   if (stats && now - windowStart > 1000) {
-    const s = catShape();
+    const s = SPECIES_3D[species[0]].shape();
     stats.textContent =
-      `${pets} pet(s) · ${size}pt · dpr ${dpr} · ${quality.shells} shells · ${s.index.length / 3} tris/shell · build ${buildMs.toFixed(0)} ms\n` +
+      `${pets} pet(s) · ${size}pt · dpr ${dpr} · ${species.join("+")} · ${s.index.length / 3} tris/shell · build ${buildMs.toFixed(0)} ms\n` +
       `${((frames * 1000) / (now - windowStart)).toFixed(0)} fps · JS+GL submit ${(work / frames).toFixed(2)} ms/frame`;
     frames = 0;
     work = 0;
