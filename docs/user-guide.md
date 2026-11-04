@@ -27,7 +27,7 @@ Strays needs a **fine-grained** personal access token with one permission. Class
 
 1. In Strays, open **Settings → Privacy & Permissions → Connect GitHub…**. The button there opens GitHub's token page.
 2. On GitHub, create a fine-grained token:
-   - **Expiration:** your choice. Strays reminds you 7 days and 1 day before it expires.
+   - **Expiration:** your choice. From a week before, the menu bar shows ⏳ and the menu offers to paste a new one; a pet on screen also mentions it a week before and the day before.
    - **Repository access:** **All repositories** lets Strays notice new repos. **Only select repositories** works too, but new repos aren't detected.
    - **Permissions:** **Metadata: Read-only**, and nothing else.
 3. Paste the token into Strays. Before saving, it shows the account, how many repos it sees and when it expires.
@@ -64,6 +64,7 @@ Clicks go straight through pets, so they never get in your way. Hold **⌥ Optio
 Every action is also in the 🐾 menu. The modifier key can be changed in **Settings → Interaction**.
 
 - **Snooze** hides a pet for a while: an hour, four hours, until tomorrow morning, three days, until a time you pick (in its card), or until you wake it. Its hunger keeps counting.
+- A pet for a folder with no GitHub repo starts on the **Slow-burn** pace, since only this Mac's commits count for it.
 - **Pause** is for a deliberate break. Its hunger stops. In the card you can pick a day it comes back on its own.
 - **Vacation mode** (menu bar) pauses every pet.
 - **Mark release…** sends the pet on a short holiday. It asks for a second click first, and in the card you can add the version you shipped.

@@ -122,7 +122,7 @@ export function renderWelcome(root: HTMLElement, state: UiState, notice: (msg: s
             const species = SPECIES[i % SPECIES.length];
             const looks = looksFor(species);
             const [kind, id] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
-            const msg = await api.adopt({ repoId: kind === "repo" ? Number(id) : null, folder: kind === "folder" ? id : null, species, colors: { ...looks[Math.floor(Math.random() * looks.length)] }, name: names[i % names.length], goal: "", pace: s.defaultPace });
+            const msg = await api.adopt({ repoId: kind === "repo" ? Number(id) : null, folder: kind === "folder" ? id : null, species, colors: { ...looks[Math.floor(Math.random() * looks.length)] }, name: names[i % names.length], goal: "", pace: kind === "folder" ? "slowBurn" : s.defaultPace });
             notice(msg);
           }
           void api.closeWindow("welcome");
