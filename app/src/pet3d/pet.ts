@@ -334,6 +334,8 @@ export class Pet3D {
   private wagging = false;
   private mem: Record<string, number> = {};
   private ownFast = false;
+  /** how many fur layers are drawn now */
+  shells = 0;
   mood: Mood = "content";
   /** Reduce Motion: only blinks and breathing, no glances, twitches or tail */
   still = false;
@@ -468,6 +470,10 @@ export class Pet3D {
   /** Changes how many fur layers are drawn (fewer is cheaper; the fur keeps its length). */
   setShells(shells: number) {
     const layers = new Float32Array(shells + 1).map((_, i) => i / shells);
+    this.shells = shells;
+    // ponytail: three.js keeps the old layer list's small GPU buffer until the pet is disposed; this
+    // runs a few times at most (the slow-frame guard), so that's a few bytes
+    if (this.furGeo.getAttribute("aShell")) this.furGeo.deleteAttribute("aShell");
     this.furGeo.setAttribute("aShell", new THREE.InstancedBufferAttribute(layers, 1));
     this.furGeo.instanceCount = layers.length;
   }
@@ -488,6 +494,11 @@ export class Pet3D {
   /** True while an action is running, so the page keeps the frame rate up. */
   get acting() {
     return this.action !== Action.none && this.action !== Action.sleep;
+  }
+
+  /** True while asleep: only breathing moves. */
+  get asleep() {
+    return this.action === Action.fallAsleep || this.action === Action.sleep;
   }
 
   /** Advances the motion by `dt` seconds. */

@@ -203,15 +203,15 @@ function rig3d(p: Pet): Rig | null {
     const rig = new Pet3DRig(p.el, SPECIES_3D[placed.species], placed.colors, log, () => {
       log(`WARN pet=${placed.id} lost its 3D drawing; switching to the drawn one`);
       const current = pets.get(placed.id);
-      if (current?.rig !== cat) return;
+      if (current?.rig !== pet3d) return;
       remove(placed.id);
       add(current.placed, true);
     });
-    const cat: Rig = Object.assign(rig, { continuous: true });
+    const pet3d: Rig = Object.assign(rig, { continuous: true });
     rig.number("mood", MOOD[placed.mood] ?? 2);
     rig.setLiveliness(mode, reduceMotion);
     log(`LOADED pet=${placed.id} colours=${Object.keys(placed.colors).length}/${Object.keys(placed.colors).length} rig=3d`);
-    return cat;
+    return pet3d;
   } catch (e) {
     log(`ERROR pet=${placed.id} can't draw in 3D (${String(e)}); using the drawn one`);
     return null;
