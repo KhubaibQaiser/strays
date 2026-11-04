@@ -29,7 +29,7 @@ export function renderCard(root: HTMLElement, state: UiState, id: string, notice
     root.replaceChildren(el("div", { class: "infocard" }, el("p", { class: "muted" }, "This pet is gone.")));
     return;
   }
-  const act = (action: string) => api.petAction(p.id, action).then((m) => notice(m)).catch((e) => notice(String(e), true));
+  const act = (action: string, extra: { until?: string; label?: string } = {}) => api.petAction(p.id, action, extra).then((m) => notice(m)).catch((e) => notice(String(e), true));
 
   const status =
     p.state === "active"
@@ -89,15 +89,29 @@ export function renderCard(root: HTMLElement, state: UiState, id: string, notice
     el("option", { value: "snooze-tomorrow" }, "Until tomorrow"),
     el("option", { value: "snooze-3d" }, "For 3 days"),
     el("option", { value: "snooze-wake" }, "Until I wake it"),
+    el("option", { value: "custom" }, "Until a time I pick…"),
   );
-  snooze.addEventListener("change", () => snooze.value && void act(snooze.value));
+  // a picked time: a date-and-time field and a button, shown only when asked for
+  const snoozeAt = el("input", { type: "datetime-local", "aria-label": "Snooze until" });
+  const snoozeGo = el("button", { onclick: () => snoozeAt.value && void act("snooze-until", { until: new Date(snoozeAt.value).toISOString() }) }, "Snooze");
+  const custom = el("div", { class: "row" }, snoozeAt, snoozeGo);
+  custom.hidden = true;
+  snooze.addEventListener("change", () => {
+    custom.hidden = snooze.value !== "custom";
+    if (snooze.value && snooze.value !== "custom") void act(snooze.value);
+  });
+  const resumeOn = el("input", { type: "date", "aria-label": "Pause until (optional)", title: "Pause until (optional)" });
+  // resumes at 09:00 local on the picked day
+  const pauseExtra = () => (resumeOn.value ? { until: new Date(`${resumeOn.value}T09:00`).toISOString() } : {});
+  const version = el("input", { type: "text", placeholder: "Version (optional)", "aria-label": "Release version (optional)", size: 12, maxlength: 40 });
 
   const buttons: (HTMLElement | null)[] = [
     el("button", { onclick: () => void act("sync") }, "Sync now"),
     p.state === "active" ? snooze : null,
+    p.state === "active" ? custom : null,
     // a release sends the pet away for days, so a slip of the mouse mustn't do it
-    p.state === "active" ? confirmButton("Mark release…", "Shipped it? Click again", () => void act("release")) : null,
-    p.state === "active" ? el("button", { onclick: () => void act("pause") }, "Pause") : null,
+    p.state === "active" ? el("div", { class: "row" }, version, confirmButton("Mark release…", "Shipped it? Click again", () => void act("release", version.value.trim() ? { label: version.value } : {}))) : null,
+    p.state === "active" ? el("div", { class: "row" }, el("button", { onclick: () => void act("pause", pauseExtra()) }, "Pause"), resumeOn) : null,
     p.state === "paused" ? el("button", { onclick: () => void act("resume") }, "Resume") : null,
     p.state === "snoozed" ? el("button", { onclick: () => void act("wake") }, "Wake now") : null,
     p.state === "shelter" ? el("button", { onclick: () => void act("adopt") }, "Adopt") : null,

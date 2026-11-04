@@ -184,9 +184,16 @@ pub fn ui_state(shared: State<'_, Shared>) -> UiState {
 
 /// Same action ids as the menus: `snooze-1h`, `wake`, `release`, …
 #[tauri::command]
-pub fn pet_action(id: Uuid, action: String, shared: State<'_, Shared>) -> Res<String> {
+pub fn pet_action(id: Uuid, action: String, until: Option<Time>, label: Option<String>, shared: State<'_, Shared>) -> Res<String> {
     logged("pet_action", move || -> Res<String> {
-        let event = menu::parse(&format!("pet/{id}/{action}")).ok_or("Unknown action")?;
+        use crate::state::{Action, Snooze};
+        // the card's extras: a picked snooze or pause end, and a release's version
+        let event = match (action.as_str(), until, label) {
+            ("snooze-until", Some(t), _) => menu::Event::Pet(id, Action::Snooze(Snooze::At(t))),
+            ("pause", Some(t), _) => menu::Event::Pet(id, Action::Pause(Some(t))),
+            ("release", _, Some(l)) => menu::Event::Pet(id, Action::Release(Some(l))),
+            _ => menu::parse(&format!("pet/{id}/{action}")).ok_or("Unknown action")?,
+        };
         match event {
             menu::Event::SyncPet(pet) => {
                 let _ = shared.tx.send(Cmd::SyncNow(Some(pet)));

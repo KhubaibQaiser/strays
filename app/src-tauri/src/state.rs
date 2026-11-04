@@ -119,20 +119,24 @@ pub struct Issue {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Snooze {
+    /// a time the user picked
+    At(Time),
     Hours(i64),
     Tomorrow,
     Days(i64),
     UntilWake,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     Adopt,
     Snooze(Snooze),
     Wake,
-    Pause,
+    /// until a date the user picked, or until resumed
+    Pause(Option<Time>),
     Resume,
-    Release,
+    /// with the version the user typed, if any
+    Release(Option<String>),
     Graduate,
     LetGo,
     UndoLetGo,
@@ -595,7 +599,14 @@ impl App {
         let p = self.pets.iter_mut().find(|p| p.id == id).ok_or("No such pet")?;
         let name = p.name.clone();
         let refused = |e: pet::Refused| e.to_string();
+        // a picked time must be ahead, and within a year (§5.6)
+        let picked = |t: Time| if t > now && t < now + Duration::days(365) { Ok(t) } else { Err("Pick a time between now and a year from now".to_string()) };
         let msg = match action {
+            Action::Snooze(Snooze::At(t)) => {
+                p.snooze(now, Some(picked(t)?)).map_err(refused)?;
+                self.cues.push((id, Cue::FallAsleep));
+                format!("{name} is asleep until {}", t.with_timezone(&Local).format("%a %-d %b, %H:%M"))
+            }
             Action::Adopt if !slot_free => return Err("All adoption slots are full".into()),
             Action::Adopt => {
                 p.adopt(now).map_err(refused)?;
@@ -608,18 +619,24 @@ impl App {
                 format!("{name} is asleep")
             }
             Action::Wake => p.wake(now).map(|_| format!("{name} woke up")).map_err(refused)?,
-            Action::Pause => p.pause(now, None).map(|_| format!("{name} is paused")).map_err(refused)?,
+            Action::Pause(None) => p.pause(now, None).map(|_| format!("{name} is paused")).map_err(refused)?,
+            Action::Pause(Some(t)) => p.pause(now, Some(picked(t)?)).map(|_| format!("{name} is paused until {}", t.with_timezone(&Local).format("%a %-d %b"))).map_err(refused)?,
             Action::Resume => p.resume(now).map(|_| format!("{name} is back")).map_err(refused)?,
-            Action::Release => match p.mark_release(now, None, &settings).map_err(refused)? {
-                ReleaseOutcome::Holiday { .. } => {
-                    self.cues.push((id, Cue::Celebrate { leave: true }));
-                    format!("Shipped! {name} is taking a little holiday")
+            Action::Release(label) => {
+                // a short version label, like "v1.2"; anything blank or odd is just left out
+                let label: Option<String> = label.map(|l| l.trim().chars().filter(|c| !c.is_control()).take(40).collect()).filter(|l: &String| !l.is_empty());
+                let shipped = label.as_deref().map_or("Shipped!".to_string(), |l| format!("Shipped {l}!"));
+                match p.mark_release(now, label, &settings).map_err(refused)? {
+                    ReleaseOutcome::Holiday { .. } => {
+                        self.cues.push((id, Cue::Celebrate { leave: true }));
+                        format!("{shipped} {name} is taking a little holiday")
+                    }
+                    ReleaseOutcome::CelebrationOnly { reason } => {
+                        self.cues.push((id, Cue::Celebrate { leave: false }));
+                        format!("{shipped} ({reason}, so no holiday)")
+                    }
                 }
-                ReleaseOutcome::CelebrationOnly { reason } => {
-                    self.cues.push((id, Cue::Celebrate { leave: false }));
-                    format!("Shipped! ({reason}, so no holiday)")
-                }
-            },
+            }
             Action::Graduate => {
                 p.graduate(now, "Marked finished").map_err(refused)?;
                 self.cues.push((id, Cue::graduate(p)));
@@ -1056,6 +1073,7 @@ fn needed_folders<'a>(settings: &'a Settings, pets: &'a [Pet], now: Time) -> Vec
 /// "Until tomorrow" means 09:00 local the next day (§5.6).
 pub fn snooze_until(s: Snooze, now: Time) -> Option<Time> {
     match s {
+        Snooze::At(t) => Some(t),
         Snooze::Hours(h) => Some(now + Duration::hours(h)),
         Snooze::Days(d) => Some(now + Duration::days(d)),
         Snooze::UntilWake => None,
