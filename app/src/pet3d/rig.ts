@@ -26,6 +26,10 @@ export class Cat3DRig {
   private last = 0;
   private fps: [number, number] = FPS.calm;
   private warnedAccessory = false;
+  private software = false;
+  /** smoothed milliseconds per drawn frame, and how far the frame rate has been cut because of it */
+  private cost = 0;
+  private slow = 1;
 
   /** Throws if WebGL isn't available. `onLost` runs if the GPU drops the context later. */
   constructor(
@@ -35,6 +39,15 @@ export class Cat3DRig {
     onLost: () => void,
   ) {
     this.cat = new Cat3D(canvas, lookFor(colors), { shells: 28, furLen: 0.07, density: 150 });
+    // without a GPU (software WebGL, e.g. in a VM) full fur would starve the whole page
+    const gl = this.cat.renderer.getContext();
+    const info = gl.getExtension("WEBGL_debug_renderer_info");
+    const gpu = String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    if (/swiftshader|llvmpipe|softpipe|software/i.test(gpu)) {
+      this.cat.setShells(6);
+      this.software = true;
+      log(`WARN no GPU for the 3D cat (${gpu}); drawing it with less fur and fewer frames`);
+    }
     canvas.addEventListener("webglcontextlost", (e) => {
       e.preventDefault();
       this.pause();
@@ -44,7 +57,7 @@ export class Cat3DRig {
 
   /** How it moves: `still` (Reduce Motion) keeps only blinks and breathing. */
   setLiveliness(level: Liveliness, still: boolean) {
-    this.fps = FPS[level];
+    this.fps = this.software ? [8, 4] : FPS[level];
     this.cat.still = still;
   }
 
@@ -62,11 +75,19 @@ export class Cat3DRig {
 
   private tick = (now: number) => {
     this.raf = requestAnimationFrame(this.tick);
-    const rate = this.cat.fast || this.cat.acting ? this.fps[0] : this.fps[1];
+    const rate = (this.cat.fast || this.cat.acting ? this.fps[0] : this.fps[1]) / this.slow;
     if (now - this.last < 1000 / rate - 2) return;
+    const start = performance.now();
     this.cat.update((now - this.last) / 1000);
     this.cat.render();
     this.last = now;
+    // frames that cost more than a fifth of their slot get fewer of them, so a slow machine stays usable
+    this.cost = this.cost * 0.9 + (performance.now() - start) * 0.1;
+    if (this.cost > 200 / rate && this.slow < 8) {
+      this.slow *= 2;
+      this.cost = 0;
+      this.log(`WARN the 3D cat takes ${(200 / rate).toFixed(0)}+ ms a frame; drawing it ${this.slow}× less often`);
+    }
   };
 
   number(name: string, value: number) {

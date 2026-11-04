@@ -271,6 +271,7 @@ export class Cat3D {
   private scale = Object.assign(new Spring(7, 0.55), { x: 1, target: 1 });
   private turn = new Spring(2.5, 0.9);
   private root!: THREE.Group;
+  private furGeo!: THREE.InstancedBufferGeometry;
   private action: Action = Action.none;
   private actionT0 = 0;
   mood: Mood = "content";
@@ -319,7 +320,7 @@ export class Cat3D {
 
     // the fur: the skin plus `shells` layers, drawn as instances of one skinned mesh
     const s = catShape();
-    const geo = new THREE.InstancedBufferGeometry();
+    const geo = (this.furGeo = new THREE.InstancedBufferGeometry());
     geo.setAttribute("position", new THREE.BufferAttribute(s.position, 3));
     geo.setAttribute("normal", new THREE.BufferAttribute(s.normal, 3));
     geo.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(s.skinIndex, 4));
@@ -382,6 +383,13 @@ export class Cat3D {
     shadow.position.set(0.05, 0.001, -0.08);
     root.add(shadow);
     this.disposables.push(sTex, sGeo, sMat);
+  }
+
+  /** Changes how many fur layers are drawn (fewer is cheaper; the fur keeps its length). */
+  setShells(shells: number) {
+    const layers = new Float32Array(shells + 1).map((_, i) => i / shells);
+    this.furGeo.setAttribute("aShell", new THREE.InstancedBufferAttribute(layers, 1));
+    this.furGeo.instanceCount = layers.length;
   }
 
   setSize(px: number, dpr: number) {

@@ -7,6 +7,8 @@ const emit = (page: import("@playwright/test").Page, event: string, payload: unk
   page.evaluate(([e, p]) => (window as unknown as { __emit: (e: string, p: unknown) => void }).__emit(e as string, p), [event, payload]);
 
 test("moods pick poses, and a release cue celebrates then leaves", async ({ page }) => {
+  // the celebrate, exit and fade sequence alone runs ~17 s, more than half the default limit
+  test.setTimeout(60_000);
   await mockApp(page);
   await page.setViewportSize({ width: 660, height: 240 });
   await page.goto("/index.html");
