@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "welcome",
-  "description": "First run",
+  "description": "First run, ending with adopting existing projects",
   "windows": [
     "welcome"
   ],
@@ -13,6 +13,7 @@
     "allow-open-window",
     "allow-pick-folder",
     "allow-save-settings",
-    "allow-report-problem"
+    "allow-report-problem",
+    "allow-adopt"
   ]
 }
