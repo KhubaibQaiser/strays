@@ -19,8 +19,13 @@ use crate::{menu, windows};
 type Res<T> = Result<T, String>;
 
 /// A command's failure is shown by the window that asked; it goes to the log too.
-fn logged<T>(command: &str, r: Res<T>) -> Res<T> {
-    r.inspect_err(|e| crate::log::warn(&format!("{command}: {e}")))
+fn logged<T>(command: &str, run: impl FnOnce() -> Res<T>) -> Res<T> {
+    run().inspect_err(|e| crate::log::warn(&format!("{command}: {e}")))
+}
+
+/// The same for async commands.
+async fn logged_async<T>(command: &str, run: impl std::future::Future<Output = Res<T>>) -> Res<T> {
+    run.await.inspect_err(|e| crate::log::warn(&format!("{command}: {e}")))
 }
 
 #[derive(Serialize)]
@@ -180,7 +185,7 @@ pub fn ui_state(shared: State<'_, Shared>) -> UiState {
 /// Same action ids as the menus: `snooze-1h`, `wake`, `release`, …
 #[tauri::command]
 pub fn pet_action(id: Uuid, action: String, shared: State<'_, Shared>) -> Res<String> {
-    logged("pet_action", (move || -> Res<String> {
+    logged("pet_action", move || -> Res<String> {
         let event = menu::parse(&format!("pet/{id}/{action}")).ok_or("Unknown action")?;
         match event {
             menu::Event::SyncPet(pet) => {
@@ -194,48 +199,48 @@ pub fn pet_action(id: Uuid, action: String, shared: State<'_, Shared>) -> Res<St
             }
             _ => Err("Unknown action".into()),
         }
-    })())
+    })
 }
 
 #[tauri::command]
 pub fn set_goal(id: Uuid, goal: Goal, shared: State<'_, Shared>) -> Res<()> {
-    logged("set_goal", (move || -> Res<()> {
+    logged("set_goal", move || -> Res<()> {
         shared.app.lock().unwrap().set_goal(id, goal)?;
         changed(&shared);
         Ok(())
-    })())
+    })
 }
 
 #[tauri::command]
 pub fn set_pet(id: Uuid, name: String, pace: Pace, liveliness: Option<Liveliness>, shared: State<'_, Shared>) -> Res<()> {
-    logged("set_pet", (move || -> Res<()> {
+    logged("set_pet", move || -> Res<()> {
         shared.app.lock().unwrap().set_pet(id, name, pace, liveliness)?;
         changed(&shared);
         Ok(())
-    })())
+    })
 }
 
 #[tauri::command]
 pub fn adopt(request: AdoptRequest, shared: State<'_, Shared>) -> Res<String> {
-    logged("adopt", (move || -> Res<String> {
+    logged("adopt", move || -> Res<String> {
         let r = shared.app.lock().unwrap().adopt(request, Utc::now());
         changed(&shared);
         r
-    })())
+    })
 }
 
 #[tauri::command]
 pub fn save_settings(settings: Settings, shared: State<'_, Shared>) -> Res<()> {
-    logged("save_settings", (move || -> Res<()> {
+    logged("save_settings", move || -> Res<()> {
         let r = shared.app.lock().unwrap().save_settings(settings);
         changed(&shared);
         r
-    })())
+    })
 }
 
 #[tauri::command]
 pub fn set_flag(name: String, on: bool, shared: State<'_, Shared>) -> Res<()> {
-    logged("set_flag", (move || -> Res<()> {
+    logged("set_flag", move || -> Res<()> {
         let mut app = shared.app.lock().unwrap();
         match name.as_str() {
             "presentation" => app.flags.presentation = on,
@@ -246,28 +251,28 @@ pub fn set_flag(name: String, on: bool, shared: State<'_, Shared>) -> Res<()> {
         drop(app);
         changed(&shared);
         Ok(())
-    })())
+    })
 }
 
 /// Settings → Sound → Test: plays a greeting at the chosen volume, even with sound off.
 #[tauri::command]
 pub fn test_sound(shared: State<'_, Shared>) -> Res<()> {
-    logged("test_sound", (move || -> Res<()> {
+    logged("test_sound", move || -> Res<()> {
         let volume = shared.app.lock().map_err(|_| "busy")?.settings.volume;
         crate::audio::check_output()?;
         shared.audio.play(crate::audio::Sound::Greeting(strays_core::pet::Species::Cat), volume);
         Ok(())
-    })())
+    })
 }
 
 /// Settings → Privacy → Launch at login. macOS keeps the state (System Settings → Login Items), so nothing is saved here.
 #[tauri::command]
 pub fn set_login_item(on: bool, h: AppHandle) -> Res<crate::platform::LoginItem> {
-    logged("set_login_item", (move || -> Res<crate::platform::LoginItem> {
+    logged("set_login_item", move || -> Res<crate::platform::LoginItem> {
         let state = crate::platform::set_login_item(on)?;
         emit_changed(&h);
         Ok(state)
-    })())
+    })
 }
 
 /// Settings → "Dismiss": hides the current problems; any that happen again come back.
@@ -313,7 +318,7 @@ fn describe(e: github::GhError) -> String {
 /// Setup step 2 (§6.2): checks a pasted token without saving it.
 #[tauri::command]
 pub async fn token_check(token: String, shared: State<'_, Shared>) -> Res<TokenCheck> {
-    logged("token_check", async move {
+    logged_async("token_check", async move {
         let app = shared.app.clone();
         tauri::async_runtime::spawn_blocking(move || {
             let gh = client(&token)?;
@@ -324,13 +329,14 @@ pub async fn token_check(token: String, shared: State<'_, Shared>) -> Res<TokenC
         })
         .await
         .map_err(|e| e.to_string())?
-    }.await)
+    })
+    .await
 }
 
 /// Setup step 4: validates again, stores the token in the Keychain and starts the first sync.
 #[tauri::command]
 pub async fn token_save(token: String, shared: State<'_, Shared>) -> Res<()> {
-    logged("token_save", async move {
+    logged_async("token_save", async move {
         let app = shared.app.clone();
         let tx = shared.tx.clone();
         tauri::async_runtime::spawn_blocking(move || {
@@ -354,13 +360,14 @@ pub async fn token_save(token: String, shared: State<'_, Shared>) -> Res<()> {
         })
         .await
         .map_err(|e| e.to_string())?
-    }.await)
+    })
+    .await
 }
 
 /// Deletes the Keychain item straight away (§6.4). Pets keep their data and freeze.
 #[tauri::command]
 pub fn token_disconnect(shared: State<'_, Shared>) -> Res<()> {
-    logged("token_disconnect", (move || -> Res<()> {
+    logged("token_disconnect", move || -> Res<()> {
         crate::token::delete()?;
         let mut app = shared.app.lock().unwrap();
         app.has_token = false;
@@ -371,7 +378,7 @@ pub fn token_disconnect(shared: State<'_, Shared>) -> Res<()> {
         drop(app);
         changed(&shared);
         Ok(())
-    })())
+    })
 }
 
 #[tauri::command]
@@ -398,26 +405,26 @@ pub async fn pick_folder(h: AppHandle) -> Option<String> {
 
 #[tauri::command]
 pub fn open_github(id: Uuid, shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
-    logged("open_github", (move || -> Res<()> {
+    logged("open_github", move || -> Res<()> {
         let app = shared.app.lock().unwrap();
         let repo = app.pets.iter().find(|p| p.id == id).and_then(|p| p.project.github.clone()).ok_or("Not on GitHub")?;
         h.opener().open_url(format!("https://github.com/{}", repo.full_name), None::<&str>).map_err(|e| e.to_string())
-    })())
+    })
 }
 
 #[tauri::command]
 pub fn reveal(id: Uuid, shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
-    logged("reveal", (move || -> Res<()> {
+    logged("reveal", move || -> Res<()> {
         let app = shared.app.lock().unwrap();
         let path = app.pets.iter().find(|p| p.id == id).and_then(|p| p.project.local.clone()).map(|l| l.path).ok_or("No local folder")?;
         h.opener().reveal_item_in_dir(path).map_err(|e| e.to_string())
-    })())
+    })
 }
 
 /// Opens one of a fixed set of pages in the browser; the web view can't name arbitrary URLs.
 #[tauri::command]
 pub fn open_link(which: String, shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
-    logged("open_link", (move || -> Res<()> {
+    logged("open_link", move || -> Res<()> {
         let url = match which.as_str() {
             "token-page" => "https://github.com/settings/personal-access-tokens/new".to_string(),
             "new-issue" => format!("https://github.com/{}/issues/new", strays_core::github::RELEASES_REPO),
@@ -428,7 +435,7 @@ pub fn open_link(which: String, shared: State<'_, Shared>, h: AppHandle) -> Res<
             _ => return Err("Unknown link".into()),
         };
         h.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
-    })())
+    })
 }
 
 #[tauri::command]
@@ -476,33 +483,33 @@ pub(crate) fn shareable_log(app: &App, tail: Option<usize>) -> String {
 /// Settings → Privacy → "Save log for a bug report": the scrubbed log as one file, revealed in Finder.
 #[tauri::command]
 pub fn save_log(shared: State<'_, Shared>, h: AppHandle) -> Res<String> {
-    logged("save_log", (move || -> Res<String> {
+    logged("save_log", move || -> Res<String> {
         let app = shared.app.lock().unwrap();
         let path = app.dir.join(format!("strays-log-{}.txt", Utc::now().format("%Y%m%d-%H%M%S")));
         std::fs::write(&path, shareable_log(&app, None)).map_err(|e| format!("Couldn't save the log: {e}"))?;
         drop(app);
         h.opener().reveal_item_in_dir(&path).map_err(|e| e.to_string())?;
         Ok(path.display().to_string())
-    })())
+    })
 }
 
 /// What "Send log" would send, for the user to read first.
 #[tauri::command]
 pub fn log_preview(shared: State<'_, Shared>) -> Res<String> {
-    logged("log_preview", (move || -> Res<String> {
+    logged("log_preview", move || -> Res<String> {
         if !crate::report::available() {
             return Err("This build can't send logs; save it for a bug report instead".into());
         }
         let text = shareable_log(&shared.app.lock().unwrap(), Some(SENT_LINES));
         *PREVIEWED.lock().unwrap() = Some(text.clone());
         Ok(text)
-    })())
+    })
 }
 
 /// Sends the log the user just previewed to the developer (PostHog), once, when they ask.
 #[tauri::command]
 pub async fn send_log(shared: State<'_, Shared>) -> Res<()> {
-    logged("send_log", async move {
+    logged_async("send_log", async move {
         let text = PREVIEWED.lock().unwrap().take().ok_or("Look at the log first (Send log…)")?;
         let id = {
             let mut app = shared.app.lock().unwrap();
@@ -528,43 +535,44 @@ pub async fn send_log(shared: State<'_, Shared>) -> Res<()> {
         drop(app);
         let _ = shared.tx.send(crate::Cmd::Changed);
         result.map_err(|e| format!("The log wasn't sent: {e}"))
-    }.await)
+    })
+    .await
 }
 
 /// Settings → Privacy → "Show log": the file to attach to a bug report.
 #[tauri::command]
 pub fn reveal_log(h: AppHandle) -> Res<()> {
-    logged("reveal_log", (move || -> Res<()> {
+    logged("reveal_log", move || -> Res<()> {
         let path = crate::log::path().filter(|p| p.exists()).ok_or("Nothing has been logged yet")?;
         h.opener().reveal_item_in_dir(path).map_err(|e| e.to_string())
-    })())
+    })
 }
 
 #[tauri::command]
 pub fn open_data_folder(shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
-    logged("open_data_folder", (move || -> Res<()> {
+    logged("open_data_folder", move || -> Res<()> {
         let dir = shared.app.lock().unwrap().dir.clone();
         h.opener().open_path(dir.display().to_string(), None::<&str>).map_err(|e| e.to_string())
-    })())
+    })
 }
 
 /// Writes every pet, the settings and the sync state into one JSON file and reveals it. No token.
 #[tauri::command]
 pub fn export_data(shared: State<'_, Shared>, h: AppHandle) -> Res<String> {
-    logged("export_data", (move || -> Res<String> {
+    logged("export_data", move || -> Res<String> {
         let app = shared.app.lock().unwrap();
         let export = serde_json::json!({ "pets": app.pets, "settings": app.settings, "sync": app.sync, "account": app.account });
         let path = app.dir.join(format!("strays-export-{}.json", Utc::now().format("%Y%m%d-%H%M%S")));
         std::fs::write(&path, serde_json::to_vec_pretty(&export).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         h.opener().reveal_item_in_dir(&path).map_err(|e| format!("Exported to {}, but Finder couldn't show it: {e}", path.display()))?;
         Ok(path.display().to_string())
-    })())
+    })
 }
 
 /// §8.5 "Delete everything": the Keychain item, every data file and log, then quit.
 #[tauri::command]
 pub fn delete_everything(confirm: String, shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
-    logged("delete_everything", (move || -> Res<()> {
+    logged("delete_everything", move || -> Res<()> {
         if confirm != "DELETE" {
             return Err("Type DELETE to confirm".into());
         }
@@ -605,12 +613,12 @@ pub fn delete_everything(confirm: String, shared: State<'_, Shared>, h: AppHandl
         }
         h.exit(0);
         Ok(())
-    })())
+    })
 }
 
 #[tauri::command]
 pub fn open_window(kind: String, arg: Option<String>, h: AppHandle) -> Res<()> {
-    logged("open_window", (move || -> Res<()> {
+    logged("open_window", move || -> Res<()> {
         let arg = arg.unwrap_or_default();
         match kind.as_str() {
             "settings" => windows::settings(&h, if arg.is_empty() { "pets" } else { &arg }),
@@ -620,12 +628,12 @@ pub fn open_window(kind: String, arg: Option<String>, h: AppHandle) -> Res<()> {
             _ => return Err("Unknown window".into()),
         }
         .map_err(|e| e.to_string())
-    })())
+    })
 }
 
 #[tauri::command]
 pub fn close_window(label: String, window: tauri::Window, h: AppHandle) -> Res<()> {
-    logged("close_window", (move || -> Res<()> {
+    logged("close_window", move || -> Res<()> {
         // a page closes its own window, never another (the overlay, Settings)
         if label != window.label() {
             return Err(format!("The {} window can't close the {label} window", window.label()));
@@ -634,7 +642,7 @@ pub fn close_window(label: String, window: tauri::Window, h: AppHandle) -> Res<(
             Some(w) => w.close().map_err(|e| e.to_string()),
             None => Ok(()),
         }
-    })())
+    })
 }
 
 /// Windows re-fetch `ui_state` when they hear this.
