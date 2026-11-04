@@ -54,3 +54,38 @@ body.hidden > * {
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* ⌥-drag (§7.2): the grid fades in while a pet is dragged */
+#grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+#grid.shown,
+#grid.still {
+  opacity: 1;
+}
+#grid.still {
+  transition: none;
+}
+#grid .cell {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+  border-radius: 10px;
+  background: rgba(120, 170, 255, 0.06);
+}
+#grid .cell.taken {
+  background: rgba(0, 0, 0, 0.12);
+  border-style: dotted;
+}
+#grid .cell.target {
+  border: 2px solid rgba(120, 170, 255, 0.9);
+  background: rgba(120, 170, 255, 0.22);
+}
+canvas.dragging {
+  cursor: grabbing;
+  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.3));
+}

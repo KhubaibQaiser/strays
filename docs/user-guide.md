@@ -57,6 +57,7 @@ Clicks go straight through pets, so they never get in your way. Hold **⌥ Optio
 | ⌥ + hover | Pets freeze; this one shows its name, repo and mood |
 | ⌥ + click | Opens the pet's card: mood, goal checklist, sync, snooze, release, pause, graduate; under Pet settings, its name, pace and its own liveliness |
 | ⌥⇧ + click | Syncs this pet now |
+| ⌥ + drag | Moves the pet. A faint grid shows where pets can stand; let go and it settles in the nearest free spot, and stays there (also after a restart or a resolution change). **Put pets back in line** in the 🐾 menu undoes all moves. |
 
 Every action is also in the 🐾 menu. The modifier key can be changed in **Settings → Interaction**.
 

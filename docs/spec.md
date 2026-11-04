@@ -305,7 +305,7 @@ idleDays     = max(0, idleSpan − frozen − excluded) / 24h
 | ⌥ + hover | Outline, plus a tooltip: name · repo · mood (repo hidden in Presentation mode) |
 | ⌥ + click | Open the **info card** (§8.3) |
 | ⌥⇧ + click | Quick-sync this pet. The pet perks its ears; result shown as a tick or ⚠. |
-| ⌥ + drag | Move the pet. It snaps to the nearest valid edge spot, which becomes its home spot. |
+| ⌥ + drag | Move the pet. It snaps to the nearest free cell of a screen grid, shown faintly while dragging, and that cell becomes its home spot. **Put pets back in line** (menu) clears every home spot. |
 | ⌥ + right-click | Context menu: Snooze ▸ · Sync now · Mark release… · Pause · Graduate… · Pet settings · Hide for today |
 | Petting (⌥ + press and hold 1 s, moving < 4 pt) | Petted reaction animation. **No effect on mood.** Moving ≥ 4 pt while held counts as a drag; releasing within 1 s counts as a click. |
 
@@ -639,6 +639,7 @@ strays/
 - **Accurate mode** (`Contents: Read-only`): own commits only, default branch, bot filtering, automatic release detection from GitHub releases or tags.
 - **Cross-device sync**, user-controlled: export/import file → a user-chosen folder → a private GitHub save repo with a separate write token.
 - Windows release; Homebrew; localisation; more breeds and species; monorepo subfolders; linking several repos to one pet; GitLab/Bitbucket remote support.
+- **Drag pets into a screen grid:** ⌥ + drag moves a pet; each display is split into a grid of cells about one pet wide, and a dropped pet snaps into the nearest free cell, which becomes its home spot (kept across restarts and rotation, moved back on screen if the display layout changes). While a drag is under way a faint version of the grid fades in, with the cell under the cursor highlighted, and fades out on drop. Built; it replaces the edge-only snapping in §7.2. One display only until M4.
 - Paid cosmetic packs (the design keeps accessories data-driven).
 - Mobile companion (widget + app).
 

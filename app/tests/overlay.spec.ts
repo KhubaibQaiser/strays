@@ -136,3 +136,37 @@ test("a script error in the overlay is reported, not just logged", async ({ page
   const reported = () => page.evaluate(() => (window as unknown as { __calls: { cmd: string; args: { key?: string; text?: string } }[] }).__calls.filter((c) => c.cmd === "report_problem").map((c) => c.args));
   await expect.poll(reported).toContainEqual({ key: "script", text: expect.stringContaining("boom") });
 });
+
+test("with the modifier held, a pet can be dragged onto the grid; a press that doesn't move is a click", async ({ page }) => {
+  await mockApp(page);
+  await page.setViewportSize({ width: 800, height: 500 });
+  await page.goto("/index.html");
+  await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.some((c) => c.cmd === "overlay_ready"));
+  const grid = { x0: 580, y0: 280, cw: 140, ch: 140, cols: 5, rows: 3, s: 200 };
+  await emit(page, "overlay", { pets: [pet("a", "content", 580)], grid, liveliness: "gentle", reduceMotion: false, hidden: false });
+  await expect(page.locator("canvas")).toHaveCount(1, { timeout: 30_000 });
+  await emit(page, "hover", { id: "a", held: true });
+  const calls = (cmd: string) => page.evaluate((c) => (window as unknown as { __calls: { cmd: string; args: unknown }[] }).__calls.filter((x) => x.cmd === c).map((x) => x.args), cmd);
+
+  // a press and let go in place: a click
+  await page.mouse.move(680, 140);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect.poll(() => calls("pet_click")).toHaveLength(1);
+  expect(await calls("pet_drop")).toHaveLength(0);
+
+  // press, move: the grid shows; let go: Rust is asked to drop it there
+  await page.mouse.move(680, 140);
+  await page.mouse.down();
+  await page.mouse.move(500, 100, { steps: 5 });
+  await expect(page.locator("#grid .cell")).toHaveCount(15);
+  await expect(page.locator("#grid .cell.target")).toHaveCount(1);
+  await page.screenshot({ path: `${shots}/overlay-drag.png` });
+  await page.mouse.move(400, 60, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => calls("pet_drop")).toHaveLength(1);
+  const [drop] = (await calls("pet_drop")) as { id: string; x: number; y: number }[];
+  expect(drop).toEqual({ id: "a", x: 580 - 280, y: 20 - 80 });
+  await expect(page.locator("#grid")).toHaveCount(0);
+  expect(await calls("pet_click")).toHaveLength(1);
+});

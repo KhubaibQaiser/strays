@@ -236,6 +236,9 @@ pub fn build<Rt: Runtime>(h: &AppHandle<Rt>, app: &App) -> R<Menu<Rt>> {
     items.push(MenuItemKind::Check(CheckMenuItem::with_id(h, "presentation", "Presentation mode", true, app.flags.presentation, None::<&str>)?));
     items.push(MenuItemKind::Check(CheckMenuItem::with_id(h, "vacation", "Vacation mode", true, app.flags.vacation, None::<&str>)?));
     items.push(MenuItemKind::Check(CheckMenuItem::with_id(h, "hide-all", "Hide all pets", true, app.flags.hide_all, None::<&str>)?));
+    if app.pets.iter().any(|p| p.home.is_some()) {
+        items.push(item(h, "line-up", "Put pets back in line")?);
+    }
     items.push(sep(h)?);
     items.push(item(h, "adopt", "Adopt a pet…")?);
     if app.account.is_none() {
@@ -260,6 +263,7 @@ pub enum Event {
     Presentation,
     Vacation,
     HideAll,
+    LineUp,
     NewFolder(String, bool),
     Settings,
     Update,
@@ -311,6 +315,10 @@ pub fn apply(app: &mut App, event: Event, now: Time) -> Outcome {
             app.flags.hide_all = !app.flags.hide_all;
             Ok(None)
         }
+        Event::LineUp => {
+            app.clear_homes();
+            Ok(None)
+        }
         // the menu may be older than the list: a folder already decided on is left alone
         Event::NewFolder(path, _) if !app.new_folders.contains(&path) => Ok(None),
         Event::NewFolder(path, true) => return Outcome::Open(Window::Adopt(format!("folder={}", crate::windows::encode(&path)))),
@@ -357,6 +365,7 @@ pub fn parse(id: &str) -> Option<Event> {
         ["presentation"] => Event::Presentation,
         ["vacation"] => Event::Vacation,
         ["hide-all"] => Event::HideAll,
+        ["line-up"] => Event::LineUp,
         ["quit"] => Event::Quit,
         ["settings"] => Event::Settings,
         ["update"] => Event::Update,

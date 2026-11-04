@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pet-drop"
+description = "Enables the pet_drop command without any pre-configured scope."
+commands.allow = ["pet_drop"]
+
+[[permission]]
+identifier = "deny-pet-drop"
+description = "Denies the pet_drop command without any pre-configured scope."
+commands.deny = ["pet_drop"]

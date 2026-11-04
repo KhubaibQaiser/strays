@@ -131,6 +131,31 @@ pub(crate) fn solved(h: &AppHandle, key: &str) {
     let _ = shared.tx.send(Cmd::Changed);
 }
 
+/// The mouse went down on a pet, or was let go (§7.2): while it's down the overlay keeps the mouse.
+#[tauri::command]
+fn pet_press(id: Uuid, down: bool, shared: State<'_, Shared>) {
+    shared.overlay.press(id, down);
+}
+
+/// A pet was dragged and dropped with its canvas at window-local (x, y): it moves to the nearest free
+/// grid cell, which becomes its home spot. With no free cell it goes back where it was.
+#[tauri::command]
+fn pet_drop(id: Uuid, x: f64, y: f64, shared: State<'_, Shared>) {
+    shared.overlay.press(id, false);
+    let spot = shared.overlay.drop_spot(id, (x, y));
+    #[cfg(debug_assertions)]
+    println!("DROP pet={id} at={x},{y} home={spot:?}");
+    if let Some(home) = spot {
+        let mut app = shared.app.lock().unwrap();
+        match app.set_home(id, Some(home)) {
+            Ok(()) => app.resolve("move"),
+            Err(e) => app.warn("move", format!("Couldn't move the pet: {e}")),
+        }
+    }
+    // a frame goes out either way, so the pet settles in its cell or goes back
+    let _ = shared.tx.send(Cmd::Changed);
+}
+
 /// The webview asks for the current frame once it has loaded.
 #[tauri::command]
 fn overlay_ready(shared: State<'_, Shared>) {
@@ -232,6 +257,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             pet_click,
             report_problem,
+            pet_press,
+            pet_drop,
             overlay_ready,
             pet_log,
             commands::ui_state,

@@ -4,6 +4,8 @@
 //   harness target X Y W H SECONDS   normal-level window; prints "TARGET CLICK x,y" on mouse down
 //   harness move X Y                 move the cursor (global points, top-left origin)
 //   harness click X Y [opt]          left click, optionally with ⌥ flag
+//   harness drag X1 Y1 X2 Y2         ⌥-drag from one point to the other
+//   harness screen                   print the main display's width and height in points
 //   harness opt down|up              press or release the ⌥ key
 //   harness esc                      press Escape (closes an open menu)
 import AppKit
@@ -56,6 +58,26 @@ case "click":
         post(e)
         usleep(30_000)
     }
+case "screen": // the main display's size in points
+    let f = NSScreen.main?.frame ?? .zero
+    print(Int(f.width), Int(f.height))
+case "drag": // drag x1 y1 x2 y2: ⌥-press at the first point, move in steps, let go at the second
+    let (a, b) = (point(args[2], args[3]), point(args[4], args[5]))
+    func at(_ t: Double) -> CGPoint { CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t) }
+    let steps = 20
+    var e = CGEvent(mouseEventSource: src, mouseType: .leftMouseDown, mouseCursorPosition: a, mouseButton: .left)
+    e?.flags = .maskAlternate
+    post(e)
+    for i in 1...steps {
+        e = CGEvent(mouseEventSource: src, mouseType: .leftMouseDragged, mouseCursorPosition: at(Double(i) / Double(steps)), mouseButton: .left)
+        e?.flags = .maskAlternate
+        e?.post(tap: .cghidEventTap)
+        usleep(25_000)
+    }
+    usleep(200_000)
+    e = CGEvent(mouseEventSource: src, mouseType: .leftMouseUp, mouseCursorPosition: b, mouseButton: .left)
+    e?.flags = .maskAlternate
+    post(e)
 case "opt":
     let down = args[2] == "down"
     let e = CGEvent(keyboardEventSource: src, virtualKey: 58, keyDown: down) // 58 = left ⌥
@@ -65,6 +87,6 @@ case "opt":
 case "esc":
     for down in [true, false] { post(CGEvent(keyboardEventSource: src, virtualKey: 53, keyDown: down)) }
 default:
-    FileHandle.standardError.write("usage: harness target|move|click|opt|esc …\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: harness target|move|click|drag|screen|opt|esc …\n".data(using: .utf8)!)
     exit(2)
 }

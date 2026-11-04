@@ -57,6 +57,11 @@ pub fn fatal(title: &str, text: &str) {
     alert.runModal();
 }
 
+/// Whether the left mouse button is down right now, wherever the cursor is.
+pub fn mouse_down() -> bool {
+    NSEvent::pressedMouseButtons() & 1 != 0
+}
+
 /// Cursor in AppKit global points (bottom-left origin of the primary display).
 pub fn mouse_location() -> (f64, f64) {
     let p = NSEvent::mouseLocation();

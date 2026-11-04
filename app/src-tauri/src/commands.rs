@@ -743,8 +743,8 @@ mod tests {
         let full = full_app(&dir.join("full"));
         let empty = App::load(dir.join("empty")).unwrap();
         let ui = merge(&shape(&serde_json::to_value(snapshot(&full)).unwrap()), &shape(&serde_json::to_value(snapshot(&empty)).unwrap()));
-        let placed = |confused| crate::overlay::Placed { view: crate::state::PetView { id: Uuid::new_v4(), species: Species::Cat, colors: Default::default(), label: "Miso".into(), mood: strays_core::mood::Mood::Content, confused, liveliness: None }, x: 1.0, y: 2.0, s: 3.0 };
-        let frame = crate::overlay::Frame { pets: vec![placed(true)], liveliness: strays_core::settings::Liveliness::Calm, reduce_motion: false, hidden: false };
+        let placed = |confused| crate::overlay::Placed { view: crate::state::PetView { id: Uuid::new_v4(), species: Species::Cat, colors: Default::default(), label: "Miso".into(), mood: strays_core::mood::Mood::Content, confused, liveliness: None, home: None }, x: 1.0, y: 2.0, s: 3.0 };
+        let frame = crate::overlay::Frame { pets: vec![placed(true)], grid: Default::default(), liveliness: strays_core::settings::Liveliness::Calm, reduce_motion: false, hidden: false };
         let hovers = [crate::overlay::Hover { id: Some(Uuid::new_v4()), held: true }, crate::overlay::Hover { id: None, held: false }];
         let hover = merge(&shape(&serde_json::to_value(&hovers[0]).unwrap()), &shape(&serde_json::to_value(&hovers[1]).unwrap()));
         let feedback = shape(&serde_json::to_value(crate::Feedback { id: Uuid::new_v4(), ok: true, text: "✓".into() }).unwrap());

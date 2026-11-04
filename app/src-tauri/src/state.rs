@@ -183,6 +183,9 @@ pub struct PetView {
     pub confused: bool,
     /// Its own liveliness, if it doesn't follow the app's.
     pub liveliness: Option<strays_core::settings::Liveliness>,
+    /// Where the user dragged it, if anywhere.
+    #[serde(skip)]
+    pub home: Option<strays_core::pet::Home>,
 }
 
 pub fn mood_word(m: Mood) -> &'static str {
@@ -494,7 +497,7 @@ impl App {
                     Some(r) => format!("{} · {r} · {}", p.name, mood_word(mood)),
                     None => format!("{} · {}", p.name, mood_word(mood)),
                 };
-                PetView { id: p.id, species: p.species, colors: p.colors.clone(), label, mood, confused: p.missing_since.is_some(), liveliness: p.liveliness }
+                PetView { id: p.id, species: p.species, colors: p.colors.clone(), label, mood, confused: p.missing_since.is_some(), liveliness: p.liveliness, home: p.home }
             })
             .collect()
     }
@@ -925,6 +928,22 @@ impl App {
         p.liveliness = liveliness;
         self.save_pet(id);
         Ok(())
+    }
+
+    /// Moves a pet to a home spot, or (None) back into the automatic line-up.
+    pub fn set_home(&mut self, id: Uuid, home: Option<strays_core::pet::Home>) -> Result<(), String> {
+        let p = self.pets.iter_mut().find(|p| p.id == id).ok_or("No such pet")?;
+        p.home = home;
+        self.save_pet(id);
+        Ok(())
+    }
+
+    /// Puts every dragged pet back into the automatic line-up.
+    pub fn clear_homes(&mut self) {
+        let moved: Vec<Uuid> = self.pets.iter_mut().filter_map(|p| p.home.take().map(|_| p.id)).collect();
+        for id in moved {
+            self.save_pet(id);
+        }
     }
 
     /// Vacation mode pauses everyone (§5.10) and resumes exactly the pets it paused.
