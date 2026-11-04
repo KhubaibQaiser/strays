@@ -159,7 +159,19 @@ function missing(p: Pet, act: (action: string) => Promise<unknown>): HTMLElement
 
 function petSettings(p: Pet, notice: (msg: string, error?: boolean) => void): HTMLElement {
   const name = el("input", { type: "text", value: p.name, "aria-label": "Name" });
-  const pace = el("select", { "aria-label": "Pace" }, ...Object.entries(PACE_LABEL).map(([v, t]) => el("option", { value: v, selected: v === p.pace }, t)));
+  const custom = !!p.customThresholds;
+  const pace = el(
+    "select",
+    { "aria-label": "Pace" },
+    ...Object.entries(PACE_LABEL).map(([v, t]) => el("option", { value: v, selected: !custom && v === p.pace }, t)),
+    el("option", { value: "custom", selected: custom }, "Custom days…"),
+  );
+  // this pet's own mood days, shown when "Custom days…" is picked
+  const names = ["Joyful", "Content", "Peckish", "Hungry"];
+  const start = p.customThresholds ?? [2, 5, 10, 20];
+  const days = start.map((d, i) => el("input", { type: "number", min: 0.5, max: 365, step: 0.5, value: d, size: 4, "aria-label": `${names[i]} up to (days), this pet` }));
+  const daysRow = el("div", { class: "row small" }, ...days.flatMap((d, i) => [el("span", { class: "muted" }, `${names[i]} ≤`), d]), el("span", { class: "muted" }, "days, then Gloomy"));
+  daysRow.hidden = !custom;
   const motion = el(
     "select",
     { "aria-label": "Liveliness" },
@@ -167,9 +179,15 @@ function petSettings(p: Pet, notice: (msg: string, error?: boolean) => void): HT
   );
   const save = () => {
     const own = (motion.value || null) as Pet["liveliness"];
-    return api.setPet(p.id, name.value, pace.value as Pet["pace"], own).then(() => notice("Saved")).catch((e) => notice(String(e), true));
+    const isCustom = pace.value === "custom";
+    daysRow.hidden = !isCustom;
+    const th = isCustom ? (days.map((d) => Number(d.value)) as [number, number, number, number]) : null;
+    if (th && !th.every((v, i) => v > 0 && (i === 0 || v > th[i - 1]))) return notice("Each level must last longer than the one before it.", true);
+    // a custom pet keeps its last pace underneath, so switching back restores it
+    const keptPace = (isCustom ? p.pace : pace.value) as Pet["pace"];
+    return api.setPet(p.id, name.value, keptPace, own, th).then(() => notice("Saved")).catch((e) => notice(String(e), true));
   };
-  for (const c of [name, pace, motion]) c.addEventListener("change", save);
-  return el("details", {}, el("summary", {}, "Pet settings"), el("div", { class: "row" }, name, pace, motion));
+  for (const c of [name, pace, motion, ...days]) c.addEventListener("change", save);
+  return el("details", {}, el("summary", {}, "Pet settings"), el("div", { class: "row" }, name, pace, motion), daysRow);
 }
 
