@@ -1,0 +1,41 @@
+# cargo deny (spec §11): licences, crate sources and duplicates for both lockfiles, run in CI next to
+# cargo audit. Run from app/core or app/src-tauri: `cargo deny --manifest-path . check --config ../deny.toml`.
+
+[graph]
+# Strays ships for Apple Silicon Macs only (docs/gate-4.md)
+targets = ["aarch64-apple-darwin"]
+
+[licenses]
+# permissive licences only; every crate's licence today is one of these (checked with cargo metadata)
+allow = [
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "0BSD",
+  "Unicode-3.0",
+  "Unlicense",
+  "CC0-1.0",
+  # file-level copyleft, used by some of Tauri's CSS parsing crates; fine for an unmodified dependency
+  "MPL-2.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+# several versions of one crate are common in the Tauri tree; shown, not failed
+multiple-versions = "warn"
+# the app depends on strays-core by path, which counts as a wildcard
+wildcards = "warn"
+
+[sources]
+# crates.io only: no git or other registries
+unknown-registry = "deny"
+unknown-git = "deny"
+
+[advisories]
+# cargo audit fails the build on vulnerabilities; here unmaintained crates are only noted
+unmaintained = "none"

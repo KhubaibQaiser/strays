@@ -32,6 +32,9 @@ jobs:
       # known vulnerabilities in either lockfile fail the build; unmaintained/unsound notices are warnings
       - run: cargo install cargo-audit --version 0.22.2 --locked
       - run: cargo audit --file Cargo.lock && cargo audit --file ../src-tauri/Cargo.lock
+      # licences and sources (app/deny.toml); both crates' dependency trees
+      - run: cargo install cargo-deny --version 0.20.2 --locked
+      - run: cargo deny --manifest-path Cargo.toml check licenses sources bans --config ../deny.toml && cargo deny --manifest-path ../src-tauri/Cargo.toml check licenses sources bans --config ../deny.toml
 
   ui:
     runs-on: ubuntu-latest
