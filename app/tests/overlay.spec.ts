@@ -193,3 +193,25 @@ test("holding still on a pet pets it (no click), and a right-click opens its men
   await page.mouse.click(680, 140, { button: "right" });
   await expect.poll(() => calls("pet_menu")).toEqual([{ id: "a" }]);
 });
+
+test("every few hours a pet strolls a little way and back, but never with Reduce Motion", async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() => (Math.random = () => 0.9)); // the stroll, not the stretch
+  await mockApp(page);
+  await page.setViewportSize({ width: 800, height: 400 });
+  await page.goto("/index.html");
+  await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.some((c) => c.cmd === "overlay_ready"));
+  await emit(page, "overlay", { pets: [pet("a", "content", 500)], grid: { x0: 500, y0: 20, cw: 140, ch: 140, cols: 3, rows: 1, s: 200 }, liveliness: "gentle", reduceMotion: false, hidden: false });
+  await expect(page.locator("canvas")).toHaveCount(1, { timeout: 30_000 });
+  const left = () => page.locator("canvas").evaluate((c) => c.style.left);
+  // the first try may find it still settling into its pose; then the retry comes ten minutes later
+  await page.clock.fastForward(6 * 3_600_000);
+  if ((await left()) !== "380px") await page.clock.fastForward(11 * 60_000);
+  await expect.poll(left).toBe("380px"); // towards the middle: 0.6 of its 200 px canvas
+  await page.clock.fastForward(4000);
+  await expect.poll(left).toBe("500px");
+
+  await emit(page, "overlay", { pets: [pet("a", "content", 500)], grid: { x0: 500, y0: 20, cw: 140, ch: 140, cols: 3, rows: 1, s: 200 }, liveliness: "gentle", reduceMotion: true, hidden: false });
+  await page.clock.fastForward(6 * 3_600_000);
+  expect(await left()).toBe("500px");
+});

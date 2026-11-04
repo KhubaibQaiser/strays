@@ -47,7 +47,7 @@ type Rig = {
   continuous?: boolean;
   setLiveliness?(level: Liveliness, still: boolean): void;
 };
-type Pet = { el: HTMLCanvasElement; rig: Rig; placed: Placed; timer?: number; playing: boolean; busy: boolean; leaving: boolean; run: number };
+type Pet = { el: HTMLCanvasElement; rig: Rig; placed: Placed; timer?: number; playing: boolean; busy: boolean; leaving: boolean; run: number; big?: number };
 type Cue = "eat" | "fallAsleep" | "wake" | "postcard" | "hello" | { celebrate: { leave: boolean } } | { graduate: { accessory: number } };
 
 // The rig's `mood` and `action` view-model numbers (art/STYLE.md).
@@ -165,6 +165,34 @@ function schedule(p: Pet) {
   }, (lo + Math.random() * (hi - lo)) * 1000);
 }
 
+/** Big moves (§7.4): every 2–5 hours a pet stretches or strolls a little way and back, under 8 s.
+ *  Never with Reduce Motion, while the modifier is held, or while it's hidden or busy. */
+const BIG_EVERY_H: [number, number] = [2, 5];
+function scheduleBig(p: Pet) {
+  window.clearTimeout(p.big);
+  const [lo, hi] = BIG_EVERY_H;
+  p.big = window.setTimeout(() => bigMove(p), (lo + Math.random() * (hi - lo)) * 3_600_000);
+}
+function bigMove(p: Pet) {
+  if (!pets.has(p.placed.id)) return;
+  // not now: try again in ten minutes
+  if (reduceMotion || frozen || hidden || p.busy || p.leaving || press) {
+    p.big = window.setTimeout(() => bigMove(p), 600_000);
+    return;
+  }
+  scheduleBig(p);
+  if (Math.random() < 0.5) return void play(p, [[ACT.wake, CLIP_S[ACT.wake]]]); // a stretch and a yawn
+  // a stroll: a little way towards the middle of the screen and back, about 6 s
+  const dir = p.placed.x + p.placed.s / 2 > innerWidth / 2 ? -1 : 1;
+  const away = `${p.placed.x + dir * p.placed.s * 0.6}px`;
+  p.el.style.transition = "left 2.6s ease-in-out";
+  p.el.style.left = away;
+  window.setTimeout(() => {
+    if (p.el.style.left === away) p.el.style.left = `${p.placed.x}px`;
+    window.setTimeout(() => (p.el.style.transition = ""), 2700);
+  }, 3000);
+}
+
 function position(p: Pet) {
   if (press?.dragging && press.p === p) return;
   const { x, y, s } = p.placed;
@@ -264,6 +292,7 @@ function add(placed: Placed, forceRive = false) {
   }
   p.rig = rig;
   pets.set(placed.id, p);
+  scheduleBig(p);
   position(p);
   if (rig.continuous) void play(p, []);
   // the window only takes clicks while the user's chosen modifier is held (Rust decides, and says so
@@ -383,6 +412,7 @@ function remove(id: string) {
   const p = pets.get(id);
   if (!p) return;
   window.clearTimeout(p.timer);
+  window.clearTimeout(p.big);
   p.rig.cleanup();
   p.el.remove();
   pets.delete(id);
@@ -444,6 +474,13 @@ ready.push(listen<Frame>("overlay", ({ payload }) => {
 ready.push(listen<Hover>("hover", ({ payload }) => {
   if (payload.held !== frozen) {
     frozen = payload.held;
+    // a pet mid-stroll goes straight back to where the clicks expect it
+    if (frozen)
+      pets.forEach((p) => {
+        if (!p.el.style.transition.startsWith("left")) return;
+        p.el.style.transition = "";
+        position(p);
+      });
     pets.forEach(schedule);
   }
   document.querySelectorAll(".tooltip").forEach((b) => b.remove());
