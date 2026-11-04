@@ -591,16 +591,27 @@ pub fn delete_everything(confirm: String, shared: State<'_, Shared>, h: AppHandl
             failed.push(format!("the login item ({e})"));
         }
         let mut dirs = vec![app.dir.clone()];
+        let mut files: Vec<std::path::PathBuf> = Vec::new();
         // inside the sandbox, home is the app's own container, so its web view data is Strays' alone
         if std::env::var_os("APP_SANDBOX_CONTAINER_ID").is_some()
             && let Some(home) = std::env::var_os("HOME")
         {
             let lib = std::path::Path::new(&home).join("Library");
-            dirs.extend(["WebKit", "Caches/WebKit"].map(|d| lib.join(d)));
+            let id = h.config().identifier.clone();
+            // web view data, the URL cache and saved preferences: everything WebKit and macOS keep for the app
+            dirs.extend(["WebKit", "Caches/WebKit", "HTTPStorages", "Saved Application State"].map(|d| lib.join(d)));
+            dirs.extend([lib.join("Caches").join(&id), lib.join("HTTPStorages").join(&id)]);
+            files.push(lib.join("Preferences").join(format!("{id}.plist")));
         }
         for d in dirs {
             match std::fs::remove_dir_all(&d) {
                 Err(e) if e.kind() != std::io::ErrorKind::NotFound => failed.push(format!("{} ({e})", d.display())),
+                _ => {}
+            }
+        }
+        for f in files {
+            match std::fs::remove_file(&f) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => failed.push(format!("{} ({e})", f.display())),
                 _ => {}
             }
         }
