@@ -99,6 +99,8 @@ export type SpeciesDef = {
   shadow: { at: V3; size: [number, number] };
   bounds: { centre: V3; r: number };
   palette: (colors: Record<string, string>) => Palette;
+  /** false for a species that sleeps where it is (a parrot on its perch) rather than in a bed */
+  bed?: boolean;
   /** where graduation accessories sit (accessories.ts) */
   wear: import("./accessories").Wear;
   /** extra meshes (a perch), added once */

@@ -2,6 +2,7 @@
 // eyes, whiskers and a soft shadow, and moves it procedurally with springs, so nothing ever snaps.
 import * as THREE from "three";
 import { accessory } from "./accessories";
+import { Props } from "./props";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { AnimCtx, Palette, SpeciesDef } from "./species";
 
@@ -343,6 +344,8 @@ export class Pet3D {
   shaderError: string | null = null;
   /** the accessory being worn (0 none) and what it's made of */
   private worn = { n: 0, pieces: [] as THREE.Object3D[], parts: [] as { dispose(): void }[] };
+  private props: Props;
+  private propsFast = false;
   /** how many fur layers are drawn now */
   shells = 0;
   mood: Mood = "content";
@@ -478,6 +481,7 @@ export class Pet3D {
     this.disposables.push(sTex, sGeo, sMat);
 
     def.extras?.(root, this.bones, palette, (d) => this.disposables.push(d));
+    this.props = new Props(this.scene, def, (d) => this.disposables.push(d));
   }
 
   /** Changes how many fur layers are drawn (fewer is cheaper; the fur keeps its length). */
@@ -627,6 +631,17 @@ export class Pet3D {
     }
     if (def.tail) this.moveTail(def.tail, t, joyful, low, sleepy, A === Action.celebrate);
 
+    this.propsFast = this.props.update({
+      t,
+      dt,
+      bowl: A === Action.eat ? "eating" : !asleep && (this.mood === "peckish" || this.mood === "hungry") ? "empty" : "none",
+      eatAt: A === Action.eat ? at : 0,
+      rain: !asleep && this.mood === "gloomy",
+      asleep: sleepy,
+      confetti: A === Action.celebrate ? at : -1,
+      postcard: A === Action.postcard ? at : -1,
+    });
+
     let close = Math.max(low * 0.3, sleepy, purr * 0.85);
     if (def.animate) {
       const c: AnimCtx = { t, dt, bones: b, joyful, gloomy, asleep, still: this.still, action: A, at, sleepy, close: 0, mem: this.mem, fast: false };
@@ -682,7 +697,7 @@ export class Pet3D {
   get fast() {
     const turning = Math.abs(this.yaw.v) + Math.abs(this.pitch.v) + Math.abs(this.roll.v) > 0.35;
     const twitching = this.ears.some((e) => Math.abs(e.v) > 1.5) || Math.abs(this.flick.v) > 0.6;
-    return turning || twitching || this.wagging || this.ownFast || this.blink.start >= 0;
+    return turning || twitching || this.wagging || this.ownFast || this.propsFast || this.blink.start >= 0;
   }
 
   render() {

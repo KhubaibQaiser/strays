@@ -76,6 +76,7 @@ let shape: Mesh | undefined;
 export const macaw: SpeciesDef = {
   shape: () => (shape ??= build(prims(), [-0.18, -0.03, -0.22], [0.18, 0.8, 0.22], 0.0075)),
   pivot: PIVOT,
+  bed: false,
   wear: { top: [0, 0.772, 0.03], r: 0.075, neck: [0, 0.6, 0.02], neckR: 0.095, chest: [0, 0.47, 0.11], badge: 0.03 },
   parent: PARENT,
   hips: HIPS,
