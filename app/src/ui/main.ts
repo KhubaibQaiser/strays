@@ -46,15 +46,21 @@ const SCROLLERS = "main, .infocard";
 // a text field the user is in; fields save on change, so skipping redraws there loses nothing
 const typing = () => root.contains(document.activeElement) && !!document.activeElement?.matches("textarea, input:not([type=checkbox], [type=radio], [type=range], [type=button])");
 
-// anything that fails without its own handler still reaches the user
-addEventListener("unhandledrejection", (e) => notice(String(e.reason), true));
-addEventListener("error", (e) => notice(e.message, true));
+// anything that fails without its own handler still reaches the user, here and in the menu and log
+const unexpected = (text: string) => {
+  notice(text, true);
+  api.reportProblem("script", `Something went wrong in this window: ${text}`).catch(() => notice(`…and Strays couldn't record it`, true));
+};
+addEventListener("unhandledrejection", (e) => unexpected(String(e.reason)));
+addEventListener("error", (e) => unexpected(e.message));
 
 async function refresh() {
   try {
     state = await api.state();
   } catch (e) {
     root.replaceChildren(Object.assign(document.createElement("p"), { className: "error", textContent: `Strays couldn't load its state: ${e}` }));
+    // shown above either way; if even reporting fails, the page is the only place left to say it
+    api.reportProblem("state", `A window couldn't load Strays' state: ${e}`).catch((r) => root.append(` (and it couldn't be recorded: ${r})`));
     return;
   }
   // forms keep what the user is typing; only views that just display state redraw on changes

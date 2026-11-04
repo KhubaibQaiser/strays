@@ -126,3 +126,12 @@ test("a full-screen app hides pets without rebuilding them", async ({ page }) =>
   await emit(page, "overlay", frame(false));
   await expect(page.locator('canvas[data-same="1"]')).toBeVisible();
 });
+
+test("a script error in the overlay is reported, not just logged", async ({ page }) => {
+  await mockApp(page);
+  await page.goto("/index.html");
+  await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.some((c) => c.cmd === "overlay_ready"));
+  await page.evaluate(() => setTimeout(() => { throw new Error("boom"); }));
+  const reported = () => page.evaluate(() => (window as unknown as { __calls: { cmd: string; args: { key?: string; text?: string } }[] }).__calls.filter((c) => c.cmd === "report_problem").map((c) => c.args));
+  await expect.poll(reported).toContainEqual({ key: "script", text: expect.stringContaining("boom") });
+});

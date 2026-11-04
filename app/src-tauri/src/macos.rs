@@ -48,6 +48,15 @@ pub fn screen_off() -> bool {
     session.get(&CFString::from_static_str("CGSSessionScreenIsLocked")).and_then(|v| v.downcast::<CFBoolean>().ok()).is_some_and(|b| b.as_bool())
 }
 
+/// A blocking alert, for a failure with no other way to reach the user (the app couldn't start).
+pub fn fatal(title: &str, text: &str) {
+    let Some(mtm) = objc2::MainThreadMarker::new() else { return };
+    let alert = objc2_app_kit::NSAlert::new(mtm);
+    alert.setMessageText(&NSString::from_str(title));
+    alert.setInformativeText(&NSString::from_str(text));
+    alert.runModal();
+}
+
 /// Cursor in AppKit global points (bottom-left origin of the primary display).
 pub fn mouse_location() -> (f64, f64) {
     let p = NSEvent::mouseLocation();

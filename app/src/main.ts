@@ -17,9 +17,19 @@ export type Frame = { pets: Placed[]; liveliness: Liveliness; reduceMotion: bool
 export type Hover = { id: string | null; held: boolean };
 export type Feedback = { id: string; ok: boolean; text: string };
 
+/** Debug-run traces (the OS test harness reads them); release builds drop them. */
 const log = (msg: string) => void invoke("pet_log", { msg });
-addEventListener("error", (e) => log(`ERROR ${e.message}`));
-addEventListener("unhandledrejection", (e) => log(`REJECT ${String(e.reason)}`));
+/** A problem the user should know about: logged and listed in the menu and Settings (a repeat of the
+ *  same `key` replaces the earlier one). */
+const problem = (key: string, text: string) => {
+  log(`WARN ${key}: ${text}`);
+  invoke("report_problem", { key, text }).catch((e) => log(`ERROR couldn't report ${key}: ${e}`));
+};
+/** For a call to Rust's `.catch`: a failure is reported, never dropped. */
+const unreached = (cmd: string) => (e: unknown) => problem(cmd, `The pets' window couldn't reach Strays (${cmd}): ${e}`);
+const nameOf = (p: Placed) => p.label.split(" · ")[0];
+addEventListener("error", (e) => problem("script", `Something went wrong in the pets' window: ${e.message}`));
+addEventListener("unhandledrejection", (e) => problem("script", `Something went wrong in the pets' window: ${String(e.reason)}`));
 log(`BOOT ${location.href}`);
 
 // Bundled locally: the runtime must never fetch its WASM from a CDN.
@@ -169,7 +179,10 @@ function riveRig(p: Pet): Rig {
     autoplay: true,
     stateMachine: "Idle",
     autoBind: true,
-    onLoadError: (e) => log(`LOADERROR pet=${placed.id} ${JSON.stringify(e.data)}`),
+    onLoadError: (e) => {
+      log(`LOADERROR pet=${placed.id} ${JSON.stringify(e.data)}`);
+      problem(`draw-${placed.id}`, `${nameOf(placed)} couldn't be drawn: ${JSON.stringify(e.data)}`);
+    },
     onLoad: () => {
       rive.resizeDrawingSurfaceToCanvas();
       const vmi = rive.viewModelInstance;
@@ -207,8 +220,8 @@ function riveRig(p: Pet): Rig {
 function rig3d(p: Pet): Rig | null {
   const { placed } = p;
   try {
-    const rig = new Pet3DRig(p.el, SPECIES_3D[placed.species], placed.colors, log, () => {
-      log(`WARN pet=${placed.id} lost its 3D drawing; switching to the drawn one`);
+    const rig = new Pet3DRig(p.el, SPECIES_3D[placed.species], placed.colors, problem, () => {
+      problem(`3d-${placed.id}`, `The graphics card dropped ${nameOf(placed)}'s 3D drawing, so it's drawn in 2D now`);
       const current = pets.get(placed.id);
       if (current?.rig !== pet3d) return;
       remove(placed.id);
@@ -220,7 +233,7 @@ function rig3d(p: Pet): Rig | null {
     log(`LOADED pet=${placed.id} colours=${Object.keys(placed.colors).length}/${Object.keys(placed.colors).length} rig=3d`);
     return pet3d;
   } catch (e) {
-    log(`ERROR pet=${placed.id} can't draw in 3D (${String(e)}); using the drawn one`);
+    problem(`3d-${placed.id}`, `${nameOf(placed)} can't be drawn in 3D (${String(e)}), so it's drawn in 2D`);
     return null;
   }
 }
@@ -228,7 +241,7 @@ function rig3d(p: Pet): Rig | null {
 function add(placed: Placed, forceRive = false) {
   const p = { el: canvasFor(placed.id), placed, playing: false, busy: false, leaving: false, run: 0 } as Pet;
   const in3d = [...pets.values()].filter((o) => o.rig.continuous).length;
-  if (placed.species in SPECIES_3D && !forceRive && in3d >= MAX_3D) log(`WARN pet=${placed.id} drawn in 2D: ${MAX_3D} pets are already drawn in 3D`);
+  if (placed.species in SPECIES_3D && !forceRive && in3d >= MAX_3D) problem("3d-limit", `Only ${MAX_3D} pets can be drawn in 3D at once; the rest are drawn in 2D`);
   const want3d = placed.species in SPECIES_3D && !forceRive && in3d < MAX_3D;
   let rig = want3d ? rig3d(p) : null;
   if (!rig) {
@@ -249,7 +262,7 @@ function add(placed: Placed, forceRive = false) {
   p.el.addEventListener("mousedown", (e) => {
     if (!frozen) return;
     e.preventDefault();
-    void invoke("pet_click", { id: placed.id, shift: e.shiftKey });
+    invoke("pet_click", { id: placed.id, shift: e.shiftKey }).catch(unreached("pet_click"));
   });
   p.el.addEventListener("contextmenu", (e) => e.preventDefault());
 }
@@ -260,7 +273,7 @@ let latest = new Map<string, Placed>();
 /** Adds a pet now if its 3D shape is built, else once a worker has built it (if it's still wanted). */
 function addWhenReady(placed: Placed) {
   if (meshBuilt(placed.species)) return add(placed);
-  void meshReady(placed.species, log).then(() => {
+  void meshReady(placed.species, problem).then(() => {
     const now = latest.get(placed.id);
     if (!now || pets.has(now.id)) return;
     add(now);
@@ -347,5 +360,8 @@ ready.push(listen<{ id: string; cue: Cue }>("cue", ({ payload }) => {
 // a nudge stays a little longer and needs no click (§5.10)
 ready.push(listen<{ id: string; text: string }>("nudge", ({ payload }) => bubble(payload.id, payload.text, 8000)));
 
-// Ask for the first frame only once every listener is registered, or it can arrive before them.
-void Promise.all(ready).then(() => invoke("overlay_ready"));
+// Ask for the first frame only once every listener is registered, or it can arrive before them. If one
+// can't be registered, say so and ask anyway: pets that miss some events beat no pets at all.
+void Promise.all(ready)
+  .catch((e) => problem("listen", `The pets' window can't hear some of what Strays sends it: ${e}`))
+  .finally(() => invoke("overlay_ready").catch(unreached("overlay_ready")));

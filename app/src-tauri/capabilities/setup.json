@@ -12,6 +12,7 @@
     "allow-open-link",
     "allow-open-window",
     "allow-token-check",
-    "allow-token-save"
+    "allow-token-save",
+    "allow-report-problem"
   ]
 }

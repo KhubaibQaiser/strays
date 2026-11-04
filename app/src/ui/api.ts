@@ -123,6 +123,8 @@ export async function saveChanged(s: Settings, base: Settings): Promise<void> {
 
 export const api = {
   state: () => invoke<UiState>("ui_state"),
+  /** a problem this window hit, for the menu, Settings and the log */
+  reportProblem: (key: string, text: string) => invoke<void>("report_problem", { key, text }),
   petAction: (id: string, action: string) => invoke<string>("pet_action", { id, action }),
   setGoal: (id: string, goal: Goal) => invoke<void>("set_goal", { id, goal }),
   setPet: (id: string, name: string, pace: Pace, liveliness: Liveliness | null) => invoke<void>("set_pet", { id, name, pace, liveliness }),

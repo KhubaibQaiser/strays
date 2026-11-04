@@ -18,6 +18,16 @@ use crate::{menu, windows};
 
 type Res<T> = Result<T, String>;
 
+/// A command's failure is shown by the window that asked; it goes to the log too.
+fn logged<T>(command: &str, run: impl FnOnce() -> Res<T>) -> Res<T> {
+    run().inspect_err(|e| crate::log::warn(&format!("{command}: {e}")))
+}
+
+/// The same for async commands.
+async fn logged_async<T>(command: &str, run: impl std::future::Future<Output = Res<T>>) -> Res<T> {
+    run.await.inspect_err(|e| crate::log::warn(&format!("{command}: {e}")))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiPet {
@@ -175,77 +185,94 @@ pub fn ui_state(shared: State<'_, Shared>) -> UiState {
 /// Same action ids as the menus: `snooze-1h`, `wake`, `release`, …
 #[tauri::command]
 pub fn pet_action(id: Uuid, action: String, shared: State<'_, Shared>) -> Res<String> {
-    let event = menu::parse(&format!("pet/{id}/{action}")).ok_or("Unknown action")?;
-    match event {
-        menu::Event::SyncPet(pet) => {
-            let _ = shared.tx.send(Cmd::SyncNow(Some(pet)));
-            Ok("Syncing…".into())
+    logged("pet_action", move || -> Res<String> {
+        let event = menu::parse(&format!("pet/{id}/{action}")).ok_or("Unknown action")?;
+        match event {
+            menu::Event::SyncPet(pet) => {
+                let _ = shared.tx.send(Cmd::SyncNow(Some(pet)));
+                Ok("Syncing…".into())
+            }
+            menu::Event::Pet(pet, action) => {
+                let r = shared.app.lock().unwrap().act(pet, action, Utc::now());
+                changed(&shared);
+                r
+            }
+            _ => Err("Unknown action".into()),
         }
-        menu::Event::Pet(pet, action) => {
-            let r = shared.app.lock().unwrap().act(pet, action, Utc::now());
-            changed(&shared);
-            r
-        }
-        _ => Err("Unknown action".into()),
-    }
+    })
 }
 
 #[tauri::command]
 pub fn set_goal(id: Uuid, goal: Goal, shared: State<'_, Shared>) -> Res<()> {
-    shared.app.lock().unwrap().set_goal(id, goal)?;
-    changed(&shared);
-    Ok(())
+    logged("set_goal", move || -> Res<()> {
+        shared.app.lock().unwrap().set_goal(id, goal)?;
+        changed(&shared);
+        Ok(())
+    })
 }
 
 #[tauri::command]
 pub fn set_pet(id: Uuid, name: String, pace: Pace, liveliness: Option<Liveliness>, shared: State<'_, Shared>) -> Res<()> {
-    shared.app.lock().unwrap().set_pet(id, name, pace, liveliness)?;
-    changed(&shared);
-    Ok(())
+    logged("set_pet", move || -> Res<()> {
+        shared.app.lock().unwrap().set_pet(id, name, pace, liveliness)?;
+        changed(&shared);
+        Ok(())
+    })
 }
 
 #[tauri::command]
 pub fn adopt(request: AdoptRequest, shared: State<'_, Shared>) -> Res<String> {
-    let r = shared.app.lock().unwrap().adopt(request, Utc::now());
-    changed(&shared);
-    r
+    logged("adopt", move || -> Res<String> {
+        let r = shared.app.lock().unwrap().adopt(request, Utc::now());
+        changed(&shared);
+        r
+    })
 }
 
 #[tauri::command]
 pub fn save_settings(settings: Settings, shared: State<'_, Shared>) -> Res<()> {
-    let r = shared.app.lock().unwrap().save_settings(settings);
-    changed(&shared);
-    r
+    logged("save_settings", move || -> Res<()> {
+        let r = shared.app.lock().unwrap().save_settings(settings);
+        changed(&shared);
+        r
+    })
 }
 
 #[tauri::command]
 pub fn set_flag(name: String, on: bool, shared: State<'_, Shared>) -> Res<()> {
-    let mut app = shared.app.lock().unwrap();
-    match name.as_str() {
-        "presentation" => app.flags.presentation = on,
-        "hideAll" => app.flags.hide_all = on,
-        "vacation" => app.set_vacation(on, Utc::now()),
-        _ => return Err("Unknown setting".into()),
-    }
-    drop(app);
-    changed(&shared);
-    Ok(())
+    logged("set_flag", move || -> Res<()> {
+        let mut app = shared.app.lock().unwrap();
+        match name.as_str() {
+            "presentation" => app.flags.presentation = on,
+            "hideAll" => app.flags.hide_all = on,
+            "vacation" => app.set_vacation(on, Utc::now()),
+            _ => return Err("Unknown setting".into()),
+        }
+        drop(app);
+        changed(&shared);
+        Ok(())
+    })
 }
 
 /// Settings → Sound → Test: plays a greeting at the chosen volume, even with sound off.
 #[tauri::command]
 pub fn test_sound(shared: State<'_, Shared>) -> Res<()> {
-    let volume = shared.app.lock().map_err(|_| "busy")?.settings.volume;
-    shared.audio.play(crate::audio::Sound::Greeting(strays_core::pet::Species::Cat), volume);
-    Ok(())
+    logged("test_sound", move || -> Res<()> {
+        let volume = shared.app.lock().map_err(|_| "busy")?.settings.volume;
+        crate::audio::check_output()?;
+        shared.audio.play(crate::audio::Sound::Greeting(strays_core::pet::Species::Cat), volume);
+        Ok(())
+    })
 }
 
 /// Settings → Privacy → Launch at login. macOS keeps the state (System Settings → Login Items), so nothing is saved here.
 #[tauri::command]
 pub fn set_login_item(on: bool, h: AppHandle) -> Res<crate::platform::LoginItem> {
-    let state = crate::platform::set_login_item(on)?;
-    emit_changed(&h);
-    Ok(state)
+    logged("set_login_item", move || -> Res<crate::platform::LoginItem> {
+        let state = crate::platform::set_login_item(on)?;
+        emit_changed(&h);
+        Ok(state)
+    })
 }
 
 /// Settings → "Dismiss": hides the current problems; any that happen again come back.
@@ -291,59 +318,67 @@ fn describe(e: github::GhError) -> String {
 /// Setup step 2 (§6.2): checks a pasted token without saving it.
 #[tauri::command]
 pub async fn token_check(token: String, shared: State<'_, Shared>) -> Res<TokenCheck> {
-    let app = shared.app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let gh = client(&token)?;
-        let v = gh.validate();
-        app.lock().unwrap().append_netlog(gh.take_log());
-        let v = v.map_err(describe)?;
-        Ok(TokenCheck { login: v.login, repo_count: v.repo_count, expires: v.expires })
+    logged_async("token_check", async move {
+        let app = shared.app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let gh = client(&token)?;
+            let v = gh.validate();
+            app.lock().unwrap().append_netlog(gh.take_log());
+            let v = v.map_err(describe)?;
+            Ok(TokenCheck { login: v.login, repo_count: v.repo_count, expires: v.expires })
+        })
+        .await
+        .map_err(|e| e.to_string())?
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Setup step 4: validates again, stores the token in the Keychain and starts the first sync.
 #[tauri::command]
 pub async fn token_save(token: String, shared: State<'_, Shared>) -> Res<()> {
-    let app = shared.app.clone();
-    let tx = shared.tx.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let gh = client(&token)?;
-        let v = gh.validate();
-        let mut app = app.lock().unwrap();
-        if app.is_closed() {
-            return Err("Strays is deleting its data".into());
-        }
-        app.append_netlog(gh.take_log());
-        let v = v.map_err(describe)?;
-        crate::token::save(token.trim())?;
-        app.has_token = true;
-        app.set_account(Some(Account { login: v.login, expires: v.expires, repo_count: v.repo_count }));
-        app.sync.disconnected = false;
-        app.sync.failures = 0;
-        app.sync_error = None;
-        drop(app);
-        let _ = tx.send(Cmd::SyncNow(None));
-        Ok(())
+    logged_async("token_save", async move {
+        let app = shared.app.clone();
+        let tx = shared.tx.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let gh = client(&token)?;
+            let v = gh.validate();
+            let mut app = app.lock().unwrap();
+            if app.is_closed() {
+                return Err("Strays is deleting its data".into());
+            }
+            app.append_netlog(gh.take_log());
+            let v = v.map_err(describe)?;
+            crate::token::save(token.trim())?;
+            app.has_token = true;
+            app.set_account(Some(Account { login: v.login, expires: v.expires, repo_count: v.repo_count }));
+            app.sync.disconnected = false;
+            app.sync.failures = 0;
+            app.sync_error = None;
+            drop(app);
+            let _ = tx.send(Cmd::SyncNow(None));
+            Ok(())
+        })
+        .await
+        .map_err(|e| e.to_string())?
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Deletes the Keychain item straight away (§6.4). Pets keep their data and freeze.
 #[tauri::command]
 pub fn token_disconnect(shared: State<'_, Shared>) -> Res<()> {
-    crate::token::delete()?;
-    let mut app = shared.app.lock().unwrap();
-    app.has_token = false;
-    app.set_account(None);
-    // what the old token could see isn't offered any more
-    app.merge_repos(&[], true);
-    app.sync_error = Some("Not connected to GitHub".into());
-    drop(app);
-    changed(&shared);
-    Ok(())
+    logged("token_disconnect", move || -> Res<()> {
+        crate::token::delete()?;
+        let mut app = shared.app.lock().unwrap();
+        app.has_token = false;
+        app.set_account(None);
+        // what the old token could see isn't offered any more
+        app.merge_repos(&[], true);
+        app.sync_error = Some("Not connected to GitHub".into());
+        drop(app);
+        changed(&shared);
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -369,30 +404,36 @@ pub async fn pick_folder(h: AppHandle) -> Option<String> {
 
 #[tauri::command]
 pub fn open_github(id: Uuid, shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
-    let app = shared.app.lock().unwrap();
-    let repo = app.pets.iter().find(|p| p.id == id).and_then(|p| p.project.github.clone()).ok_or("Not on GitHub")?;
-    h.opener().open_url(format!("https://github.com/{}", repo.full_name), None::<&str>).map_err(|e| e.to_string())
+    logged("open_github", move || -> Res<()> {
+        let app = shared.app.lock().unwrap();
+        let repo = app.pets.iter().find(|p| p.id == id).and_then(|p| p.project.github.clone()).ok_or("Not on GitHub")?;
+        h.opener().open_url(format!("https://github.com/{}", repo.full_name), None::<&str>).map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command]
 pub fn reveal(id: Uuid, shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
-    let app = shared.app.lock().unwrap();
-    let path = app.pets.iter().find(|p| p.id == id).and_then(|p| p.project.local.clone()).map(|l| l.path).ok_or("No local folder")?;
-    h.opener().reveal_item_in_dir(path).map_err(|e| e.to_string())
+    logged("reveal", move || -> Res<()> {
+        let app = shared.app.lock().unwrap();
+        let path = app.pets.iter().find(|p| p.id == id).and_then(|p| p.project.local.clone()).map(|l| l.path).ok_or("No local folder")?;
+        h.opener().reveal_item_in_dir(path).map_err(|e| e.to_string())
+    })
 }
 
 /// Opens one of a fixed set of pages in the browser; the web view can't name arbitrary URLs.
 #[tauri::command]
 pub fn open_link(which: String, shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
-    let url = match which.as_str() {
-        "token-page" => "https://github.com/settings/personal-access-tokens/new".to_string(),
-        // the page comes from GitHub's answer, so only this repo's release pages are opened
-        "release" => shared.app.lock().unwrap().sync.update.as_ref().map(|r| r.html_url.clone())
-            .filter(|u| u.starts_with(&format!("https://github.com/{}/releases/", strays_core::github::RELEASES_REPO)))
-            .ok_or("No update to download")?,
-        _ => return Err("Unknown link".into()),
-    };
-    h.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+    logged("open_link", move || -> Res<()> {
+        let url = match which.as_str() {
+            "token-page" => "https://github.com/settings/personal-access-tokens/new".to_string(),
+            // the page comes from GitHub's answer, so only this repo's release pages are opened
+            "release" => shared.app.lock().unwrap().sync.update.as_ref().map(|r| r.html_url.clone())
+                .filter(|u| u.starts_with(&format!("https://github.com/{}/releases/", strays_core::github::RELEASES_REPO)))
+                .ok_or("No update to download")?,
+            _ => return Err("Unknown link".into()),
+        };
+        h.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command]
@@ -405,91 +446,103 @@ pub fn netlog(shared: State<'_, Shared>) -> Vec<NetEntry> {
 /// Settings → Privacy → "Show log": the file to attach to a bug report.
 #[tauri::command]
 pub fn reveal_log(h: AppHandle) -> Res<()> {
-    let path = crate::log::path().filter(|p| p.exists()).ok_or("Nothing has been logged yet")?;
-    h.opener().reveal_item_in_dir(path).map_err(|e| e.to_string())
+    logged("reveal_log", move || -> Res<()> {
+        let path = crate::log::path().filter(|p| p.exists()).ok_or("Nothing has been logged yet")?;
+        h.opener().reveal_item_in_dir(path).map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command]
 pub fn open_data_folder(shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
-    let dir = shared.app.lock().unwrap().dir.clone();
-    h.opener().open_path(dir.display().to_string(), None::<&str>).map_err(|e| e.to_string())
+    logged("open_data_folder", move || -> Res<()> {
+        let dir = shared.app.lock().unwrap().dir.clone();
+        h.opener().open_path(dir.display().to_string(), None::<&str>).map_err(|e| e.to_string())
+    })
 }
 
 /// Writes every pet, the settings and the sync state into one JSON file and reveals it. No token.
 #[tauri::command]
 pub fn export_data(shared: State<'_, Shared>, h: AppHandle) -> Res<String> {
-    let app = shared.app.lock().unwrap();
-    let export = serde_json::json!({ "pets": app.pets, "settings": app.settings, "sync": app.sync, "account": app.account });
-    let path = app.dir.join(format!("strays-export-{}.json", Utc::now().format("%Y%m%d-%H%M%S")));
-    std::fs::write(&path, serde_json::to_vec_pretty(&export).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    h.opener().reveal_item_in_dir(&path).map_err(|e| format!("Exported to {}, but Finder couldn't show it: {e}", path.display()))?;
-    Ok(path.display().to_string())
+    logged("export_data", move || -> Res<String> {
+        let app = shared.app.lock().unwrap();
+        let export = serde_json::json!({ "pets": app.pets, "settings": app.settings, "sync": app.sync, "account": app.account });
+        let path = app.dir.join(format!("strays-export-{}.json", Utc::now().format("%Y%m%d-%H%M%S")));
+        std::fs::write(&path, serde_json::to_vec_pretty(&export).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        h.opener().reveal_item_in_dir(&path).map_err(|e| format!("Exported to {}, but Finder couldn't show it: {e}", path.display()))?;
+        Ok(path.display().to_string())
+    })
 }
 
 /// §8.5 "Delete everything": the Keychain item, every data file and log, then quit.
 #[tauri::command]
 pub fn delete_everything(confirm: String, shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
-    if confirm != "DELETE" {
-        return Err("Type DELETE to confirm".into());
-    }
-    // held until the end: every write to the data folder takes this lock, and the closed store refuses
-    // them afterwards, so no save (sync thread, a window, a late token save) can recreate what's deleted
-    let mut app = shared.app.lock().unwrap();
-    app.close();
-    crate::log::stop();
-    let mut failed = Vec::new();
-    if let Err(e) = crate::token::delete() {
-        failed.push(e);
-    }
-    if crate::platform::login_item() != crate::platform::LoginItem::Off
-        && let Err(e) = crate::platform::set_login_item(false)
-    {
-        failed.push(format!("the login item ({e})"));
-    }
-    let mut dirs = vec![app.dir.clone()];
-    // inside the sandbox, home is the app's own container, so its web view data is Strays' alone
-    if std::env::var_os("APP_SANDBOX_CONTAINER_ID").is_some()
-        && let Some(home) = std::env::var_os("HOME")
-    {
-        let lib = std::path::Path::new(&home).join("Library");
-        dirs.extend(["WebKit", "Caches/WebKit"].map(|d| lib.join(d)));
-    }
-    for d in dirs {
-        match std::fs::remove_dir_all(&d) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => failed.push(format!("{} ({e})", d.display())),
-            _ => {}
+    logged("delete_everything", move || -> Res<()> {
+        if confirm != "DELETE" {
+            return Err("Type DELETE to confirm".into());
         }
-    }
-    // quitting would hide the failure; staying open lets the user see it and try again
-    drop(app);
-    // the sync thread sees the closed store on its next pass and ends
-    let _ = shared.tx.send(Cmd::Changed);
-    if !failed.is_empty() {
-        return Err(format!("Some things couldn't be deleted: {}. Try again, or remove them by hand and quit Strays: it no longer saves anything.", failed.join("; ")));
-    }
-    h.exit(0);
-    Ok(())
+        // held until the end: every write to the data folder takes this lock, and the closed store refuses
+        // them afterwards, so no save (sync thread, a window, a late token save) can recreate what's deleted
+        let mut app = shared.app.lock().unwrap();
+        app.close();
+        crate::log::stop();
+        let mut failed = Vec::new();
+        if let Err(e) = crate::token::delete() {
+            failed.push(e);
+        }
+        if crate::platform::login_item() != crate::platform::LoginItem::Off
+            && let Err(e) = crate::platform::set_login_item(false)
+        {
+            failed.push(format!("the login item ({e})"));
+        }
+        let mut dirs = vec![app.dir.clone()];
+        // inside the sandbox, home is the app's own container, so its web view data is Strays' alone
+        if std::env::var_os("APP_SANDBOX_CONTAINER_ID").is_some()
+            && let Some(home) = std::env::var_os("HOME")
+        {
+            let lib = std::path::Path::new(&home).join("Library");
+            dirs.extend(["WebKit", "Caches/WebKit"].map(|d| lib.join(d)));
+        }
+        for d in dirs {
+            match std::fs::remove_dir_all(&d) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => failed.push(format!("{} ({e})", d.display())),
+                _ => {}
+            }
+        }
+        // quitting would hide the failure; staying open lets the user see it and try again
+        drop(app);
+        // the sync thread sees the closed store on its next pass and ends
+        let _ = shared.tx.send(Cmd::Changed);
+        if !failed.is_empty() {
+            return Err(format!("Some things couldn't be deleted: {}. Try again, or remove them by hand and quit Strays: it no longer saves anything.", failed.join("; ")));
+        }
+        h.exit(0);
+        Ok(())
+    })
 }
 
 #[tauri::command]
 pub fn open_window(kind: String, arg: Option<String>, h: AppHandle) -> Res<()> {
-    let arg = arg.unwrap_or_default();
-    match kind.as_str() {
-        "settings" => windows::settings(&h, if arg.is_empty() { "pets" } else { &arg }),
-        "setup" => windows::setup(&h),
-        "adopt" => windows::adopt(&h, &arg),
-        "welcome" => windows::welcome(&h),
-        _ => return Err("Unknown window".into()),
-    }
-    .map_err(|e| e.to_string())
+    logged("open_window", move || -> Res<()> {
+        let arg = arg.unwrap_or_default();
+        match kind.as_str() {
+            "settings" => windows::settings(&h, if arg.is_empty() { "pets" } else { &arg }),
+            "setup" => windows::setup(&h),
+            "adopt" => windows::adopt(&h, &arg),
+            "welcome" => windows::welcome(&h),
+            _ => return Err("Unknown window".into()),
+        }
+        .map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command]
 pub fn close_window(label: String, h: AppHandle) -> Res<()> {
-    match h.get_webview_window(&label) {
-        Some(w) => w.close().map_err(|e| e.to_string()),
-        None => Ok(()),
-    }
+    logged("close_window", move || -> Res<()> {
+        match h.get_webview_window(&label) {
+            Some(w) => w.close().map_err(|e| e.to_string()),
+            None => Ok(()),
+        }
+    })
 }
 
 /// Windows re-fetch `ui_state` when they hear this.

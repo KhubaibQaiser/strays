@@ -11,7 +11,7 @@ export const meshBuilt = (name: string) => !SPECIES_3D[name] || ready.has(name);
 let worker: Worker | null | undefined;
 
 /** Resolves once `name`'s mesh is ready (at once for one already built or not drawn in 3D). */
-export function meshReady(name: string, log: (msg: string) => void): Promise<void> {
+export function meshReady(name: string, problem: (key: string, text: string) => void): Promise<void> {
   const def = SPECIES_3D[name];
   if (!def) return Promise.resolve();
   let p = pending.get(name);
@@ -20,7 +20,7 @@ export function meshReady(name: string, log: (msg: string) => void): Promise<voi
     try {
       worker ??= new Worker(new URL("./mesh.worker.ts", import.meta.url), { type: "module" });
     } catch (e) {
-      log(`WARN the 3D shapes are built on the page, which may pause it briefly: ${e}`);
+      problem("3d-worker", `The 3D shapes are built in the pets' window, which can pause it briefly: ${e}`);
       worker = null;
     }
     const finish = () => {
@@ -36,13 +36,13 @@ export function meshReady(name: string, log: (msg: string) => void): Promise<voi
       if (data.mesh) {
         const mesh = data.mesh;
         def.shape = () => mesh;
-      } else log(`WARN the ${name} shape couldn't be built in the background (${data.error}); building it on the page`);
+      } else problem("3d-worker", `The ${name} shape couldn't be built in the background (${data.error}), so it's built in the pets' window`);
       finish();
     };
     // a worker that can't start (blocked, failed to load) answers nothing: build on the page instead
     const onError = (e: ErrorEvent) => {
       w.removeEventListener("message", onMessage);
-      log(`WARN the ${name} shape couldn't be built in the background (${e.message || "the worker didn't start"}); building it on the page`);
+      problem("3d-worker", `The ${name} shape couldn't be built in the background (${e.message || "the worker didn't start"}), so it's built in the pets' window`);
       finish();
     };
     w.addEventListener("message", onMessage);

@@ -11,6 +11,8 @@ pub fn init(data_dir: &Path) -> std::io::Result<()> {
     let dir = data_dir.join("logs");
     std::fs::create_dir_all(&dir)?;
     *FILE.lock().unwrap_or_else(|e| e.into_inner()) = Some(dir.join("strays.log"));
+    // each launch says what it ran on, so a log sent with a bug report explains itself
+    write("START", &format!("Strays {} on macOS {}, {}", env!("CARGO_PKG_VERSION"), crate::platform::os_version(), std::env::consts::ARCH));
     Ok(())
 }
 

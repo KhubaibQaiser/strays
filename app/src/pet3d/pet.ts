@@ -334,6 +334,8 @@ export class Pet3D {
   private wagging = false;
   private mem: Record<string, number> = {};
   private ownFast = false;
+  /** why the graphics card refused to draw this pet, if it did */
+  shaderError: string | null = null;
   /** how many fur layers are drawn now */
   shells = 0;
   mood: Mood = "content";
@@ -349,6 +351,10 @@ export class Pet3D {
   ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "low-power" });
     this.renderer.setClearColor(0, 0);
+    // three.js only prints a shader that won't compile to the console, and the pet draws nothing
+    this.renderer.debug.onShaderError = (gl, program) => {
+      this.shaderError = gl.getProgramInfoLog(program) || "a shader didn't compile";
+    };
     // Neutral keeps the coat colours people pick; AgX washed light ginger out to cream
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1;
