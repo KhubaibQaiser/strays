@@ -44,7 +44,7 @@ Strays reads commit dates and remote URLs only, never file contents, and never r
 
 ## Adopt a pet
 
-Choose **Adopt a pet…** from the menu bar or Settings, then pick a project, a species (cat, corgi, hamster or budgie), a colour, a name, an optional goal and a pace.
+Choose **Adopt a pet…** from the menu bar or Settings, then pick a project, a species (cat, corgi, hamster or macaw), a colour, a name, an optional goal and a pace.
 
 You can keep 3 pets by default (change it in **Settings → Pets**). Other projects wait in the **Shelter**. When a slot opens, Strays offers the next one.
 

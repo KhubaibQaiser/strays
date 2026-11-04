@@ -31,7 +31,7 @@ const LOOKS: Record<string, Look[]> = {
   ],
   dog: [{ colors: coat("#D98A4A", "#B86C2E", "#F2B57E") }, { colors: coat("#2c2522", "#1a1513", "#c98a4b") }, { colors: coat("#e8d2b0", "#c9aa80", "#fbf3e6") }],
   hamster: [{ colors: coat("#E3A564", "#C4843F", "#F3C98F") }, { colors: coat("#d9d4cc", "#a59d92", "#f6f3ee") }, { colors: coat("#8a7464", "#5f4e42", "#e8ddd0") }],
-  parrot: [{ colors: coat("#7DC44E", "#5EA233", "#A6DE7B") }, { colors: coat("#5aa8e0", "#3a7fb8", "#a6d4f2") }, { colors: coat("#e8e070", "#c8bd40", "#f6f2b8") }],
+  parrot: [{ colors: coat("#D2232A", "#A3161C", "#E9503F") }, { colors: coat("#1F6FC0", "#154F8F", "#F2C12E") }, { colors: coat("#5E9A3A", "#3F7024", "#8CC05A") }],
 };
 
 const t0 = performance.now();

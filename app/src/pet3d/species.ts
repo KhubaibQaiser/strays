@@ -4,17 +4,17 @@ import type * as THREE from "three";
 import { ellipsoid, roundCone, type Mesh, type Prim, type V3 } from "./sdf";
 
 /** Material slots for a primitive; anything left out is 0. */
-export type Mat = { fur?: number; light?: number; pink?: number; dark?: number; accent?: number; accent2?: number; barred?: number };
-export const mat = (m: Mat): number[] => [m.fur ?? 0, m.light ?? 0, m.pink ?? 0, m.dark ?? 0, m.accent ?? 0, m.accent2 ?? 0, m.barred ?? 0];
+export type Mat = { fur?: number; light?: number; pink?: number; dark?: number; accent?: number; accent2?: number; barred?: number; white?: number };
+export const mat = (m: Mat): number[] => [m.fur ?? 0, m.light ?? 0, m.pink ?? 0, m.dark ?? 0, m.accent ?? 0, m.accent2 ?? 0, m.barred ?? 0, m.white ?? 0];
 
 export function ell(c: V3, r: V3, bone: number, m: number[], k: number, sub = false): Prim {
   return { d: ellipsoid(c, r), c, r: Math.max(...r), bone, m, k, sub };
 }
 
-export function cone(a: V3, b: V3, r1: number, r2: number, bone: number, m: number[], k: number, squashZ = 1, sub = false, t?: number): Prim {
+export function cone(a: V3, b: V3, r1: number, r2: number, bone: number, m: number[], k: number, squashZ = 1, sub = false, t?: number, squashX = 1): Prim {
   const c: V3 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
   const half = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / 2;
-  return { d: roundCone(a, b, r1, r2, squashZ), c, r: half + Math.max(r1, r2), bone, m, k, sub, t };
+  return { d: roundCone(a, b, r1, r2, squashZ, squashX), c, r: half + Math.max(r1, r2), bone, m, k, sub, t };
 }
 
 /** The pet's left (+x) and right (-x) copies of a part. */
@@ -29,6 +29,8 @@ export type Palette = {
   dark: string;
   accent: string;
   accent2: string;
+  /** bare white skin, e.g. a macaw's face patch (unused species can leave any colour) */
+  white?: string;
   iris: string;
   /** the iris's outer ring (cats' eyes go greener outwards, dogs' darker) */
   irisOuter: string;
@@ -39,7 +41,7 @@ export type Palette = {
 };
 
 export type Coat = "triple" | "feather";
-/** coat patterns: tabby bands, budgie feather bars, or plain */
+/** coat patterns: tabby bands, feather bars (scalloped wing coverts, face lines), or plain */
 export const Pattern = { tabby: 0, bars: 1, plain: 2 } as const;
 
 export type AnimCtx = {

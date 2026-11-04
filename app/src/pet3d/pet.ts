@@ -38,6 +38,7 @@ function furMaterial(def: SpeciesDef, p: Palette) {
     uDark: col(p.dark),
     uAccent: col(p.accent),
     uAccent2: col(p.accent2),
+    uWhite: col(p.white ?? "#ffffff"),
     uEyeL: { value: new THREE.Vector3(...e) },
     uEyeR: { value: new THREE.Vector3(-e[0], e[1], e[2]) },
     uEyeSize: { value: def.eyes.r },
@@ -55,6 +56,8 @@ function furMaterial(def: SpeciesDef, p: Palette) {
         `#include <common>
         attribute float aShell;
         attribute vec4 aMat, aMat2, aNoise;
+        attribute float aMat3;
+        varying float vWhite;
         uniform float uFurLen, uEyeSize;
         uniform vec3 uGravity, uEyeL, uEyeR;
         uniform vec4 uBare[2];
@@ -71,6 +74,7 @@ function furMaterial(def: SpeciesDef, p: Palette) {
         vShell = aShell;
         vMat = aMat;
         vMat2 = aMat2;
+        vWhite = aMat3;
         // fur thins out round the eyes, nose and mouth, so the face stays open
         float clear = smoothstep(uEyeSize * 1.05, uEyeSize * 2.4, min(distance(position, uEyeL), distance(position, uEyeR)));
         for (int i = 0; i < 2; i++) clear *= smoothstep(uBare[i].w * 0.45, uBare[i].w, distance(position, uBare[i].xyz));
@@ -84,7 +88,8 @@ function furMaterial(def: SpeciesDef, p: Palette) {
       .replace(
         "#include <common>",
         `#include <common>
-        uniform vec3 uBase, uShade, uLight, uPink, uDark, uAccent, uAccent2;
+        uniform vec3 uBase, uShade, uLight, uPink, uDark, uAccent, uAccent2, uWhite;
+        varying float vWhite;
         uniform float uDensity, uStripes, uTipping, uFeather, uPattern, uHeadY, uFurLen;
         varying vec3 vRest, vRestN;
         varying float vShell, vFurK;
@@ -98,19 +103,25 @@ function furMaterial(def: SpeciesDef, p: Palette) {
         // sparse long guard hairs; short fur (face, paws) gets finer strands. Feathers: soft, wide,
         // overlapping tufts instead of strands.
         vec3 q = vRest * uDensity * mix(2.2, 1.0, clamp(vMat.x, 0.0, 1.0));
+        // a fixed warp keeps the hair grid from lining up with the surface (which shows as rings or stripes);
         // neighbouring hairs bend the same way, so long fur falls in soft clumps instead of standing straight
-        q += vNoise.xyz * 1.2 * vShell * vShell;
-        vec3 rnd = hash3(floor(q));
+        q += vNoise.xyz * (2.5 + 1.2 * vShell * vShell);
+        // strands sit on a 2D grid in the plane the surface mostly faces, so they run straight out of it;
+        // a 3D grid cut by a gently curved surface leaves ring-shaped contours
+        vec3 an = abs(vRestN);
+        vec2 g = an.z > an.x && an.z > an.y ? q.xy : (an.x > an.y ? q.yz : q.xz);
+        float face = an.z > an.x && an.z > an.y ? 0.0 : (an.x > an.y ? 1.0 : 2.0);
+        vec3 rnd = hash3(vec3(floor(g), face));
         bool guard = uFeather < 0.5 && rnd.y > 0.8;
         float tall = guard ? 0.9 + 0.1 * rnd.z : 0.55 + 0.25 * rnd.z;
-        float r = length(fract(q) - (0.25 + 0.5 * rnd));
+        float r = length(fract(g) - (0.25 + 0.5 * rnd.xy));
         float width = uFeather > 0.5 ? 0.8 * (1.0 - 0.45 * vShell / tall) : (guard ? 0.32 : 0.45) * (1.0 - 0.7 * vShell / tall);
         bool hair = vShell <= tall && r <= width;
         // the undercoat never grows past 0.45 of the fur length, so higher layers skip it
-        vec3 q2 = q * 2.0 + 17.0;
-        vec3 rnd2 = vShell < 0.45 && uFeather < 0.5 ? hash3(floor(q2)) : vec3(0.0);
+        vec2 g2 = g * 2.0 + 17.0;
+        vec3 rnd2 = vShell < 0.45 && uFeather < 0.5 ? hash3(vec3(floor(g2), face + 5.0)) : vec3(0.0);
         float tall2 = 0.25 + 0.2 * rnd2.z;
-        bool under = uFeather < 0.5 && vShell < 0.45 && vShell <= tall2 && length(fract(q2) - (0.25 + 0.5 * rnd2)) <= 0.55 * (1.0 - 0.5 * vShell / tall2);
+        bool under = uFeather < 0.5 && vShell < 0.45 && vShell <= tall2 && length(fract(g2) - (0.25 + 0.5 * rnd2.xy)) <= 0.55 * (1.0 - 0.5 * vShell / tall2);
         // hair shorter than about a pixel (cleared skin round the nose, mouth and eyes) would only speckle it
         if (vShell > 0.0 && (uFurLen * vFurK < 0.0015 || !(hair || under))) discard;
         float furry = smoothstep(0.02, 0.15, vFurK);
@@ -128,14 +139,19 @@ function furMaterial(def: SpeciesDef, p: Palette) {
         coat = mix(coat, uAccent, smoothstep(0.25, 0.7, vMat2.y));
         coat = mix(coat, uAccent2, smoothstep(0.25, 0.7, vMat2.z));
         coat = mix(coat, uPink, smoothstep(0.25, 0.55, vMat.z));
-        coat = mix(coat, uDark, smoothstep(0.15, 0.45, vMat2.x));
+        coat = mix(coat, uWhite, smoothstep(0.25, 0.55, vWhite));
+        // a sharp edge keeps small dark marks crisp instead of bleeding into a band
+        coat = mix(coat, uDark, smoothstep(0.3, 0.5, vMat2.x));
         if (uPattern > 0.5 && uPattern < 1.5 && vMat2.w > 0.02) {
-          // budgie barring: rows of feathers with dark centres and pale scalloped edges
-          vec2 fp = vec2(vRest.z * 40.0 + vRest.x * 14.0, vRest.y * 44.0);
+          // feathers in overlapping rows: small rows where the feathers are short (a macaw's face lines),
+          // large on the wings; light weights shade each feather's edge, heavy ones draw dark bars
+          float rows = mix(120.0, 40.0, clamp(vMat.x * 1.4, 0.0, 1.0));
+          vec2 fp = vec2(vRest.z * rows * 0.9 + vRest.x * rows * 0.3, vRest.y * rows);
           fp.x += floor(fp.y) * 0.5;
           vec2 cell = fract(fp) - vec2(0.5, 0.42);
           float scallop = length(cell * vec2(1.0, 1.5));
-          coat = mix(coat, uDark, (1.0 - smoothstep(0.26, 0.36, scallop)) * smoothstep(0.1, 0.6, vMat2.w));
+          vec3 edge = mix(coat * 0.7, uDark, smoothstep(0.45, 0.8, vMat2.w));
+          coat = mix(coat, edge, (1.0 - smoothstep(0.26, 0.36, scallop)) * smoothstep(0.05, 0.4, vMat2.w));
         }
         // per-hair variation; the undercoat is paler; guard hairs can carry dark tips (bare skin stays even)
         coat *= 1.0 + furry * (0.24 * (hair ? rnd.x : rnd2.x) - 0.12);
@@ -149,7 +165,9 @@ function furMaterial(def: SpeciesDef, p: Palette) {
         "#include <lights_physical_fragment>",
         // bare skin (noses, beaks, feet) is a little glossy; fur and feathers are not
         `#include <lights_physical_fragment>
-        material.roughness = mix(material.roughness, 0.45, (1.0 - smoothstep(0.0, 0.15, vMat.x)) * max(vMat.z, max(vMat2.x, vMat2.z)));`,
+        material.roughness = mix(material.roughness, 0.45, (1.0 - smoothstep(0.0, 0.15, vMat.x)) * max(vMat.z, max(vMat2.x, vMat2.z)));
+        // feathers have a soft sheen that fur doesn't
+        material.roughness = mix(material.roughness, 0.55, uFeather);`,
       );
   };
   return { m, u };
@@ -373,6 +391,7 @@ export class Pet3D {
     geo.setAttribute("skinWeight", new THREE.BufferAttribute(s.skinWeight, 4));
     geo.setAttribute("aMat", new THREE.BufferAttribute(s.mat, 4));
     geo.setAttribute("aMat2", new THREE.BufferAttribute(s.mat2, 4));
+    geo.setAttribute("aMat3", new THREE.BufferAttribute(s.mat3, 1));
     geo.setAttribute("aNoise", new THREE.BufferAttribute(furNoise(s.position), 4));
     geo.setIndex(new THREE.BufferAttribute(s.index, 1));
     this.setShells(def.fur.shells);

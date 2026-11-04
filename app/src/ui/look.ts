@@ -7,11 +7,13 @@ export const LOOKS: Record<string, string>[] = [
   { coatBase: "#B9C0CC", coatShade: "#9AA2B0", coatHighlight: "#E3E7EE", outline: "#4E5563" },
 ];
 
-// real budgie colourings (green wild type, sky blue, lutino yellow, violet), derived so they pass the same contrast rule
-const BUDGIE = ["#7DC44E", "#6FB7E0", "#F2D64B", "#B9A3E0"];
+// real macaw colourings (scarlet, blue-and-gold with its yellow chest, military green, hyacinth),
+// derived so they pass the same contrast rule; the highlight colours the chest
+const MACAW: [string, string?][] = [["#D2232A"], ["#1F6FC0", "#F2C12E"], ["#5E9A3A"], ["#3B3F9E"]];
 
 /** The swatches offered when adopting a pet of this species. */
-export const looksFor = (species: string): Record<string, string>[] => (species === "parrot" ? BUDGIE.map(deriveLook) : LOOKS);
+export const looksFor = (species: string): Record<string, string>[] =>
+  species === "parrot" ? MACAW.map(([base, chest]) => ({ ...deriveLook(base), ...(chest && { coatHighlight: chest }) })) : LOOKS;
 
 type Lch = [number, number, number];
 
