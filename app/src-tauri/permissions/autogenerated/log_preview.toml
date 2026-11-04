@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-log-preview"
+description = "Enables the log_preview command without any pre-configured scope."
+commands.allow = ["log_preview"]
+
+[[permission]]
+identifier = "deny-log-preview"
+description = "Denies the log_preview command without any pre-configured scope."
+commands.deny = ["log_preview"]

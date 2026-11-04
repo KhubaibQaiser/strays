@@ -286,17 +286,27 @@ impl App {
         self.queue_report(key, &text);
     }
 
-    /// Names that must never leave the Mac in a report: pets, repos, the account.
-    fn private_words(&self) -> Vec<String> {
+    /// Names that must never leave the Mac in a report or a sent log: pets, repos, the account, and
+    /// every part of the folders the user picked (a folder name like `ClientX-NDA` can be private too).
+    pub(crate) fn private_words(&self) -> Vec<String> {
         let mut v: Vec<String> = self.account.iter().map(|a| a.login.clone()).collect();
+        let mut folders: Vec<&str> = self.settings.watched_folders.iter().map(String::as_str).collect();
         for p in &self.pets {
             v.push(p.name.clone());
             if let Some(g) = &p.project.github {
                 v.push(g.full_name.clone());
                 v.extend(g.full_name.split('/').map(String::from));
             }
+            if let Some(l) = &p.project.local {
+                folders.extend([l.display_path.as_str(), l.path.as_str()]);
+            }
         }
         v.extend(self.repos.iter().map(|r| r.full_name.clone()));
+        v.extend(folders.iter().flat_map(|f| f.split('/')).filter(|part| part.len() >= 3 && *part != "Users").map(String::from));
+        // the Mac's user name, wherever a path to the home folder ends up
+        if let Some(user) = std::env::var("HOME").ok().and_then(|h| h.split("/Library/Containers/").next().and_then(|h| h.rsplit('/').next()).map(String::from)) {
+            v.push(user);
+        }
         v
     }
 

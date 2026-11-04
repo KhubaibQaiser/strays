@@ -82,7 +82,11 @@ On a MacBook with a full menu bar, macOS hides icons behind the notch. Open **St
 
 - No network until you connect GitHub, and then only `api.github.com`.
 - **Error reports** are off unless you turn them on (on the welcome screen, or **Settings → Privacy & Permissions → Error reports**). When they're on, Strays sends PostHog the kind of error and its message, with every path and every pet, repo and account name removed, plus the Strays and macOS versions and a random id. That's at most 20 a day, and each one shows in the activity log. Turning reports off forgets the id.
-- When something goes wrong, the menu bar shows ⚠ and the menu says what happened. **Show log** in the same section reveals `logs/strays.log` to attach to a bug report. The log is capped at about 2 MB.
+- When something goes wrong, anywhere in Strays (including drawing the pets), the menu bar shows ⚠, and the menu and the top of Settings say what happened. Everything is also written to `logs/strays.log`, capped at about 2 MB.
+- To report a bug, open **Settings → Privacy & Permissions → Error reports**:
+  - **Save log for a bug report…** saves one file with every pet, repo, account and folder name and every path blanked out, shows it in Finder, and opens a new GitHub issue to attach it to.
+  - **Send log to the developer…** (in builds that can send error reports) first shows you exactly what would be sent, the newest 500 lines, blanked the same way. Nothing goes until you click **Send this**.
+  - **Show log** reveals the raw log file, names included.
 - **Settings → Privacy & Permissions → View activity log** lists every request Strays made.
 - **Export JSON** saves all your data. **Open data folder** shows where it lives.
 - Pets are hidden from screen recordings and screen sharing.

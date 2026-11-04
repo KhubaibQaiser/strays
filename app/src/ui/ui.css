@@ -283,3 +283,15 @@ table.log th {
   padding: 8px 12px;
   margin-bottom: 14px;
 }
+
+/* Settings → Privacy → Send log: the exact text, read before sending */
+.logpreview {
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--field, rgba(127, 127, 127, 0.12));
+  border-radius: 6px;
+}

@@ -23,6 +23,9 @@
     "allow-sync-now",
     "allow-test-sound",
     "allow-token-disconnect",
-    "allow-report-problem"
+    "allow-report-problem",
+    "allow-save-log",
+    "allow-log-preview",
+    "allow-send-log"
   ]
 }

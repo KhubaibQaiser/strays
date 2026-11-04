@@ -259,3 +259,19 @@ test("a pet can have its own liveliness, or follow Settings again", async ({ pag
   await page.getByLabel("Liveliness").selectOption("");
   await expect.poll(async () => (await calls(page, "set_pet")).at(-1)?.args).toMatchObject({ liveliness: null });
 });
+
+test("the log can be saved for a bug report, or sent after reading exactly what goes", async ({ page }) => {
+  await mockApp(page);
+  await page.goto("/ui.html#settings/privacy");
+  await page.getByRole("button", { name: "Save log for a bug report…" }).click();
+  await expect.poll(async () => (await calls(page, "open_link")).at(-1)?.args).toEqual({ which: "new-issue" });
+  await expect(page.getByText(/Saved \/tmp\/strays-log.txt/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Send log to the developer…" }).click();
+  await expect(page.getByLabel("The log that would be sent")).toContainText("WARN save: Couldn't save <name>");
+  expect(await calls(page, "send_log")).toHaveLength(0);
+  await page.getByRole("button", { name: "Send this" }).click();
+  await expect.poll(async () => (await calls(page, "send_log")).length).toBe(1);
+  await expect(page.getByLabel("The log that would be sent")).toBeHidden();
+  await page.screenshot({ path: `${shots}/settings-privacy-log.png` });
+});

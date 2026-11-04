@@ -426,6 +426,7 @@ pub fn open_link(which: String, shared: State<'_, Shared>, h: AppHandle) -> Res<
     logged("open_link", move || -> Res<()> {
         let url = match which.as_str() {
             "token-page" => "https://github.com/settings/personal-access-tokens/new".to_string(),
+            "new-issue" => format!("https://github.com/{}/issues/new", strays_core::github::RELEASES_REPO),
             // the page comes from GitHub's answer, so only this repo's release pages are opened
             "release" => shared.app.lock().unwrap().sync.update.as_ref().map(|r| r.html_url.clone())
                 .filter(|u| u.starts_with(&format!("https://github.com/{}/releases/", strays_core::github::RELEASES_REPO)))
@@ -441,6 +442,100 @@ pub fn netlog(shared: State<'_, Shared>) -> Vec<NetEntry> {
     let mut log = shared.app.lock().unwrap().netlog();
     log.reverse();
     log
+}
+
+/// Lines of the log a "Send log" carries: enough for the last few days, small enough to read first.
+const SENT_LINES: usize = 500;
+/// The log the user last previewed: "Send" sends exactly this, not a newer one.
+static PREVIEWED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// The log made safe to share: a launch-style header, both log files, the last crash and recent network
+/// activity, with every path, pet, repo, account and folder name blanked. `tail` keeps only the last lines.
+pub(crate) fn shareable_log(app: &App, tail: Option<usize>) -> String {
+    let private = app.private_words();
+    let private: Vec<&str> = private.iter().map(String::as_str).collect();
+    let mut out = vec![format!("Strays {} on macOS {}, {} · saved {}", env!("CARGO_PKG_VERSION"), crate::platform::os_version(), std::env::consts::ARCH, Utc::now().to_rfc3339())];
+    let log = crate::log::path();
+    let files = [log.as_ref().map(|p| p.with_extension("log.1")), log, Some(app.dir.join(crate::report::CRASH_FILE))];
+    for path in files.into_iter().flatten() {
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                out.push(format!("--- {name}"));
+                out.extend(text.lines().map(String::from));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => out.push(format!("--- {name} couldn't be read: {e}")),
+        }
+    }
+    let net = app.netlog();
+    out.push("--- network activity (latest 50)".into());
+    out.extend(net.iter().rev().take(50).rev().map(|e| format!("{} {} {}{} {} {}", e.at.to_rfc3339(), e.method, e.host, e.path, e.status, e.reason)));
+    let start = tail.map_or(0, |n| out.len().saturating_sub(n));
+    let mut lines: Vec<String> = out[start..].iter().map(|l| strays_core::report::scrub(l, &private)).collect();
+    if start > 0 {
+        lines.insert(0, out[0].clone());
+    }
+    lines.join("\n") + "\n"
+}
+
+/// Settings → Privacy → "Save log for a bug report": the scrubbed log as one file, revealed in Finder.
+#[tauri::command]
+pub fn save_log(shared: State<'_, Shared>, h: AppHandle) -> Res<String> {
+    logged("save_log", move || -> Res<String> {
+        let app = shared.app.lock().unwrap();
+        let path = app.dir.join(format!("strays-log-{}.txt", Utc::now().format("%Y%m%d-%H%M%S")));
+        std::fs::write(&path, shareable_log(&app, None)).map_err(|e| format!("Couldn't save the log: {e}"))?;
+        drop(app);
+        h.opener().reveal_item_in_dir(&path).map_err(|e| e.to_string())?;
+        Ok(path.display().to_string())
+    })
+}
+
+/// What "Send log" would send, for the user to read first.
+#[tauri::command]
+pub fn log_preview(shared: State<'_, Shared>) -> Res<String> {
+    logged("log_preview", move || -> Res<String> {
+        if !crate::report::available() {
+            return Err("This build can't send logs; save it for a bug report instead".into());
+        }
+        let text = shareable_log(&shared.app.lock().unwrap(), Some(SENT_LINES));
+        *PREVIEWED.lock().unwrap() = Some(text.clone());
+        Ok(text)
+    })
+}
+
+/// Sends the log the user just previewed to the developer (PostHog), once, when they ask.
+#[tauri::command]
+pub async fn send_log(shared: State<'_, Shared>) -> Res<()> {
+    logged_async("send_log", async move {
+        let text = PREVIEWED.lock().unwrap().take().ok_or("Look at the log first (Send log…)")?;
+        let id = {
+            let mut app = shared.app.lock().unwrap();
+            if app.settings.offline {
+                return Err("Offline mode is on".into());
+            }
+            let id = *app.sync.report_id.get_or_insert_with(strays_core::uuid::Uuid::new_v4);
+            app.save_all();
+            id
+        };
+        let os = crate::platform::os_version();
+        let (result, entry) = tauri::async_runtime::spawn_blocking(move || match crate::report::reporter() {
+            Ok(rep) => {
+                let (r, e) = rep.send_log(id, env!("CARGO_PKG_VERSION"), &os, &text);
+                (r, Some(e))
+            }
+            Err(e) => (Err(e), None),
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        let mut app = shared.app.lock().unwrap();
+        app.append_netlog(entry.into_iter().collect());
+        drop(app);
+        let _ = shared.tx.send(crate::Cmd::Changed);
+        result.map_err(|e| format!("The log wasn't sent: {e}"))
+    })
+    .await
 }
 
 /// Settings → Privacy → "Show log": the file to attach to a bug report.
@@ -603,6 +698,23 @@ mod tests {
     }
 
     /// Every optional filled in: pets in two states, an account, repos, folders, an update, a problem.
+    #[test]
+    fn a_shared_log_carries_no_names_paths_or_folders() {
+        let dir = std::env::temp_dir().join(format!("strays-sharelog-{}", Uuid::new_v4()));
+        let mut app = full_app(&dir);
+        app.settings.watched_folders = vec!["/Users/me/Code/ClientX-NDA".into()];
+        std::fs::write(dir.join(crate::report::CRASH_FILE), "src/state.rs:1\nThe file “ClientX-NDA” couldn't be opened for Miso and Rex in me/strays\n").unwrap();
+        let text = shareable_log(&app, None);
+        assert!(text.starts_with(&format!("Strays {}", env!("CARGO_PKG_VERSION"))), "{text}");
+        assert!(text.contains("couldn't be opened"), "the message itself stays: {text}");
+        for private in ["ClientX-NDA", "Miso", "Rex", "me/strays", "/Users/me"] {
+            assert!(!text.contains(private), "{private} leaked: {text}");
+        }
+        // a preview keeps the header and only the newest lines
+        assert_eq!(shareable_log(&app, Some(1)).lines().count(), 2);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     fn full_app(dir: &std::path::Path) -> App {
         let mut app = App::load(dir.to_path_buf()).unwrap();
         let now = Utc::now();
