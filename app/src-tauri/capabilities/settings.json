@@ -22,6 +22,7 @@
     "allow-set-login-item",
     "allow-sync-now",
     "allow-test-sound",
-    "allow-token-disconnect"
+    "allow-token-disconnect",
+    "allow-report-problem"
   ]
 }

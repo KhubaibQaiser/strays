@@ -32,13 +32,13 @@ export class Pet3DRig {
     private canvas: HTMLCanvasElement,
     species: SpeciesDef,
     colors: Record<string, string>,
-    private log: (msg: string) => void,
-    onLost: () => void,
+    private problem: (key: string, text: string) => void,
+    private onLost: () => void,
   ) {
     this.pet = new Pet3D(canvas, species, species.palette(colors));
     this.software = this.pet.software !== null;
     this.quality = { shells: this.pet.shells, dpr: devicePixelRatio, slow: 1 };
-    if (this.pet.software) log(`WARN no GPU for the 3D pet (${this.pet.software}); drawing it with less coat, light and frames`);
+    if (this.pet.software) problem("3d-gpu", `No graphics card is available (${this.pet.software}), so pets are drawn with less fur, light and motion`);
     canvas.addEventListener("webglcontextlost", (e) => {
       if (this.disposed) return; // cleanup gives the context back on purpose
       e.preventDefault();
@@ -81,6 +81,11 @@ export class Pet3DRig {
     const start = performance.now();
     this.pet.update((now - this.last) / 1000);
     this.pet.render();
+    if (this.pet.shaderError) {
+      this.problem("3d-shader", `The graphics card couldn't draw a 3D pet (${this.pet.shaderError.slice(0, 120)}), so it's drawn in 2D`);
+      this.pause();
+      return this.onLost();
+    }
     this.last = now;
     this.guard(performance.now() - start, rate);
     this.wait(idleFor(this.rate()));
@@ -111,7 +116,7 @@ export class Pet3DRig {
     this.quality = next;
     if (next.shells !== this.pet.shells) this.pet.setShells(next.shells);
     if (this.size) this.pet.setSize(this.size, Math.min(devicePixelRatio, next.dpr));
-    this.log(`WARN the 3D pet takes ${(200 / rate).toFixed(0)}+ ms a frame; drawing it with ${what}`);
+    this.problem("3d-slow", `A pet takes over ${(200 / rate).toFixed(0)} ms to draw, so it's drawn with ${what} to keep the Mac responsive`);
   }
 
   number(name: string, value: number) {
@@ -119,7 +124,7 @@ export class Pet3DRig {
     else if (name === "action") this.pet.act(value as Action);
     else if (name === "accessory" && value && !this.warnedAccessory) {
       this.warnedAccessory = true;
-      this.log("WARN 3D pets don't wear accessories yet");
+      this.problem("3d-accessory", "3D pets don't wear accessories yet, so this one leaves without its graduation accessory");
     }
   }
 

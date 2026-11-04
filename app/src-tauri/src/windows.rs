@@ -9,7 +9,9 @@ pub const CARD: &str = "card";
 /// Opens (or focuses and re-routes) a window. `route` is the fragment, e.g. `settings/github`.
 pub fn open(h: &AppHandle, label: &str, route: &str, title: &str, size: (f64, f64)) -> tauri::Result<()> {
     if let Some(w) = h.get_webview_window(label) {
-        let _ = w.emit_to(label, "route", route);
+        if let Err(e) = w.emit_to(label, "route", route) {
+            crate::log::warn(&format!("could not show {route} in the open {label} window: {e}"));
+        }
         w.show()?;
         w.set_focus()?;
         return Ok(());

@@ -174,6 +174,7 @@ pub fn run(
             app.has_token = matches!(token, Ok(Some(_)));
             match token {
                 Err(e) => {
+                    crate::log::warn(&format!("sync: couldn't read the token from the Keychain: {e}"));
                     app.sync_error = Some(e);
                     outcome = Some(SyncOutcome { ok: false, for_pet });
                 }
@@ -258,6 +259,8 @@ pub fn run(
             }
             match found {
                 Ok(release) => {
+                    app.sync.update_failures = 0;
+                    app.resolve("update");
                     app.sync.update_checked = Some(now);
                     app.sync.update = release.filter(|r| github::is_newer(&r.tag_name, env!("CARGO_PKG_VERSION")));
                 }
@@ -265,6 +268,12 @@ pub fn run(
                 Err(e) => {
                     crate::log::warn(&format!("update check failed, trying again tomorrow: {e}"));
                     app.sync.update_checked = Some(now - Duration::days(UPDATE_EVERY - 1));
+                    app.sync.update_failures += 1;
+                    // one failed day is usually just a bad connection; three in a row is worth saying
+                    let days = app.sync.update_failures;
+                    if days >= 3 {
+                        app.warn("update", format!("Couldn't check for a new version of Strays for {days} days: {e}"));
+                    }
                 }
             }
             app.save_all();

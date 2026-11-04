@@ -62,6 +62,11 @@ fn bytes(sound: Sound) -> &'static [u8] {
     }
 }
 
+/// Whether there's a sound output to play on, for the Test button: playing happens later, on its own thread.
+pub fn check_output() -> Result<(), String> {
+    rodio::DeviceSinkBuilder::open_default_sink().map(drop).map_err(|e| format!("No sound output device: {e}"))
+}
+
 /// Plays sounds one after another on a background thread.
 #[derive(Clone)]
 pub struct Player(mpsc::Sender<(Sound, f32)>);
@@ -71,9 +76,12 @@ impl Player {
         let (tx, rx) = mpsc::channel::<(Sound, f32)>();
         std::thread::spawn(move || {
             while let Ok(first) = rx.recv() {
-                let Ok(device) = rodio::DeviceSinkBuilder::open_default_sink() else {
-                    crate::log::warn("no audio output device");
-                    continue;
+                let device = match rodio::DeviceSinkBuilder::open_default_sink() {
+                    Ok(d) => d,
+                    Err(e) => {
+                        crate::log::warn(&format!("no sound output device: {e}"));
+                        continue;
+                    }
                 };
                 // play this and anything queued meanwhile, then close the device again
                 let mut next = Some(first);

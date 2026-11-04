@@ -364,6 +364,8 @@ pub struct SyncState {
     /// Last update check (weekly while the opt-in setting is on) and a newer release it found.
     pub update_checked: Option<Time>,
     pub update: Option<Release>,
+    /// Update checks that failed in a row; after a few the user is told (they're retried daily).
+    pub update_failures: u32,
     /// Random id for error reports, made when the first one is sent and forgotten when they're turned off.
     pub report_id: Option<Uuid>,
 }

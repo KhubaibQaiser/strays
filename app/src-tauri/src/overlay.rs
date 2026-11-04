@@ -157,7 +157,13 @@ pub struct Config {
 pub struct Overlay(Arc<Mutex<Inner>>);
 
 fn main_screen(h: &AppHandle) -> Option<Screen> {
-    let m = h.primary_monitor().ok()??;
+    let m = match h.primary_monitor() {
+        Ok(m) => m?,
+        Err(e) => {
+            crate::log::warn(&format!("could not read the main display: {e}"));
+            return None;
+        }
+    };
     let k = m.scale_factor();
     let (p, sz, wa) = (m.position(), m.size(), m.work_area());
     Some(Screen {
@@ -248,6 +254,7 @@ impl Overlay {
         thread::spawn(move || {
             let mut hovered: Option<Uuid> = None;
             let mut held = false;
+            let (mut click_failed, mut resize_failed) = (false, false);
             let mut slow_ticks = 0u32;
             loop {
                 let primary_h = me.0.lock().unwrap().screen.frame.h;
@@ -263,10 +270,19 @@ impl Overlay {
                 };
                 if target != hovered || now_held != held {
                     let w = me.window();
-                    if target.is_some() != hovered.is_some()
-                        && let Err(e) = w.set_ignore_cursor_events(target.is_none())
-                    {
-                        crate::log::warn(&format!("could not switch the overlay's click-through: {e}"));
+                    if target.is_some() != hovered.is_some() {
+                        // a stuck switch either blocks clicks on the desktop or makes pets unclickable
+                        match w.set_ignore_cursor_events(target.is_none()) {
+                            Ok(()) if click_failed => {
+                                click_failed = false;
+                                crate::solved(&h, "overlay-clicks");
+                            }
+                            Ok(()) => {}
+                            Err(e) => {
+                                click_failed = true;
+                                crate::problem(&h, "overlay-clicks", format!("Couldn't switch whether pets take clicks; quitting and reopening Strays should fix it: {e}"));
+                            }
+                        }
                     }
                     send(&w, "hover", Hover { id: target, held: now_held });
                     #[cfg(debug_assertions)]
@@ -290,9 +306,15 @@ impl Overlay {
                     if screen != old
                         && let Err(e) = w.set_size(LogicalSize::new(screen.frame.w, screen.frame.h)).and_then(|_| w.set_position(LogicalPosition::new(screen.frame.x, screen.frame.y)))
                     {
-                        crate::log::warn(&format!("could not fit the overlay to the screen: {e}"));
                         // keep laying out for the old screen, and try again on the next check
+                        if !resize_failed {
+                            crate::problem(&h, "overlay-size", format!("Couldn't fit the pets to the screen after it changed; trying again: {e}"));
+                        }
+                        resize_failed = true;
                         screen = old;
+                    } else if resize_failed && screen != old {
+                        resize_failed = false;
+                        crate::solved(&h, "overlay-size");
                     }
                     let mut o = me.0.lock().unwrap();
                     if screen != o.screen || front != o.front || rm != o.reduce_motion || off != o.screen_off {

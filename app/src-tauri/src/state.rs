@@ -275,12 +275,13 @@ impl App {
     /// Records a problem for the user (menu and Settings) and the log. A repeat of the same `key` replaces it.
     pub fn warn(&mut self, key: &str, text: impl Into<String>) {
         let text = text.into();
-        crate::log::warn(&format!("{key}: {text}"));
         match self.issues.iter_mut().find(|i| i.key == key) {
             Some(i) if i.text == text => return,
             Some(i) => i.text = text.clone(),
             None => self.issues.push(Issue { key: key.into(), text: text.clone() }),
         }
+        // logged when it starts or changes: a problem that persists mustn't push older lines out of the log
+        crate::log::warn(&format!("{key}: {text}"));
         // reported once when it starts or changes, not on every repeat
         self.queue_report(key, &text);
     }
@@ -329,7 +330,11 @@ impl App {
 
     /// Clears a problem once its cause is fixed.
     pub fn resolve(&mut self, key: &str) {
+        let before = self.issues.len();
         self.issues.retain(|i| i.key != key);
+        if self.issues.len() != before {
+            crate::log::write("INFO", &format!("{key}: resolved"));
+        }
     }
 
     /// Records a save's outcome under `key`: a failure warns, a success clears an earlier failure.

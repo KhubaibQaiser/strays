@@ -96,6 +96,41 @@ fn shift_quick_syncs_only_when_it_isnt_part_of_the_modifier() {
     assert!(!quick_sync(Modifier::OptionShift, true));
 }
 
+/// Most problems a page may have listed at once, so a misbehaving page can't flood the menu.
+const PAGE_PROBLEMS: usize = 8;
+
+/// A page hit a problem the user should know about (a script error, a pet it couldn't draw): it's
+/// logged and listed in the menu and Settings, under the window's name, like the app's own.
+#[tauri::command]
+fn report_problem(key: String, text: String, window: tauri::Window, shared: State<'_, Shared>) {
+    let key: String = key.chars().filter(|c| c.is_ascii_alphanumeric() || "-:_.".contains(*c)).take(60).collect();
+    let key = format!("{}:{key}", window.label());
+    let text: String = text.chars().take(300).collect();
+    let mut app = shared.app.lock().unwrap();
+    let listed = app.issues.iter().filter(|i| i.key.starts_with(&format!("{}:", window.label()))).count();
+    if listed >= PAGE_PROBLEMS && !app.issues.iter().any(|i| i.key == key) {
+        log::warn(&format!("{key}: {text} (not listed: {PAGE_PROBLEMS} problems from this window already are)"));
+        return;
+    }
+    app.warn(&key, text);
+    drop(app);
+    let _ = shared.tx.send(Cmd::Changed);
+}
+
+/// Something in the shell that has no window to answer (the overlay's poller) hit a problem.
+pub(crate) fn problem(h: &AppHandle, key: &str, text: String) {
+    // the overlay's poller starts just before the state exists
+    let Some(shared) = h.try_state::<Shared>() else { return log::warn(&format!("{key}: {text}")) };
+    shared.app.lock().unwrap().warn(key, text);
+    let _ = shared.tx.send(Cmd::Changed);
+}
+
+pub(crate) fn solved(h: &AppHandle, key: &str) {
+    let Some(shared) = h.try_state::<Shared>() else { return };
+    shared.app.lock().unwrap().resolve(key);
+    let _ = shared.tx.send(Cmd::Changed);
+}
+
 /// The webview asks for the current frame once it has loaded.
 #[tauri::command]
 fn overlay_ready(shared: State<'_, Shared>) {
@@ -113,12 +148,12 @@ fn pet_log(msg: String) {
     let _ = msg;
 }
 
-fn data_dir(h: &AppHandle) -> PathBuf {
+fn data_dir(h: &AppHandle) -> tauri::Result<PathBuf> {
     #[cfg(debug_assertions)]
     if let Some(dir) = std::env::var_os("STRAYS_DATA_DIR") {
-        return dir.into();
+        return Ok(dir.into());
     }
-    h.path().app_data_dir().expect("app data dir")
+    h.path().app_data_dir()
 }
 
 /// Debug only: `STRAYS_SPAWN=n` adds n local pets (not saved; cat, dog, hamster, parrot in turn, or only
@@ -196,6 +231,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             pet_click,
+            report_problem,
             overlay_ready,
             pet_log,
             commands::ui_state,
@@ -230,14 +266,18 @@ pub fn run() {
             tauri_app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let h = tauri_app.handle().clone();
 
-            let dir = data_dir(&h);
+            let dir = data_dir(&h)?;
             // the log is best-effort: without it problems still show in the menu and Settings
-            if let Err(e) = log::init(&dir) {
+            let logging = log::init(&dir);
+            if let Err(e) = &logging {
                 eprintln!("no log file: {e}");
             }
             report::install_crash_hook(dir.clone());
             #[allow(unused_mut)]
             let mut app = App::load(dir).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            if let Err(e) = logging {
+                app.warn("log", format!("Strays can't write its log file, so problems are only shown here: {e}"));
+            }
             #[cfg(target_os = "macos")]
             app.open_bookmarks(platform::open_bookmark);
             #[cfg(debug_assertions)]
@@ -307,7 +347,12 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building tauri application")
+        .unwrap_or_else(|e| {
+            // nothing else can show it: the menu and windows never came up
+            log::write("FATAL", &format!("Strays couldn't start: {e}"));
+            platform::fatal("Strays couldn't start", &format!("{e}\n\nThe details are in logs/strays.log in Strays' data folder."));
+            std::process::exit(1)
+        })
         .run(|h, event| match event {
             // a menu-bar app keeps running with no windows open
             tauri::RunEvent::ExitRequested { api, code: None, .. } => api.prevent_exit(),

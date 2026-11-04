@@ -9,6 +9,7 @@
     "core:event:default",
     "allow-pet-click",
     "allow-overlay-ready",
-    "allow-pet-log"
+    "allow-pet-log",
+    "allow-report-problem"
   ]
 }
