@@ -170,3 +170,26 @@ test("with the modifier held, a pet can be dragged onto the grid; a press that d
   await expect(page.locator("#grid")).toHaveCount(0);
   expect(await calls("pet_click")).toHaveLength(1);
 });
+
+test("holding still on a pet pets it (no click), and a right-click opens its menu", async ({ page }) => {
+  await mockApp(page);
+  await page.setViewportSize({ width: 800, height: 500 });
+  await page.goto("/index.html");
+  await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.some((c) => c.cmd === "overlay_ready"));
+  const grid = { x0: 580, y0: 280, cw: 140, ch: 140, cols: 5, rows: 3, s: 200 };
+  await emit(page, "overlay", { pets: [pet("a", "content", 580)], grid, liveliness: "gentle", reduceMotion: true, hidden: false });
+  await expect(page.locator("canvas")).toHaveCount(1, { timeout: 30_000 });
+  await emit(page, "hover", { id: "a", held: true });
+  const calls = (cmd: string) => page.evaluate((c) => (window as unknown as { __calls: { cmd: string; args: unknown }[] }).__calls.filter((x) => x.cmd === c).map((x) => x.args), cmd);
+
+  await page.mouse.move(680, 140);
+  await page.mouse.down();
+  await page.waitForTimeout(1200);
+  await expect(page.locator(".bubble")).toHaveText("♥"); // with Reduce Motion the reaction is a heart
+  await page.mouse.up();
+  await expect.poll(() => calls("pet_press")).toHaveLength(2);
+  expect(await calls("pet_click")).toHaveLength(0);
+
+  await page.mouse.click(680, 140, { button: "right" });
+  await expect.poll(() => calls("pet_menu")).toEqual([{ id: "a" }]);
+});

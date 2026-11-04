@@ -4,6 +4,7 @@
 //   harness target X Y W H SECONDS   normal-level window; prints "TARGET CLICK x,y" on mouse down
 //   harness move X Y                 move the cursor (global points, top-left origin)
 //   harness click X Y [opt]          left click, optionally with ⌥ flag
+//   harness rclick X Y [opt]         right click, optionally with ⌥ flag
 //   harness drag X1 Y1 X2 Y2         ⌥-drag from one point to the other
 //   harness screen                   print the main display's width and height in points
 //   harness opt down|up              press or release the ⌥ key
@@ -78,6 +79,14 @@ case "drag": // drag x1 y1 x2 y2: ⌥-press at the first point, move in steps, l
     e = CGEvent(mouseEventSource: src, mouseType: .leftMouseUp, mouseCursorPosition: b, mouseButton: .left)
     e?.flags = .maskAlternate
     post(e)
+case "rclick": // rclick X Y [opt]: a right click, optionally with ⌥
+    let p = point(args[2], args[3])
+    for type in [CGEventType.rightMouseDown, .rightMouseUp] {
+        let e = CGEvent(mouseEventSource: src, mouseType: type, mouseCursorPosition: p, mouseButton: .right)
+        e?.flags = args.count > 4 && args[4] == "opt" ? .maskAlternate : []
+        post(e)
+        usleep(30_000)
+    }
 case "opt":
     let down = args[2] == "down"
     let e = CGEvent(keyboardEventSource: src, virtualKey: 58, keyDown: down) // 58 = left ⌥
@@ -87,6 +96,6 @@ case "opt":
 case "esc":
     for down in [true, false] { post(CGEvent(keyboardEventSource: src, virtualKey: 53, keyDown: down)) }
 default:
-    FileHandle.standardError.write("usage: harness target|move|click|drag|screen|opt|esc …\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: harness target|move|click|rclick|drag|screen|opt|esc …\n".data(using: .utf8)!)
     exit(2)
 }

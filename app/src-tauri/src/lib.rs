@@ -167,6 +167,22 @@ fn pet_drop(id: Uuid, x: f64, y: f64, shared: State<'_, Shared>) {
     let _ = shared.tx.send(Cmd::Changed);
 }
 
+/// The modifier and a right-click on a pet: its own menu at the cursor (§7.2), the same actions as its
+/// submenu in the menu bar; a choice goes through the menu bar's handler.
+#[tauri::command]
+fn pet_menu(id: Uuid, window: tauri::WebviewWindow, shared: State<'_, Shared>, h: AppHandle) -> Result<(), String> {
+    let app = shared.app.lock().unwrap();
+    let p = app.pets.iter().find(|p| p.id == id).ok_or("No such pet")?;
+    let entries = menu::pet_entries(&h, &app, p, Utc::now()).map_err(|e| e.to_string())?;
+    drop(app);
+    let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = entries.iter().map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
+    let menu = tauri::menu::Menu::with_items(&h, &refs).map_err(|e| e.to_string())?;
+    window.popup_menu(&menu).map_err(|e| {
+        log::warn(&format!("could not show a pet's menu: {e}"));
+        e.to_string()
+    })
+}
+
 /// The webview asks for the current frame once it has loaded.
 #[tauri::command]
 fn overlay_ready(shared: State<'_, Shared>) {
@@ -268,6 +284,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             pet_click,
+            pet_menu,
             report_problem,
             pet_press,
             pet_drop,

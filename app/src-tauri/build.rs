@@ -13,6 +13,7 @@ const COMMANDS: &[&str] = &[
     "overlay_ready",
     "pet_action",
     "pet_click",
+    "pet_menu",
     "report_problem",
     "pet_press",
     "pet_drop",
