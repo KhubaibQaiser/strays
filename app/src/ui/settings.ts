@@ -101,12 +101,16 @@ export function renderSettings(root: HTMLElement, state: UiState, section: strin
       row(
         "Liveliness",
         select("liveliness", [
-          ["calm", "Calm: still, with an occasional blink (about 1% CPU)"],
-          ["gentle", "Gentle: small moments every few seconds (about 3–6% CPU)"],
-          ["lively", "Lively: always moving (about 11% CPU, noticeably more battery)"],
+          ["calm", "Calm: slower, lighter motion (least battery)"],
+          ["gentle", "Gentle: smooth motion"],
+          ["lively", "Lively: the smoothest, always moving (most battery)"],
         ]),
       ),
-      el("p", { class: "muted small" }, "CPU figures were measured with 3 pets on an Apple Silicon Mac (Gate 2a). Reduce Motion in macOS settings always keeps pets calm."),
+      el(
+        "p",
+        { class: "muted small" },
+        "One pet at Gentle measured about 8–26% of one CPU core on an Apple Silicon Mac, depending on what else the Mac was doing; each extra pet adds less. A pet can have its own liveliness in its card. Reduce Motion in macOS settings always keeps pets calm.",
+      ),
       row("Most pets on screen", num("maxVisible", 1, 8)),
       row("Fewest pets on screen", num("minVisible", 0, 8)),
       row("Change who's on screen every", num("rotationHours", 1, 48), "hours"),
