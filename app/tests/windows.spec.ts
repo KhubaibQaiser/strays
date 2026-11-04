@@ -356,3 +356,13 @@ test("a folder-only pet starts on the Slow-burn pace", async ({ page }) => {
   await page.getByLabel("Folder").selectOption({ index: 1 });
   await expect(page.getByLabel("Pace")).toHaveValue("slowBurn");
 });
+
+test("Increase Contrast darkens secondary text, and buttons meet AA contrast", async ({ page }) => {
+  await mockApp(page);
+  await page.goto("/ui.html#settings/pets");
+  const accent = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
+  expect(await accent()).toBe("#0071e3");
+  await page.emulateMedia({ contrast: "more" } as Parameters<typeof page.emulateMedia>[0]);
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--muted").trim())).toBe("#3a3a3c");
+  expect(await accent()).toBe("#0058b0");
+});

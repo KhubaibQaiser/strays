@@ -4,7 +4,8 @@
   --text: #1d1d1f;
   --muted: #6e6e73;
   --line: #d2d2d7;
-  --accent: #0a84ff;
+  /* white text on it reaches 4.5:1 (WCAG AA); #0a84ff was 3.6:1 */
+  --accent: #0071e3;
   --danger: #d70015;
   --ok: #248a3d;
   --chip: #ececf0;
@@ -21,6 +22,27 @@
     --chip: #38383b;
     --danger: #ff453a;
     --ok: #30d158;
+  }
+}
+
+/* Increase Contrast in macOS (Accessibility → Display): darker secondary text, stronger lines */
+@media (prefers-contrast: more) {
+  :root {
+    --muted: #3a3a3c;
+    --line: #6e6e73;
+    --accent: #0058b0;
+  }
+  input,
+  select,
+  textarea,
+  button {
+    border-width: 2px !important;
+  }
+}
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root {
+    --muted: #d1d1d6;
+    --line: #a1a1a6;
   }
 }
 

@@ -61,7 +61,7 @@ Clicks go straight through pets, so they never get in your way. Hold **⌥ Optio
 | ⌥ + press and hold a second | Pets it. It enjoys it, but petting never changes its mood: only work does |
 | ⌥ + drag | Moves the pet. A faint grid shows where pets can stand; let go and it settles in the nearest free spot, and stays there (also after a restart or a resolution change). **Put pets back in line** in the 🐾 menu undoes all moves. |
 
-Every few hours a pet stretches or takes a short stroll and comes back; with Reduce Motion on in macOS, it doesn't. Every action is also in the 🐾 menu. The modifier key can be changed in **Settings → Interaction**.
+With **Increase Contrast** on in macOS, Strays' windows and bubbles use darker text and stronger edges. Every few hours a pet stretches or takes a short stroll and comes back; with Reduce Motion on in macOS, it doesn't. Every action is also in the 🐾 menu. The modifier key can be changed in **Settings → Interaction**.
 
 - **Snooze** hides a pet for a while: an hour, four hours, until tomorrow morning, three days, until a time you pick (in its card), or until you wake it. Its hunger keeps counting.
 - A pet for a folder with no GitHub repo starts on the **Slow-burn** pace, since only this Mac's commits count for it.

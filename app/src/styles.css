@@ -89,3 +89,24 @@ canvas.dragging {
   cursor: grabbing;
   filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.3));
 }
+
+/* Increase Contrast: solid bubbles with an edge, and a stronger outline and grid */
+@media (prefers-contrast: more) {
+  .bubble,
+  .ask {
+    border: 2px solid #2a1e18;
+  }
+  .tooltip {
+    background: #000;
+    border: 1px solid #fff;
+  }
+  canvas.hover {
+    filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 3px #000);
+  }
+  #grid .cell {
+    border: 2px dashed rgba(255, 255, 255, 0.8);
+  }
+  #grid .cell.target {
+    border: 3px solid #fff;
+  }
+}
