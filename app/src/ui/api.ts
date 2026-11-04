@@ -56,6 +56,8 @@ export type Settings = {
   ignore: string[];
   petSize: "small" | "medium" | "large";
   modifier: "option" | "control" | "shift" | "optionShift";
+  /** keys that hide or show every pet, like "Control+Alt+S"; null is off */
+  hideShortcut: string | null;
   hideInFullScreen: boolean;
   nudgeStyle: "gentle" | "playful" | "off";
   nudgesPerPetDaily: number;

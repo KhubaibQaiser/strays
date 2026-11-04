@@ -240,9 +240,27 @@ pub fn adopt(request: AdoptRequest, shared: State<'_, Shared>) -> Res<String> {
 }
 
 #[tauri::command]
-pub fn save_settings(settings: Settings, shared: State<'_, Shared>) -> Res<()> {
+pub fn save_settings(settings: Settings, shared: State<'_, Shared>, h: AppHandle) -> Res<()> {
     logged("save_settings", move || -> Res<()> {
-        let r = shared.app.lock().unwrap().save_settings(settings);
+        let mut app = shared.app.lock().unwrap();
+        let keys_changed = app.settings.hide_shortcut != settings.hide_shortcut;
+        let keys = settings.hide_shortcut.clone();
+        let r = app.save_settings(settings);
+        drop(app);
+        // a shortcut that can't be registered is an error for the page that set it, and stays listed
+        if r.is_ok() && keys_changed {
+            let applied = crate::shortcut::apply(&h, keys.as_deref());
+            let mut app = shared.app.lock().unwrap();
+            match applied {
+                Ok(()) => app.resolve("shortcut"),
+                Err(e) => {
+                    app.warn("shortcut", e.clone());
+                    drop(app);
+                    changed(&shared);
+                    return Err(e);
+                }
+            }
+        }
         changed(&shared);
         r
     })

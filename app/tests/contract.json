@@ -129,6 +129,7 @@
       "defaultPace": "string",
       "errorReports": "boolean",
       "hideInFullScreen": "boolean",
+      "hideShortcut": "null",
       "holidayDays": "number",
       "ignore": [
         "never"

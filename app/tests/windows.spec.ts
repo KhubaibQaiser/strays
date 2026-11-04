@@ -366,3 +366,19 @@ test("Increase Contrast darkens secondary text, and buttons meet AA contrast", a
   expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--muted").trim())).toBe("#3a3a3c");
   expect(await accent()).toBe("#0058b0");
 });
+
+test("a shortcut to hide or show all pets: off by default, suggested keys, a recorder", async ({ page }) => {
+  await mockApp(page);
+  await page.goto("/ui.html#settings/interaction");
+  const box = page.getByLabel("Hide or show all pets with a shortcut");
+  await expect(box).not.toBeChecked();
+  await box.check();
+  await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ hideShortcut: "Control+Alt+S" });
+  await expect(page.getByRole("button", { name: /Shortcut keys/ })).toHaveText("⌃⌥S");
+  await page.getByRole("button", { name: /Shortcut keys/ }).click();
+  await page.keyboard.press("Meta+Shift+KeyH");
+  await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ hideShortcut: "Shift+Super+H" });
+  await expect(page.getByRole("button", { name: /Shortcut keys/ })).toHaveText("⇧⌘H");
+  await box.uncheck();
+  await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ hideShortcut: null });
+});

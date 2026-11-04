@@ -51,6 +51,7 @@ export const STATE: UiState = {
     ignore: [],
     petSize: "medium",
     modifier: "option",
+    hideShortcut: null,
     hideInFullScreen: true,
     nudgeStyle: "gentle",
     nudgesPerPetDaily: 1,

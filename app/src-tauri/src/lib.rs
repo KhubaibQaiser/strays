@@ -11,6 +11,7 @@ mod menu;
 mod overlay;
 mod report;
 mod state;
+mod shortcut;
 mod sync;
 mod token;
 mod windows;
@@ -282,6 +283,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(shortcut::plugin())
         .invoke_handler(tauri::generate_handler![
             pet_click,
             pet_menu,
@@ -353,6 +355,10 @@ pub fn run() {
             let (tx, rx) = mpsc::channel();
             let player = audio::Player::start();
             h.manage(Shared { app: app.clone(), tx: tx.clone(), overlay: overlay.clone(), audio: player.clone() });
+            let keys = app.lock().unwrap().settings.hide_shortcut.clone();
+            if let Err(e) = shortcut::apply(&h, keys.as_deref()) {
+                app.lock().unwrap().warn("shortcut", e);
+            }
 
             let ui = h.clone();
             std::thread::spawn(move || {
