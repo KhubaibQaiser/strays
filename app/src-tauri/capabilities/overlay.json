@@ -13,6 +13,7 @@
     "allow-pet-drop",
     "allow-overlay-ready",
     "allow-pet-log",
-    "allow-report-problem"
+    "allow-report-problem",
+    "allow-pet-menu"
   ]
 }

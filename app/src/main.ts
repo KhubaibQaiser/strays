@@ -69,7 +69,9 @@ const MAX_3D = 12;
 let grid: Grid = { x0: 0, y0: 0, cw: 0, ch: 0, cols: 0, rows: 0, s: 0 };
 /** A press on a pet: it becomes a drag once the cursor moves this many points (§7.2). */
 const DRAG_PT = 4;
-let press: { p: Pet; x: number; y: number; shift: boolean; dragging: boolean } | null = null;
+let press: { p: Pet; x: number; y: number; shift: boolean; dragging: boolean; petted: boolean; timer: number } | null = null;
+/** Holding still on a pet this long pets it (§7.2): a happy reaction that never changes mood. */
+const PET_MS = 1000;
 
 /** Seconds between short moments per pet (§7.4); Lively plays continuously instead. */
 const GAP: Record<Exclude<Liveliness, "lively">, [number, number]> = { calm: [20, 60], gentle: [5, 15] };
@@ -266,14 +268,25 @@ function add(placed: Placed, forceRive = false) {
   if (rig.continuous) void play(p, []);
   // the window only takes clicks while the user's chosen modifier is held (Rust decides, and says so
   // through "hover"), so any press that arrives here is meant for the pet, whichever modifier that is.
-  // Let go where it was pressed and it's a click; move it and it's a drag onto the grid.
+  // Let go where it was pressed and it's a click; hold still a second and it's petting; move it and
+  // it's a drag onto the grid.
   p.el.addEventListener("mousedown", (e) => {
     if (!frozen || e.button !== 0 || press) return;
     e.preventDefault();
-    press = { p, x: e.clientX, y: e.clientY, shift: e.shiftKey, dragging: false };
+    const timer = window.setTimeout(() => {
+      if (!press || press.p !== p || press.dragging) return;
+      press.petted = true;
+      if (!reduceMotion && !p.busy) void play(p, [[ACT.petted, CLIP_S[ACT.petted]]]);
+      else bubble(p.placed.id, "♥", 1200);
+    }, PET_MS);
+    press = { p, x: e.clientX, y: e.clientY, shift: e.shiftKey, dragging: false, petted: false, timer };
     invoke("pet_press", { id: p.placed.id, down: true }).catch(unreached("pet_press"));
   });
-  p.el.addEventListener("contextmenu", (e) => e.preventDefault());
+  // the modifier and a right-click: the pet's own menu, where the cursor is (§7.2)
+  p.el.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    if (frozen) invoke("pet_menu", { id: p.placed.id }).catch(unreached("pet_menu"));
+  });
 }
 
 /** The pets the latest frame lists, for pets that arrive once their shape is built. */
@@ -335,13 +348,15 @@ function hideGrid() {
 /** Ends a press: a click if it never moved, else a drop that Rust snaps to the nearest free cell. */
 function endPress() {
   if (!press) return;
-  const { p, shift, dragging } = press;
+  const { p, shift, dragging, petted, timer } = press;
+  window.clearTimeout(timer);
   press = null;
   hideGrid();
   p.el.classList.remove("dragging");
   if (!dragging) {
     invoke("pet_press", { id: p.placed.id, down: false }).catch(unreached("pet_press"));
-    invoke("pet_click", { id: p.placed.id, shift }).catch(unreached("pet_click"));
+    // a pat isn't a click
+    if (!petted) invoke("pet_click", { id: p.placed.id, shift }).catch(unreached("pet_click"));
   } else {
     // the pet stays where it was let go until the next frame puts it in its cell
     invoke("pet_drop", { id: p.placed.id, x: parseFloat(p.el.style.left), y: parseFloat(p.el.style.top) }).catch(unreached("pet_drop"));
