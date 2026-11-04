@@ -5,13 +5,50 @@
 > **Status:** pre-alpha, in active development. macOS only for now: Apple Silicon Macs with macOS 14 Sonoma or later. **Intel Macs are not supported** ([why, and what adding them would cost](docs/gate-4.md#intel-macs)). There is no installable release yet.
 
 <p align="center">
-  <img src="art/review/pets-in-app.png" alt="A cat, a hamster and a corgi in the Strays overlay" width="560">
+  <img src="docs/media/pets.gif" alt="The four strays, animated: a cream Persian cat, a Pembroke Welsh Corgi, a golden Syrian hamster and a scarlet macaw on its perch" width="680">
 </p>
+
+## Meet the strays
+
+Four species, each a real-time 3D animal with a soft coat or feathers, drawn on your screen. Pick a coat when you adopt one: cream, charcoal, ginger, blue-grey or any colour (the macaw has its own scarlet, blue-and-gold, green and hyacinth).
+
+| | Species | What it's like |
+|---|---|---|
+| 🐈 | **Cat**, a long-haired Persian | Faint tabby markings in a triple coat. Glances around, flicks its plume of a tail, purrs when petted. |
+| 🐕 | **Dog**, a Pembroke Welsh Corgi | Fluffy bib and big ears. Wags, and pants with its tongue out when it's happy. |
+| 🐹 | **Hamster**, a golden Syrian | Holds its paws at its chest, sniffs, grooms its face, and puffs its cheeks when it eats. |
+| 🦜 | **Parrot**, a macaw on its perch | Scarlet, blue-and-gold, green or hyacinth. Snaps its head about, bobs when happy, flaps when it celebrates. |
+
+### Moods
+
+A pet's mood follows how long it's been since you last worked on its project (a push to GitHub, or a commit in its folder). The days below are the defaults; each pet's pace (Sprint, Normal, Slow-burn) or its own custom days can change them.
+
+| Mood | | When |
+|---|---|---|
+| **Joyful** | <img src="docs/media/mood-joyful.gif" alt="All four pets joyful: bright-eyed, the corgi panting" width="520"> | worked on in the last 2 days |
+| **Content** | <img src="docs/media/mood-content.gif" alt="All four pets content, looking around calmly" width="520"> | up to 5 days |
+| **Peckish** | <img src="docs/media/mood-peckish.gif" alt="All four pets peckish, an empty blue bowl beside each" width="520"> | up to 10 days: an empty bowl appears, and it looks around for food |
+| **Hungry** | <img src="docs/media/mood-hungry.gif" alt="All four pets hungry, heads and ears lower, eyeing the empty bowl" width="520"> | up to 20 days: head and ears lower, eyes on the bowl |
+| **Gloomy** | <img src="docs/media/mood-gloomy.gif" alt="All four pets gloomy under small rain clouds" width="520"> | after that: a little rain cloud, and it barely looks up |
+
+Pets never die, age or punish you: a failed sync, an expired token, holidays and paused time never make a mood worse.
+
+### Moments
+
+| | | |
+|---|---|---|
+| **Fed** | <img src="docs/media/eating.gif" alt="All four pets eating from a full bowl" width="520"> | You pushed: the bowl fills and it eats. |
+| **Celebrating** | <img src="docs/media/celebrating.gif" alt="All four pets celebrating in a burst of confetti" width="520"> | You marked a release: confetti, then a few days' holiday off-screen. |
+| **Back from holiday** | <img src="docs/media/postcard.gif" alt="All four pets holding up a postcard" width="520"> | It comes back with a postcard. |
+| **Asleep** | <img src="docs/media/sleeping.gif" alt="Cat, corgi and hamster asleep in lilac beds with drifting Z's; the macaw asleep on its perch" width="520"> | Snoozed: curled up in its bed (the macaw sleeps on its perch) until it wakes. |
+| **Graduated** | <img src="docs/media/graduates.gif" alt="Graduates wearing their rewards: a mortarboard, a scarf, a bow, a star badge and a flower crown" width="600"> | You finished the project: it puts on its reward (cap, scarf, bow, star badge or flower crown), says goodbye and frees a slot. |
+
+These GIFs are recorded from the app's own 3D pets by [`app/scripts/readme-media.mjs`](app/scripts/readme-media.mjs).
 
 ## How it works
 
-- **One pet per project.** Pick a cat, dog, hamster or parrot for each repository. Coat colours are set when the pet is adopted. By default you can keep 3 pets (configurable); other projects wait in a shelter.
-- **Mood follows your activity.** It drops as days pass without a push: Joyful, Content, Peckish, Hungry, Gloomy. The day thresholds and pace are configurable. Holidays and paused time don't count, weekends can be excluded, and a failed sync never makes a mood worse.
+- **One pet per project.** Pick a cat, dog, hamster or parrot for each repository or project folder. By default you can keep 3 pets (configurable); other projects wait in a shelter, and you're offered the next one when a slot opens.
+- **Mood follows your activity** (see [Moods](#moods)). Holidays and paused time don't count, and weekends can be excluded.
 - **Releases.** Mark a release and the pet celebrates, then takes a few days off-screen.
 - **Snooze and pause.** Snooze hides a pet for a while (its hunger keeps counting). Pause is for deliberate breaks (its hunger freezes). Vacation mode pauses everyone.
 - **Stays out of your way.**
@@ -25,8 +62,11 @@
 | ⌥ + hover | Freeze pets, outline this one, show name · repo · mood |
 | ⌥ + click | Open the pet's info card: mood, activity, goal checklist, and sync, snooze, release, pause, graduate |
 | ⌥⇧ + click | Sync this pet now |
+| ⌥ + drag | Move the pet onto a grid spot it keeps |
+| ⌥ + right-click | The pet's own menu |
+| ⌥ + press and hold | Pet it (it enjoys it; mood only changes with work) |
 
-The modifier key can be changed in Settings. Every action is also in the 🐾 menu-bar menu.
+The modifier key can be changed in Settings, which also has an optional shortcut to hide or show every pet. Every action is also in the 🐾 menu-bar menu.
 
 See the [user guide](docs/user-guide.md) for setup, connecting GitHub, folders and removing the app.
 
@@ -46,10 +86,11 @@ Strays is local-first and asks for as little as possible.
 app/core        Rust library: moods, pet states, settings, storage, GitHub client, local git, display rules.
                 No Tauri dependency, so every rule is tested with a fake clock.
 app/src-tauri   Tauri 2 app shell: background sync loop, Keychain, menu-bar menu, overlay window, macOS calls.
-app/src         Overlay page and windows (TypeScript): draws pets with the Rive web runtime, plus the info card,
-                settings, token setup and adoption screens.
-art/<species>   Pet rigs generated as text (RML) by Python scripts and compiled with the Rive CLI.
-                Shared poses and clips live in art/tools/pet.py; review sheets in art/review/.
+app/src         Overlay page and windows (TypeScript): the info card, settings, token setup and adoption screens.
+app/src/pet3d   The 3D pets (three.js): each species is built from distance-field shapes on a small skeleton,
+                with shell-rendered fur or feathers, painted eyes, props and accessories; shapes are meshed
+                in a worker. If a Mac can't draw WebGL, the Rive 2D pets below stand in.
+art/<species>   The 2D fallback rigs, generated as text (RML) by Python scripts and compiled with the Rive CLI.
 tools/          Fake GitHub API server and an OS-level click-test harness.
 native-overlay  Swift prototype from Gate 0, kept as a performance fallback.
 docs/           Specification and gate reports.
