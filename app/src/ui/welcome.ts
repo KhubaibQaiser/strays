@@ -76,7 +76,8 @@ export function renderWelcome(root: HTMLElement, state: UiState, notice: (msg: s
         row("Most pets on screen", num("maxVisible", 1, 8)),
         state.reportsAvailable ? el("div", { class: "check" }, reports, el("label", { for: "reports" }, "Help fix bugs: send anonymous error and crash reports")) : null,
         state.reportsAvailable ? el("p", { class: "muted small" }, REPORTS_TEXT) : null,
-        el("p", { class: "muted small" }, "Sound and launch at login arrive later; both will start switched off."),
+        el("p", {}, "Clicks go straight through your pets. Hold ⌥ (Option) and click a pet to open its card, or hold ⌥ and drag it to move it. You can pick another key in Settings → Interaction."),
+        el("p", { class: "muted small" }, "Sound and launch at login are in Settings, both off until you turn them on."),
         el("div", { class: "buttons" }, el("button", { class: "primary", onclick: () => void finish() }, "Adopt your first pet…")),
       ];
     },

@@ -586,7 +586,7 @@ impl App {
             Action::Adopt => {
                 p.adopt(now).map_err(refused)?;
                 self.cues.push((id, Cue::Hello));
-                format!("{name} moved in")
+                format!("{name} moved in. Hold {} and click {name} to see its card.", self.settings.modifier.symbol())
             }
             Action::Snooze(s) => {
                 p.snooze(now, snooze_until(s, now)).map_err(refused)?;
@@ -887,7 +887,7 @@ impl App {
         let message = if self.slot_free() {
             p.adopt(now).expect("new pets start in the shelter");
             self.cues.push((p.id, Cue::Hello));
-            format!("{name} moved in")
+            format!("{name} moved in. Hold {} and click {name} to see its card.", self.settings.modifier.symbol())
         } else {
             format!("All slots are full, so {name} is waiting in the shelter")
         };

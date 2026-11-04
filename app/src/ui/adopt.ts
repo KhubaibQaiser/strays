@@ -13,6 +13,9 @@ RuntimeLoader.setWasmUrl(riveWasmUrl);
 const NAMES = ["Miso", "Biscuit", "Pixel", "Nori", "Mochi", "Pepper", "Tofu", "Juniper", "Waffle", "Echo", "Clover", "Sprout", "Fig", "Bean"];
 const SPECIES: [Species, string][] = [["cat", "Cat (Persian)"], ["dog", "Dog (Corgi)"], ["hamster", "Hamster (Syrian)"], ["parrot", "Parrot (macaw)"]];
 
+/** Updates the open adoption window's repo list from new state, keeping everything else as the user left it. */
+export let fillRepos: (state: UiState) => void = () => {};
+
 export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchParams, notice: (msg: string, error?: boolean) => void) {
   let repoId: number | null = query.get("repo") ? Number(query.get("repo")) : null;
   let folder: string | null = query.get("folder");
@@ -21,14 +24,18 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
   let colors = randomLook();
   let pace: Pace = state.settings.defaultPace;
 
-  // project
-  const untracked = state.repos.filter((r) => !r.tracked);
-  const repoSel = el(
-    "select",
-    { "aria-label": "Repository" },
-    el("option", { value: "" }, untracked.length ? "Choose a GitHub repo…" : "No GitHub repos (connect GitHub in Settings)"),
-    ...untracked.map((r) => el("option", { value: r.id, selected: r.id === repoId }, `${r.fullName}${r.pushedAt ? ` · ${ago(r.pushedAt)}` : ""}`)),
-  );
+  // project: the repo list fills in as soon as the first sync brings it (setup opens this window
+  // straight after connecting GitHub, while that sync is still running)
+  const repoSel = el("select", { "aria-label": "Repository" });
+  fillRepos = (s: UiState) => {
+    const untracked = s.repos.filter((r) => !r.tracked);
+    const empty = !s.account ? "No GitHub repos (connect GitHub in Settings)" : !s.lastSync ? "Fetching your repos…" : "No untracked GitHub repos";
+    repoSel.replaceChildren(
+      el("option", { value: "" }, untracked.length ? "Choose a GitHub repo…" : empty),
+      ...untracked.map((r) => el("option", { value: r.id, selected: r.id === repoId }, `${r.fullName}${r.pushedAt ? ` · ${ago(r.pushedAt)}` : ""}`)),
+    );
+  };
+  fillRepos(state);
   const folderText = el("span", { class: "muted" }, folder ?? "");
   const localChoices = state.localRepos.filter(([, , tracked]) => !tracked);
   const folderSel = el(

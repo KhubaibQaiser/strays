@@ -4,7 +4,7 @@ import { api, UiState } from "./api";
 import { cardChrome, renderCard } from "./card";
 import { renderSettings } from "./settings";
 import { renderSetup } from "./setup";
-import { renderAdopt } from "./adopt";
+import { fillRepos, renderAdopt } from "./adopt";
 import { renderWelcome } from "./welcome";
 
 const root = document.getElementById("app")!;
@@ -63,6 +63,7 @@ async function refresh() {
     api.reportProblem("state", `A window couldn't load Strays' state: ${e}`).catch((r) => root.append(` (and it couldn't be recorded: ${r})`));
     return;
   }
+  if (route.startsWith("adopt")) fillRepos(state);
   // forms keep what the user is typing; only views that just display state redraw on changes
   const live = route.startsWith("card") || route.startsWith("settings");
   if (!root.firstChild) return render();

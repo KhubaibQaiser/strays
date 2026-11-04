@@ -278,3 +278,26 @@ test("the log can be saved for a bug report, or sent after reading exactly what 
   await expect(page.getByLabel("The log that would be sent")).toBeHidden();
   await page.screenshot({ path: `${shots}/settings-privacy-log.png` });
 });
+
+test("adopting right after connecting GitHub: the repo list fills in when the first sync lands", async ({ page }) => {
+  await mockApp(page, {}, { repos: [], lastSync: null });
+  await page.goto("/ui.html#adopt");
+  await expect(page.getByLabel("Repository").locator("option").first()).toHaveText("Fetching your repos…");
+  await page.getByLabel("Name").fill("Pixel");
+  await page.evaluate(() => {
+    const w = window as unknown as { __answers: { ui_state: { repos: unknown[]; lastSync: string } }; __emit: (e: string, p: unknown) => void };
+    w.__answers.ui_state = { ...w.__answers.ui_state, lastSync: "2026-11-04T10:00:00Z", repos: [{ id: 2, fullName: "me/side-project", pushedAt: null, private: false, tracked: false }] };
+    w.__emit("state-changed", null);
+  });
+  await expect(page.getByLabel("Repository").locator("option")).toHaveText(["Choose a GitHub repo…", "me/side-project"]);
+  await expect(page.getByLabel("Name")).toHaveValue("Pixel");
+});
+
+test("marking a release takes a second click, so a slip can't send a pet away", async ({ page }) => {
+  await mockApp(page);
+  await page.goto(`/ui.html#card/${PET_ID}`);
+  await page.getByRole("button", { name: "Mark release…" }).click();
+  expect(await calls(page, "pet_action")).toHaveLength(0);
+  await page.getByRole("button", { name: "Shipped it? Click again" }).click();
+  expect((await calls(page, "pet_action")).at(-1)?.args).toEqual({ id: PET_ID, action: "release" });
+});
