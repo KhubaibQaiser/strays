@@ -45,7 +45,7 @@ test("settings save each change and reject thresholds that don't increase", asyn
   expect(await calls(page, "save_settings")).toHaveLength(before);
 
   await page.getByRole("button", { name: "Display" }).click();
-  await page.getByLabel("liveliness").selectOption({ label: "Lively: always moving (about 11% CPU, noticeably more battery)" });
+  await page.getByLabel("liveliness").selectOption({ label: "Lively: the smoothest, always moving (most battery)" });
   await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ liveliness: "lively" });
   await page.screenshot({ path: `${shots}/settings-display.png` });
 });
