@@ -337,7 +337,7 @@ function privacy(state: UiState, s: Settings, save: () => Promise<unknown>, noti
       s.errorReports && state.reportsAvailable,
       el("div", { class: "check" }, i, el("label", { for: "error-reports" }, "Send anonymous error and crash reports")),
       el("p", { class: "muted small" }, REPORTS_TEXT),
-      el("div", { class: "buttons" }, el("button", { onclick: () => void api.revealLog().catch((e) => notice(String(e), true)) }, "Show log")),
+      logButtons(notice, state.reportsAvailable),
     );
   })();
   const notYet = card("Focus status", "Not available yet", false, el("p", { class: "muted" }, "Needs the signed release."));
@@ -360,6 +360,46 @@ function privacy(state: UiState, s: Settings, save: () => Promise<unknown>, noti
   );
 
   return [el("h1", {}, "Privacy & Permissions"), github, folders, network, reports, capture, login, notYet, data];
+}
+
+/** Show the log, save a copy safe to attach to a bug report, or send one after reading exactly what goes. */
+function logButtons(notice: (msg: string, error?: boolean) => void, canSend: boolean): HTMLElement {
+  const fail = (e: unknown) => notice(String(e), true);
+  const preview = el("pre", { class: "logpreview", tabindex: 0, "aria-label": "The log that would be sent" });
+  const confirm = el("div", { class: "buttons" });
+  const box = el("div", { class: "sendlog" }, el("p", { class: "small" }, "This is everything that would be sent. Names, repos, folders and paths are already blanked out."), preview, confirm);
+  box.hidden = true;
+  const close = () => (box.hidden = true);
+  confirm.append(
+    el("button", {
+      class: "primary",
+      onclick: () => void api.sendLog().then(() => (close(), notice("Sent. Thank you!"))).catch(fail),
+    }, "Send this"),
+    el("button", { onclick: close }, "Cancel"),
+  );
+  const save = () =>
+    void api.saveLog().then((p) => {
+        notice(`Saved ${p}, with names and paths blanked out. Attach it to a new issue on GitHub.`);
+        return api.openLink("new-issue");
+      }).catch(fail);
+  const send = () =>
+    void api.logPreview().then((text) => {
+        preview.textContent = text;
+        box.hidden = false;
+        preview.focus();
+      }).catch(fail);
+  return el(
+    "div",
+    {},
+    el(
+      "div",
+      { class: "buttons" },
+      el("button", { onclick: () => void api.revealLog().catch(fail) }, "Show log"),
+      el("button", { onclick: save }, "Save log for a bug report…"),
+      canSend ? el("button", { onclick: send }, "Send log to the developer…") : null,
+    ),
+    box,
+  );
 }
 
 function volumeSlider(s: Settings, save: () => Promise<void>) {

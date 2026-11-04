@@ -110,6 +110,8 @@ export async function mockApp(page: Page, fail: Record<string, string> = {}, pat
         netlog: [{ at: "2026-11-01T10:00:00Z", method: "GET", host: "api.github.com", path: "/user/repos?sort=pushed", status: 200, reason: "scheduled" }],
         pick_folder: "/Users/me/Code",
         export_data: "/tmp/strays-export.json",
+        save_log: "/tmp/strays-log.txt",
+        log_preview: "Strays 0.1.0 on macOS 26.5, aarch64\n--- strays.log\nWARN save: Couldn't save <name>\n",
       }) as Record<string, unknown>;
       // event handlers by name, so tests can emit events the way the app does
       const callbacks: Record<number, (e: unknown) => void> = {};

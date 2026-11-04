@@ -62,7 +62,6 @@ impl Reporter {
 
     /// Sends one report. Returns the network-log entry either way, so every request shows in the activity log.
     pub fn send(&self, install: Uuid, version: &str, os: &str, r: &Report) -> (Result<(), String>, NetEntry) {
-        let path = "/i/v0/e/";
         let body = serde_json::json!({
             "api_key": self.key,
             "event": "$exception",
@@ -75,6 +74,22 @@ impl Reporter {
                 "os_version": os,
             },
         });
+        self.post(body, "error report")
+    }
+
+    /// Sends the log the user chose to send (Settings → Privacy → Send log), already scrubbed and shown to them.
+    pub fn send_log(&self, install: Uuid, version: &str, os: &str, log: &str) -> (Result<(), String>, NetEntry) {
+        let body = serde_json::json!({
+            "api_key": self.key,
+            "event": "strays_log",
+            "distinct_id": install.to_string(),
+            "properties": { "log": log, "$process_person_profile": false, "$geoip_disable": true, "$lib": "strays", "app_version": version, "os_version": os },
+        });
+        self.post(body, "log the user sent")
+    }
+
+    fn post(&self, body: serde_json::Value, reason: &str) -> (Result<(), String>, NetEntry) {
+        let path = "/i/v0/e/";
         let res = self.http.post(format!("{}{path}", self.host)).json(&body).send();
         let status = res.as_ref().map_or(0, |r| r.status().as_u16());
         let entry = NetEntry {
@@ -83,7 +98,7 @@ impl Reporter {
             host: self.host.split("://").nth(1).unwrap_or(&self.host).into(),
             path: path.into(),
             status,
-            reason: "error report".into(),
+            reason: reason.into(),
         };
         let result = match res {
             Ok(r) if r.status().is_success() => Ok(()),
@@ -145,5 +160,33 @@ mod tests {
         assert_eq!(body["distinct_id"], id.to_string());
         assert_eq!(body["properties"]["$exception_list"][0]["type"], "save");
         assert_eq!(body["properties"]["$process_person_profile"], false);
+    }
+
+    #[test]
+    fn a_sent_log_is_its_own_event_with_no_location() {
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = server.local_addr().unwrap().port();
+        let got = std::thread::spawn(move || {
+            let (mut c, _) = server.accept().unwrap();
+            let mut r = BufReader::new(c.try_clone().unwrap());
+            let (mut len, mut line) = (0, String::new());
+            while r.read_line(&mut line).unwrap() > 2 {
+                if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    len = v.trim().parse().unwrap();
+                }
+                line.clear();
+            }
+            let mut body = vec![0; len];
+            r.read_exact(&mut body).unwrap();
+            c.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}").unwrap();
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap()
+        });
+        let rep = Reporter::new(&format!("http://127.0.0.1:{port}"), "phc_test").unwrap();
+        let (ok, entry) = rep.send_log(Uuid::new_v4(), "0.1.0", "26.5", "START Strays 0.1.0\nWARN save: <name>");
+        assert_eq!((ok, entry.reason.as_str()), (Ok(()), "log the user sent"));
+        let body = got.join().unwrap();
+        assert_eq!(body["event"], "strays_log");
+        assert_eq!(body["properties"]["log"], "START Strays 0.1.0\nWARN save: <name>");
+        assert_eq!(body["properties"]["$geoip_disable"], true);
     }
 }
