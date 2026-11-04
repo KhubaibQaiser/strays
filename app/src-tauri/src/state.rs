@@ -786,6 +786,23 @@ impl App {
             .filter_map(|id| self.pets.iter().find(|p| p.id == *id))
             .map(|p| Candidate { id: p.id, repo: p.project.github.as_ref().map(|g| g.full_name.as_str()), mood: self.mood(p, now) })
             .collect();
+        // §6.4: a pet on screen mentions the token running out, once a week before and once the day
+        // before, when bubbles are allowed at all; the menu-bar ⏳ reminder stays meanwhile
+        let level = crate::menu::token_days_left(self, now).map(|d| if d <= 1 { 1 } else { 7 });
+        if level.is_none() && self.sync.expiry_warned.is_some() {
+            self.sync.expiry_warned = None; // a new token: remind again next time
+        }
+        let quiet = self.settings.nudge_style == strays_core::settings::NudgeStyle::Off || cx.presentation || full_screen || self.settings.is_quiet(cx.local_minute);
+        if let (Some(level), Some(speaker)) = (level, on_screen.first().map(|c| c.id))
+            && self.sync.expiry_warned != Some(level)
+            && !quiet
+        {
+            self.sync.expiry_warned = Some(level);
+            let r = self.store.save(SYNC_FILE, &self.sync);
+            self.saved("save:sync", "the sync history", r);
+            let when = if level == 1 { "tomorrow (or today)" } else { "within a week" };
+            return Some(strays_core::nudge::Nudge::Pet { id: speaker, text: format!("Psst: your GitHub token runs out {when}. Paste a new one from the 🐾 menu so I can keep watching.") });
+        }
         let all: Vec<Mood> = self.pets.iter().filter(|p| p.state.kind == StateKind::Active).map(|p| self.mood(p, now)).collect();
         let mut log = self.nudge_log.clone();
         let nudge = pick(&on_screen, &all, &mut log, &self.settings, &cx);
@@ -1211,6 +1228,33 @@ mod tests {
         // the next write keeps only readable lines
         app.append_netlog(vec![entry.clone()]);
         assert!(!std::fs::read_to_string(dir.join(NETLOG_FILE)).unwrap().contains("half"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_pet_mentions_the_token_running_out_once_a_week_before_and_once_the_day_before() {
+        let dir = std::env::temp_dir().join(format!("strays-expiry-{}", Uuid::new_v4()));
+        let mut app = App::load(dir.clone()).unwrap();
+        app.settings.quiet_hours = false;
+        let now = strays_core::chrono::Utc::now();
+        let mut p = Pet::new(now, "Miso", Species::Cat, Project::default(), Activity { last: now, source: ActivitySource::LocalCommit }, Pace::Normal);
+        p.adopt(now).unwrap();
+        app.pets.push(p);
+        app.refresh_visible(now);
+        let says = |n: Option<strays_core::nudge::Nudge>| match n {
+            Some(strays_core::nudge::Nudge::Pet { text, .. }) => text,
+            other => format!("{other:?}"),
+        };
+        app.account = Some(Account { login: "me".into(), expires: None, repo_count: 1 });
+        app.sync.token_expires = Some(now + Duration::days(5));
+        assert!(says(app.next_nudge(now, false)).contains("within a week"));
+        assert!(!says(app.next_nudge(now, false)).contains("token"), "only once at that level");
+        app.sync.token_expires = Some(now + Duration::hours(20));
+        assert!(says(app.next_nudge(now, false)).contains("tomorrow"));
+        // a new token (months left): the next one gets reminded again
+        app.sync.token_expires = Some(now + Duration::days(90));
+        app.next_nudge(now, false);
+        assert_eq!(app.sync.expiry_warned, None);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

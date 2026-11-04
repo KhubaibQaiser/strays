@@ -44,8 +44,16 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
     el("option", { value: "" }, "Choose a folder from your watched folders…"),
     ...localChoices.map(([path, shown]) => el("option", { value: path, selected: path === folder }, shown)),
   );
+  // a folder with no GitHub repo only counts this Mac's commits, so it starts on the gentler pace (§5.4)
+  const folderPace = () => {
+    if (folder && repoId == null) {
+      pace = "slowBurn";
+      paceSel.value = pace;
+    }
+  };
   folderSel.addEventListener("change", () => {
     folder = folderSel.value || null;
+    folderPace();
     folderText.textContent = "";
     notice("");
   });
@@ -59,6 +67,7 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
       const f = await api.pickFolder();
       if (f) {
         folder = f;
+        folderPace();
         folderText.textContent = f;
         notice("");
       }
@@ -142,6 +151,7 @@ export function renderAdopt(root: HTMLElement, state: UiState, query: URLSearchP
   const goal = el("input", { type: "text", placeholder: "What does done look like? (optional)", style: "width:100%", "aria-label": "Goal" });
   const paceSel = el("select", { "aria-label": "Pace" }, ...Object.entries(PACE_LABEL).map(([v, t]) => el("option", { value: v, selected: v === pace }, t)));
   paceSel.addEventListener("change", () => (pace = paceSel.value as Pace));
+  folderPace(); // opened for a folder (a new one found in a watched folder)
 
   const adopt = el("button", { class: "primary" }, "Adopt");
   adopt.addEventListener("click", async () => {

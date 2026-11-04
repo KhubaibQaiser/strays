@@ -379,6 +379,8 @@ pub struct SyncState {
     /// Last update check (weekly while the opt-in setting is on) and a newer release it found.
     pub update_checked: Option<Time>,
     pub update: Option<Release>,
+    /// The token-expiry reminder last given as a pet's bubble: 7 (a week before) or 1 (the day before).
+    pub expiry_warned: Option<u8>,
     /// Update checks that failed in a row; after a few the user is told (they're retried daily).
     pub update_failures: u32,
     /// Random id for error reports, made when the first one is sent and forgotten when they're turned off.

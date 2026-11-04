@@ -348,3 +348,11 @@ test("a pet can have its own mood days", async ({ page }) => {
   await page.getByLabel("Pace").selectOption("sprint");
   await expect.poll(async () => (await calls(page, "set_pet")).at(-1)?.args).toMatchObject({ thresholds: null, pace: "sprint" });
 });
+
+test("a folder-only pet starts on the Slow-burn pace", async ({ page }) => {
+  await mockApp(page);
+  await page.goto("/ui.html#adopt");
+  await expect(page.getByLabel("Pace")).toHaveValue("normal");
+  await page.getByLabel("Folder").selectOption({ index: 1 });
+  await expect(page.getByLabel("Pace")).toHaveValue("slowBurn");
+});
