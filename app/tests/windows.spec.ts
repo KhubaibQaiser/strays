@@ -154,7 +154,7 @@ test("adoption needs a project, then sends every choice", async ({ page }) => {
   });
 });
 
-test("welcome walks three steps and saves the comfort settings", async ({ page }) => {
+test("welcome walks its steps, saves the comfort settings, and adopts several projects at once", async ({ page }) => {
   await mockApp(page);
   await page.setViewportSize({ width: 560, height: 560 });
   await page.goto("/ui.html#welcome");
@@ -167,9 +167,17 @@ test("welcome walks three steps and saves the comfort settings", async ({ page }
   const reports = page.getByLabel("Help fix bugs: send anonymous error and crash reports");
   await expect(reports).not.toBeChecked();
   await page.screenshot({ path: `${shots}/welcome-comfort.png` });
-  await page.getByRole("button", { name: "Adopt your first pet…" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
   await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ watchedFolders: ["/Users/me/Code"], errorReports: false });
-  expect((await calls(page, "open_window")).at(-1)?.args).toEqual({ kind: "adopt" });
+  // existing projects, untracked ones only, ticked as many as wanted
+  await expect(page.getByRole("heading", { name: "Adopt your projects" })).toBeVisible();
+  await expect(page.getByLabel(/me\/strays/)).toHaveCount(0);
+  await page.getByLabel(/me\/side-project/).check();
+  await page.screenshot({ path: `${shots}/welcome-adopt.png` });
+  await page.getByRole("button", { name: "Adopt 1" }).click();
+  await expect.poll(async () => (await calls(page, "adopt")).length).toBe(1);
+  expect((await calls(page, "adopt"))[0].args.request).toMatchObject({ repoId: 2, folder: null, species: "cat", goal: "" });
+  expect((await calls(page, "close_window")).at(-1)?.args).toEqual({ label: "welcome" });
 });
 
 test("a refresh keeps what's being typed and the scroll position", async ({ page }) => {

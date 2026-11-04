@@ -5,7 +5,7 @@ import { cardChrome, renderCard } from "./card";
 import { renderSettings } from "./settings";
 import { renderSetup } from "./setup";
 import { fillRepos, renderAdopt } from "./adopt";
-import { renderWelcome } from "./welcome";
+import { fillProjects, renderWelcome } from "./welcome";
 
 const root = document.getElementById("app")!;
 let route = location.hash.slice(1);
@@ -64,6 +64,7 @@ async function refresh() {
     return;
   }
   if (route.startsWith("adopt")) fillRepos(state);
+  if (route.startsWith("welcome")) fillProjects(state);
   // forms keep what the user is typing; only views that just display state redraw on changes
   const live = route.startsWith("card") || route.startsWith("settings");
   if (!root.firstChild) return render();

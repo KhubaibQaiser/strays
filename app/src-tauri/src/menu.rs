@@ -192,6 +192,13 @@ pub fn build<Rt: Runtime>(h: &AppHandle<Rt>, app: &App) -> R<Menu<Rt>> {
     if !app.issues.is_empty() {
         items.push(item(h, "dismiss", "Dismiss warnings")?);
     }
+    // §5.8: a free slot and someone waiting in the shelter: offer the one worked on most recently
+    if app.slot_free()
+        && let Some(next) = app.pets.iter().filter(|p| p.state.kind == StateKind::Shelter).max_by_key(|p| p.activity.last)
+    {
+        let repo = next.project.github.as_ref().map(|g| g.full_name.clone()).or_else(|| next.project.local.as_ref().map(|l| l.display_path.clone())).unwrap_or_default();
+        items.push(item(h, &format!("pet/{}/adopt", next.id), &format!("🏠 A slot opened. Adopt {} ({repo})?", next.name))?);
+    }
     items.push(sep(h)?);
     let on_screen: Vec<&Pet> = app.visible.iter().filter_map(|id| app.pets.iter().find(|p| p.id == *id)).collect();
     type Keep<'a> = Box<dyn Fn(&Pet) -> bool + 'a>;
