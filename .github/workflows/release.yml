@@ -1,6 +1,10 @@
 # Release (spec §16): pushing a tag like v0.1.0 builds the Apple Silicon .dmg and attaches it to a draft
-# GitHub release, which is published by hand. With the Apple secrets set, Tauri signs with the Developer ID
-# and notarises; without them the build is ad-hoc signed and the release says it is a test build.
+# GitHub release, which is published by hand. With the Apple secrets set, the app is signed with the
+# Developer ID and notarised; without them it's ad-hoc signed and the release says it's a test build.
+#
+# Two jobs, so the signing secrets never share a machine with third-party code: `build` runs npm and
+# cargo (every package's build scripts) with no secrets at all, and `sign` starts on a fresh runner
+# with only Apple's tools, the built app, the entitlements and the audit script.
 name: Release
 
 on:
@@ -8,10 +12,10 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  dmg:
+  build:
     runs-on: macos-latest
     defaults:
       run:
@@ -35,46 +39,96 @@ jobs:
       - run: npm ci
       - run: cargo test --locked
         working-directory: app/src-tauri
-      # Tauri signs whenever these variables exist, even empty, so only set the ones that have a value.
-      # It reads the notarisation key from a file.
-      - name: Signing secrets
+      # unsigned here; `sign` signs it
+      - run: npx tauri build --bundles app --no-sign
+        env:
+          # baked in at compile time; without it the build simply can't send error reports. It's an
+          # ingest-only key (anyone with the app has it), not a signing secret.
+          STRAYS_POSTHOG_KEY: ${{ secrets.STRAYS_POSTHOG_KEY }}
+          STRAYS_POSTHOG_HOST: ${{ vars.STRAYS_POSTHOG_HOST }}
+      - run: lipo src-tauri/target/release/bundle/macos/Strays.app/Contents/MacOS/Strays -verify_arch arm64
+      # ditto keeps the bundle's symlinks and attributes, which a plain upload would lose
+      - run: ditto -c -k --keepParent src-tauri/target/release/bundle/macos/Strays.app "$RUNNER_TEMP/Strays.app.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unsigned-app
+          path: ${{ runner.temp }}/Strays.app.zip
+          retention-days: 1
+
+  sign:
+    needs: build
+    runs-on: macos-latest
+    permissions:
+      contents: write # the draft release
+    steps:
+      # only what signing needs: the entitlements, the audit script and the version
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            app/src-tauri/Entitlements.plist
+            app/src-tauri/tauri.conf.json
+            tools/permissions-audit.sh
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-app
+          path: ${{ runner.temp }}
+      - run: ditto -x -k "$RUNNER_TEMP/Strays.app.zip" "$RUNNER_TEMP/out"
+      - name: Sign
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/out/Strays.app"
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            # test build: ad-hoc, still with the sandbox entitlements
+            codesign --force --deep --sign - --entitlements app/src-tauri/Entitlements.plist "$app"
+            exit 0
+          fi
+          kc="$RUNNER_TEMP/sign.keychain-db"; pass=$(uuidgen)
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$pass" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$pass" "$kc"
+          security import "$RUNNER_TEMP/cert.p12" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$kc"
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$pass" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          codesign --force --deep --options runtime --timestamp --keychain "$kc" --sign "$APPLE_SIGNING_IDENTITY" --entitlements app/src-tauri/Entitlements.plist "$app"
+          codesign --verify --deep --strict "$app"
+      - run: tools/permissions-audit.sh "$RUNNER_TEMP/out/Strays.app"
+      - name: Disk image
+        run: |
+          v=$(plutil -extract version raw -o - app/src-tauri/tauri.conf.json 2>/dev/null || node -p 'require("./app/src-tauri/tauri.conf.json").version')
+          mkdir -p "$RUNNER_TEMP/dmg"
+          hdiutil create -volname Strays -srcfolder "$RUNNER_TEMP/out/Strays.app" -ov -format UDZO "$RUNNER_TEMP/dmg/Strays_${v}_aarch64.dmg"
+      - name: Notarise
+        env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           P8: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
-          for n in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY; do
-            [ -n "${!n}" ] && printf '%s<<EOV\n%s\nEOV\n' "$n" "${!n}" >> "$GITHUB_ENV"
-          done
-          if [ -n "$P8" ]; then
-            printf '%s\n' "$P8" > "$RUNNER_TEMP/notary.p8"
-            echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
-          fi
-          true
-      # CI=true skips the Finder AppleScript that lays out the .dmg window (it times out without a GUI session)
-      - run: npx tauri build --bundles app,dmg
-        env:
-          CI: true
-          # baked in at compile time; without it the build simply can't send error reports
-          STRAYS_POSTHOG_KEY: ${{ secrets.STRAYS_POSTHOG_KEY }}
-          STRAYS_POSTHOG_HOST: ${{ vars.STRAYS_POSTHOG_HOST }}
-      - run: ../tools/permissions-audit.sh src-tauri/target/release/bundle/macos/Strays.app
-      - run: lipo src-tauri/target/release/bundle/macos/Strays.app/Contents/MacOS/Strays -verify_arch arm64
-      - name: Check the signature
-        if: env.APPLE_CERTIFICATE != ''
-        run: |
-          codesign --verify --deep --strict src-tauri/target/release/bundle/macos/Strays.app
-          xcrun stapler validate src-tauri/target/release/bundle/dmg/*.dmg
-          spctl --assess --type open --context context:primary-signature -v src-tauri/target/release/bundle/dmg/*.dmg
+          set -euo pipefail
+          [ -n "$P8" ] || { echo "no notarisation key: test build"; exit 0; }
+          dmg=$(ls "$RUNNER_TEMP"/dmg/*.dmg)
+          printf '%s\n' "$P8" > "$RUNNER_TEMP/notary.p8"
+          codesign --sign "$APPLE_SIGNING_IDENTITY" --timestamp "$dmg"
+          xcrun notarytool submit "$dmg" --key "$RUNNER_TEMP/notary.p8" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
+          rm "$RUNNER_TEMP/notary.p8"
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open --context context:primary-signature -v "$dmg"
       - name: Draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
         run: |
-          if [ -n "$APPLE_CERTIFICATE" ]; then note="Signed and notarised. Apple Silicon, macOS 14 or later."
+          if [ "$SIGNED" = "true" ]; then note="Signed and notarised. Apple Silicon, macOS 14 or later."
           else note="Test build: ad-hoc signed, not notarised, so macOS blocks it on first open. Apple Silicon, macOS 14 or later."; fi
-          (cd src-tauri/target/release/bundle/dmg && shasum -a 256 *.dmg > SHA256SUMS)
-          gh release create "$GITHUB_REF_NAME" src-tauri/target/release/bundle/dmg/*.dmg src-tauri/target/release/bundle/dmg/SHA256SUMS \
+          (cd "$RUNNER_TEMP/dmg" && shasum -a 256 *.dmg > SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP"/dmg/*.dmg "$RUNNER_TEMP/dmg/SHA256SUMS" --repo "$GITHUB_REPOSITORY" \
             --draft --title "Strays $GITHUB_REF_NAME" --notes "$note See docs/user-guide.md."
