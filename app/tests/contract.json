@@ -17,6 +17,7 @@
     "status": "number"
   },
   "overlay": {
+    "hidden": "boolean",
     "liveliness": "string",
     "pets": [
       {

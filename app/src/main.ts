@@ -11,7 +11,8 @@ import { listen } from "@tauri-apps/api/event";
 
 type Liveliness = "calm" | "gentle" | "lively";
 export type Placed = { id: string; species: string; colors: Record<string, string>; label: string; mood: string; confused: boolean; liveliness: Liveliness | null; x: number; y: number; s: number };
-export type Frame = { pets: Placed[]; liveliness: Liveliness; reduceMotion: boolean };
+/** `hidden`: a full-screen app is in front, so the pets are kept but not shown or drawn. */
+export type Frame = { pets: Placed[]; liveliness: Liveliness; reduceMotion: boolean; hidden: boolean };
 export type Hover = { id: string | null; held: boolean };
 export type Feedback = { id: string; ok: boolean; text: string };
 
@@ -49,6 +50,9 @@ let mode: Liveliness = "gentle";
 const levelOf = (p: { placed: Placed }) => p.placed.liveliness ?? mode;
 let reduceMotion = false;
 let frozen = false;
+let hidden = false;
+/** WebKit keeps only so many WebGL contexts and drops the oldest past that; pets beyond this draw in 2D. */
+const MAX_3D = 12;
 
 /** Seconds between short moments per pet (§7.4); Lively plays continuously instead. */
 const GAP: Record<Exclude<Liveliness, "lively">, [number, number]> = { calm: [20, 60], gentle: [5, 15] };
@@ -131,7 +135,7 @@ function schedule(p: Pet) {
   if (p.busy) return;
   window.clearTimeout(p.timer);
   p.rig.setLiveliness?.(levelOf(p), reduceMotion);
-  if (frozen) return setPlaying(p, false);
+  if (frozen || hidden) return setPlaying(p, false);
   const level = reduceMotion ? "calm" : levelOf(p);
   if (level === "lively" || (p.rig.continuous && !reduceMotion)) return setPlaying(p, true);
   setPlaying(p, false);
@@ -222,7 +226,9 @@ function rig3d(p: Pet): Rig | null {
 
 function add(placed: Placed, forceRive = false) {
   const p = { el: canvasFor(placed.id), placed, playing: false, busy: false, leaving: false, run: 0 } as Pet;
-  const want3d = placed.species in SPECIES_3D && !forceRive;
+  const in3d = [...pets.values()].filter((o) => o.rig.continuous).length;
+  if (placed.species in SPECIES_3D && !forceRive && in3d >= MAX_3D) log(`WARN pet=${placed.id} drawn in 2D: ${MAX_3D} pets are already drawn in 3D`);
+  const want3d = placed.species in SPECIES_3D && !forceRive && in3d < MAX_3D;
   let rig = want3d ? rig3d(p) : null;
   if (!rig) {
     // a canvas that tried WebGL can't give Rive a 2D context, so start from a fresh one
@@ -274,7 +280,9 @@ function bubble(id: string, text: string, ms: number, className = "bubble") {
 
 const ready: Promise<unknown>[] = [];
 ready.push(listen<Frame>("overlay", ({ payload }) => {
-  const modeChanged = payload.liveliness !== mode || payload.reduceMotion !== reduceMotion;
+  const modeChanged = payload.liveliness !== mode || payload.reduceMotion !== reduceMotion || payload.hidden !== hidden;
+  hidden = payload.hidden;
+  document.body.classList.toggle("hidden", hidden);
   mode = payload.liveliness;
   reduceMotion = payload.reduceMotion;
   // ponytail: the Rive cap is one for the page, so a Rive (fallback) pet follows the app's liveliness

@@ -658,5 +658,7 @@ export class Pet3D {
   dispose() {
     this.disposables.forEach((d) => d.dispose());
     this.renderer.dispose();
+    // give the context back now: WebKit only frees it on garbage collection, and caps how many live
+    this.renderer.forceContextLoss();
   }
 }

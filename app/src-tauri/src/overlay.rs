@@ -76,9 +76,6 @@ pub struct Placed {
 /// out of the middle 60% of the frontmost window when it reaches the bottom; the parrot perches top
 /// right. Pets that don't fit are left off. All coordinates are global; results are window-local.
 pub fn place(views: &[PetView], screen: &Screen, front: Option<Rect>, pet_height: f64) -> Vec<Placed> {
-    if front.is_some_and(|f| covers(f, screen.frame)) {
-        return Vec::new(); // full-screen app (§7.1)
-    }
     let s = pet_height / ART_FILL;
     let w = screen.work;
     let ground_y = w.bottom() - s;
@@ -122,6 +119,8 @@ pub(crate) struct Frame {
     pub pets: Vec<Placed>,
     pub liveliness: Liveliness,
     pub reduce_motion: bool,
+    /// a full-screen app is in front (§7.1): the page keeps its pets but doesn't show or draw them
+    pub hidden: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -141,6 +140,7 @@ struct Inner {
     modifier: Modifier,
     hide_full: bool,
     placed: Vec<Placed>,
+    hidden: bool,
 }
 
 /// The settings the overlay follows (§7.1, §7.2, §7.4).
@@ -204,6 +204,7 @@ impl Overlay {
             modifier: Modifier::Option,
             hide_full: true,
             placed: Vec::new(),
+            hidden: false,
         }))))
     }
 
@@ -219,14 +220,13 @@ impl Overlay {
 
     /// Whether pets are hidden because an app is full screen.
     pub fn is_full_screen(&self) -> bool {
-        let o = self.0.lock().unwrap();
-        o.hide_full && o.front.is_some_and(|f| covers(f, o.screen.frame))
+        self.0.lock().unwrap().hidden
     }
 
     /// Where a pet is drawn, in global points, for placing its info card.
     pub fn pet_rect(&self, id: Uuid) -> Option<Rect> {
         let o = self.0.lock().unwrap();
-        o.placed.iter().find(|p| p.view.id == id).map(|p| Rect { x: o.screen.frame.x + p.x, y: o.screen.frame.y + p.y, w: p.s, h: p.s })
+        o.placed.iter().filter(|_| !o.hidden).find(|p| p.view.id == id).map(|p| Rect { x: o.screen.frame.x + p.x, y: o.screen.frame.y + p.y, w: p.s, h: p.s })
     }
 
     /// Re-sends the current frame, for a webview that has just loaded.
@@ -254,7 +254,7 @@ impl Overlay {
                 let (target, near) = {
                     let o = me.0.lock().unwrap();
                     let global = |pl: &Placed| Rect { x: o.screen.frame.x + pl.x, y: o.screen.frame.y + pl.y, w: pl.s, h: pl.s };
-                    let target = o.placed.iter().find(|pl| global(pl).hit(p)).map(|pl| pl.view.id).filter(|_| now_held);
+                    let target = o.placed.iter().filter(|_| !o.hidden).find(|pl| global(pl).hit(p)).map(|pl| pl.view.id).filter(|_| now_held);
                     (target, o.placed.iter().any(|pl| global(pl).near(p)))
                 };
                 if target != hovered || now_held != held {
@@ -289,7 +289,8 @@ impl Overlay {
                     }
                     let mut o = me.0.lock().unwrap();
                     if screen != o.screen || front != o.front || rm != o.reduce_motion {
-                        let moved = place(&o.views, &screen, effective_front(front, &screen, o.hide_full), o.pet_height).iter().map(|p| (p.x, p.y)).ne(o.placed.iter().map(|p| (p.x, p.y)));
+                        let (next, hidden) = layout(&o.views, &screen, front, o.hide_full, o.pet_height);
+                        let moved = hidden != o.hidden || next.iter().map(|p| (p.x, p.y)).ne(o.placed.iter().map(|p| (p.x, p.y)));
                         o.screen = screen;
                         o.front = front;
                         let rm_changed = rm != o.reduce_motion;
@@ -306,9 +307,11 @@ impl Overlay {
     }
 }
 
-/// With "hide over full-screen apps" off, a full-screen window is ignored rather than hiding pets.
-fn effective_front(front: Option<Rect>, screen: &Screen, hide_full: bool) -> Option<Rect> {
-    front.filter(|f| hide_full || !covers(*f, screen.frame))
+/// Where the pets go, and whether they're hidden: a full-screen app hides them (unless "hide over
+/// full-screen apps" is off) but never moves them, so they come back exactly where they were.
+fn layout(views: &[PetView], screen: &Screen, front: Option<Rect>, hide_full: bool, pet_height: f64) -> (Vec<Placed>, bool) {
+    let full = front.is_some_and(|f| covers(f, screen.frame));
+    (place(views, screen, front.filter(|_| !full), pet_height), full && hide_full)
 }
 
 /// Whether the chosen modifier is down (⌥⇧ needs both). Extra keys are allowed: ⇧ on top of the
@@ -325,12 +328,12 @@ fn held_modifier(m: Modifier) -> bool {
 }
 
 fn relayout(o: &mut Inner) {
-    o.placed = place(&o.views, &o.screen, effective_front(o.front, &o.screen, o.hide_full), o.pet_height);
+    (o.placed, o.hidden) = layout(&o.views, &o.screen, o.front, o.hide_full, o.pet_height);
     #[cfg(debug_assertions)]
     for p in &o.placed {
         println!("LAYOUT {} {} {} {}", p.view.id, (o.screen.frame.x + p.x).round(), (o.screen.frame.y + p.y).round(), p.s.round());
     }
-    let frame = Frame { pets: o.placed.clone(), liveliness: o.liveliness, reduce_motion: o.reduce_motion };
+    let frame = Frame { pets: o.placed.clone(), liveliness: o.liveliness, reduce_motion: o.reduce_motion, hidden: o.hidden };
     send(&o.window, "overlay", frame);
 }
 
@@ -394,7 +397,10 @@ mod tests {
     #[test]
     fn full_screen_app_hides_pets_and_full_rows_drop_extras() {
         let v = [view(Species::Cat)];
-        assert!(place(&v, &screen(), Some(screen().frame), 104.0).is_empty());
+        let (kept, hidden) = layout(&v, &screen(), Some(screen().frame), true, 104.0);
+        assert!(hidden && kept.len() == 1, "hidden, not removed");
+        assert_eq!(kept[0].x, place(&v, &screen(), None, 104.0)[0].x, "and not moved either");
+        assert!(!layout(&v, &screen(), Some(screen().frame), false, 104.0).1, "unless that setting is off");
         let many: Vec<_> = (0..20).map(|_| view(Species::Cat)).collect();
         let p = place(&many, &screen(), None, 104.0);
         assert!(p.len() < 20 && p.iter().all(|pl| pl.x >= 0.0));
