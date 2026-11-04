@@ -57,7 +57,7 @@ struct Feedback {
 fn pet_click(id: Uuid, shift: bool, shared: State<'_, Shared>, h: AppHandle) {
     #[cfg(debug_assertions)]
     println!("CLICK pet={id} shift={shift}");
-    let mut app = shared.app.lock().unwrap();
+    let app = shared.app.lock().unwrap();
     if quick_sync(app.settings.modifier, shift) {
         drop(app);
         let _ = shared.tx.send(Cmd::SyncNow(Some(id)));
@@ -66,7 +66,11 @@ fn pet_click(id: Uuid, shift: bool, shared: State<'_, Shared>, h: AppHandle) {
     if audio::allowed(&app.settings, None, app.flags.presentation, shared.overlay.is_full_screen(), state::local_minute()) {
         shared.audio.play(audio::Sound::Tick, app.settings.volume);
     }
-    match windows::open_card(&h, &id.to_string(), shared.overlay.pet_rect(id)) {
+    // building the window takes a while; the sync loop and other windows mustn't wait on the state meanwhile
+    drop(app);
+    let opened = windows::open_card(&h, &id.to_string(), shared.overlay.pet_rect(id));
+    let mut app = shared.app.lock().unwrap();
+    match opened {
         Ok(()) => app.resolve("window"),
         Err(e) => {
             app.warn("window", format!("Couldn't open the pet's card: {e}"));

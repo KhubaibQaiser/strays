@@ -285,12 +285,14 @@ impl Overlay {
                         let o = me.0.lock().unwrap();
                         (o.screen, o.window.clone())
                     };
-                    let screen = screen.unwrap_or(old);
+                    let mut screen = screen.unwrap_or(old);
                     // resizing waits for the main thread, so not under the lock pet_click takes there
                     if screen != old
                         && let Err(e) = w.set_size(LogicalSize::new(screen.frame.w, screen.frame.h)).and_then(|_| w.set_position(LogicalPosition::new(screen.frame.x, screen.frame.y)))
                     {
                         crate::log::warn(&format!("could not fit the overlay to the screen: {e}"));
+                        // keep laying out for the old screen, and try again on the next check
+                        screen = old;
                     }
                     let mut o = me.0.lock().unwrap();
                     if screen != o.screen || front != o.front || rm != o.reduce_motion || off != o.screen_off {
