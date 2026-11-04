@@ -1,5 +1,5 @@
 # cargo deny (spec §11): licences, crate sources and duplicates for both lockfiles, run in CI next to
-# cargo audit. Run from app/core or app/src-tauri: `cargo deny --manifest-path Cargo.toml check --config ../deny.toml licenses sources bans`.
+# cargo audit. Run from app/core or app/src-tauri: `cargo deny --manifest-path Cargo.toml --config ../deny.toml check licenses sources bans`.
 
 [graph]
 # Strays ships for Apple Silicon Macs only (docs/gate-4.md)
