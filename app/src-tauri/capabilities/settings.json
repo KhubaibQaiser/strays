@@ -6,7 +6,8 @@
     "settings"
   ],
   "permissions": [
-    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "allow-ui-state",
     "allow-delete-everything",
     "allow-dismiss-issues",

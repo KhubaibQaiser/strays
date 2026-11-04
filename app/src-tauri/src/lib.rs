@@ -60,6 +60,14 @@ fn pet_click(id: Uuid, shift: bool, shared: State<'_, Shared>, h: AppHandle) {
     let app = shared.app.lock().unwrap();
     if quick_sync(app.settings.modifier, shift) {
         drop(app);
+        // a full sync costs up to 50 GitHub requests, so clicks (or a misbehaving page) can't fire them back to back
+        static LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+        let mut last = LAST.lock().unwrap();
+        if last.is_some_and(|t| t.elapsed() < QUICK_SYNC_GAP) {
+            log::warn("a quick sync was asked for again within seconds of the last; skipped");
+            return;
+        }
+        *last = Some(std::time::Instant::now());
         let _ = shared.tx.send(Cmd::SyncNow(Some(id)));
         return;
     }
@@ -79,6 +87,9 @@ fn pet_click(id: Uuid, shift: bool, shared: State<'_, Shared>, h: AppHandle) {
         }
     }
 }
+
+/// Shortest time between two quick syncs (⌥⇧-click).
+const QUICK_SYNC_GAP: std::time::Duration = std::time::Duration::from_secs(5);
 
 fn quick_sync(modifier: strays_core::settings::Modifier, shift: bool) -> bool {
     use strays_core::settings::Modifier;
