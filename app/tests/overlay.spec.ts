@@ -204,9 +204,9 @@ test("every few hours a pet strolls a little way and back, but never with Reduce
   await emit(page, "overlay", { pets: [pet("a", "content", 500)], grid: { x0: 500, y0: 20, cw: 140, ch: 140, cols: 3, rows: 1, s: 200 }, liveliness: "gentle", reduceMotion: false, hidden: false });
   await expect(page.locator("canvas")).toHaveCount(1, { timeout: 30_000 });
   const left = () => page.locator("canvas").evaluate((c) => c.style.left);
-  // the first try may find it still settling into its pose; the retry comes ten minutes later
+  // the first try may find it still settling into its pose; then the retry comes ten minutes later
   await page.clock.fastForward(6 * 3_600_000);
-  await page.clock.fastForward(11 * 60_000);
+  if ((await left()) !== "380px") await page.clock.fastForward(11 * 60_000);
   await expect.poll(left).toBe("380px"); // towards the middle: 0.6 of its 200 px canvas
   await page.clock.fastForward(4000);
   await expect.poll(left).toBe("500px");
