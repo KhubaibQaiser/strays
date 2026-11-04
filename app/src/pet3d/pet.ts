@@ -302,6 +302,8 @@ export type Mood = "joyful" | "content" | "peckish" | "hungry" | "gloomy";
 
 export class Pet3D {
   readonly renderer: THREE.WebGLRenderer;
+  /** the software renderer's name when there's no GPU, else null */
+  readonly software: string | null;
   private scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(27, 1, 0.1, 10);
   private bones: THREE.Bone[] = [];
@@ -350,11 +352,21 @@ export class Pet3D {
     this.renderer.toneMappingExposure = 1;
     this.pupil = Object.assign(new Spring(3, 1), { x: def.eyes.pupil[0] });
 
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    pmrem.dispose();
-    this.scene.environment = env;
-    this.scene.environmentIntensity = 0.55;
+    // without a GPU (software WebGL, e.g. in a VM) the reflection map and a full coat would starve the
+    // whole page, so it gets a plain sky light and fewer coat layers instead
+    const gl = this.renderer.getContext();
+    const info = gl.getExtension("WEBGL_debug_renderer_info");
+    const gpu = String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    this.software = /swiftshader|llvmpipe|softpipe|software/i.test(gpu) ? gpu : null;
+    let env: THREE.Texture | null = null;
+    if (this.software) this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a6a, 1.4));
+    else {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      pmrem.dispose();
+      this.scene.environment = env;
+      this.scene.environmentIntensity = 0.55;
+    }
     const key = new THREE.DirectionalLight(0xfff3e6, 2.4);
     key.position.set(-1.2, 2, 2.2);
     const rim = new THREE.DirectionalLight(0xd8e4ff, 1.6);
@@ -394,7 +406,7 @@ export class Pet3D {
     geo.setAttribute("aMat3", new THREE.BufferAttribute(s.mat3, 1));
     geo.setAttribute("aNoise", new THREE.BufferAttribute(furNoise(s.position), 4));
     geo.setIndex(new THREE.BufferAttribute(s.index, 1));
-    this.setShells(def.fur.shells);
+    this.setShells(this.software ? Math.min(6, def.fur.shells) : def.fur.shells);
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(...def.bounds.centre), def.bounds.r);
     const fur = furMaterial(def, palette);
     const mesh = new THREE.SkinnedMesh(geo, fur.m);
@@ -403,7 +415,8 @@ export class Pet3D {
     root.add(mesh);
     mesh.updateMatrixWorld(true);
     mesh.bind(new THREE.Skeleton(this.bones));
-    this.disposables.push(geo, fur.m, env);
+    this.disposables.push(geo, fur.m);
+    if (env) this.disposables.push(env);
 
     // eyes ride on the head bone, set a little into their sockets
     const headAt = def.pivot[def.head];

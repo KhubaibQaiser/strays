@@ -57,6 +57,8 @@ test("with Reduce Motion a leaving pet only fades", async ({ page }) => {
 });
 
 test("each species draws with its own model", async ({ page }) => {
+  // four 3D pets, each with its own WebGL context; CI draws them in software
+  test.setTimeout(60_000);
   await mockApp(page);
   await page.setViewportSize({ width: 880, height: 240 });
   await page.goto("/index.html");

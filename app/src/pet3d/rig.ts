@@ -35,15 +35,8 @@ export class Pet3DRig {
     onLost: () => void,
   ) {
     this.cat = new Pet3D(canvas, species, species.palette(colors));
-    // without a GPU (software WebGL, e.g. in a VM) a full coat would starve the whole page
-    const gl = this.cat.renderer.getContext();
-    const info = gl.getExtension("WEBGL_debug_renderer_info");
-    const gpu = String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
-    if (/swiftshader|llvmpipe|softpipe|software/i.test(gpu)) {
-      this.cat.setShells(Math.min(6, species.fur.shells));
-      this.software = true;
-      log(`WARN no GPU for the 3D pet (${gpu}); drawing it with less fur and fewer frames`);
-    }
+    this.software = this.cat.software !== null;
+    if (this.cat.software) log(`WARN no GPU for the 3D pet (${this.cat.software}); drawing it with less coat, light and frames`);
     canvas.addEventListener("webglcontextlost", (e) => {
       e.preventDefault();
       this.pause();
