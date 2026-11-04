@@ -1,6 +1,6 @@
 // Prototype page for realistic 3D pets: renders N pets and reports their frame cost. Everything is a
 // query parameter, so CPU can be measured per setting: species (comma list, cycled), pets, size (pt),
-// fps, idle (fps when only slow motion is happening), shells, dpr, mood, acc (accessory 1-5), act (action), look, face (close-up), bg.
+// fps, idle (fps when only slow motion is happening), shells, dpr, mood, acc (accessory 1-5), act (action), manual (stepped by a script), look, face (close-up), bg.
 import { Action, Pet3D, type Mood } from "../pet3d/pet";
 import { SPECIES_3D } from "../pet3d/rig";
 import type { Palette } from "../pet3d/species";
@@ -19,6 +19,7 @@ const idleFps = num("idle", fps);
 const dpr = num("dpr", devicePixelRatio);
 const species = (q.get("species") ?? "cat").split(",");
 if (q.get("bg") === "1") document.body.classList.add("bg");
+if (q.get("bg") === "flat") document.body.classList.add("flat");
 
 type Look = { colors: Record<string, string>; extra?: Partial<Palette> };
 const coat = (coatBase: string, coatShade: string, coatHighlight: string, outline = "#333333") => ({ coatBase, coatShade, coatHighlight, outline });
@@ -110,4 +111,8 @@ function frame(now: number) {
     windowStart = now;
   }
 }
-requestAnimationFrame(frame);
+// ?manual=1: no clock of its own; the README capture script (scripts/readme-media.mjs) steps every
+// pet by a fixed time and draws it, so each recorded frame is exactly 1/fps apart
+if (q.get("manual") === "1")
+  (window as unknown as { step: (dt: number) => void }).step = (dt) => cats.forEach(({ cat }) => (cat.update(dt), cat.render()));
+else requestAnimationFrame(frame);
