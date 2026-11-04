@@ -6,6 +6,7 @@ import { Rive, RuntimeLoader } from "@rive-app/canvas";
 import riveWasmUrl from "@rive-app/canvas/rive.wasm?url";
 import { artFor } from "./art";
 import { Pet3DRig, SPECIES_3D } from "./pet3d/rig";
+import { meshBuilt, meshReady } from "./pet3d/meshes";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -253,6 +254,20 @@ function add(placed: Placed, forceRive = false) {
   p.el.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
+/** The pets the latest frame lists, for pets that arrive once their shape is built. */
+let latest = new Map<string, Placed>();
+
+/** Adds a pet now if its 3D shape is built, else once a worker has built it (if it's still wanted). */
+function addWhenReady(placed: Placed) {
+  if (meshBuilt(placed.species)) return add(placed);
+  void meshReady(placed.species, log).then(() => {
+    const now = latest.get(placed.id);
+    if (!now || pets.has(now.id)) return;
+    add(now);
+    if (now.confused) bubble(now.id, "❓ Where did my repo go?", 0, "ask");
+  });
+}
+
 function remove(id: string) {
   const p = pets.get(id);
   if (!p) return;
@@ -290,9 +305,10 @@ ready.push(listen<Frame>("overlay", ({ payload }) => {
   const keep = new Set(payload.pets.map((p) => p.id));
   // a leaving pet stays until its clip ends (play() removes it)
   [...pets.entries()].filter(([id, p]) => !keep.has(id) && !p.leaving).forEach(([id]) => remove(id));
+  latest = new Map(payload.pets.map((p) => [p.id, p]));
   for (const placed of payload.pets) {
     const p = pets.get(placed.id);
-    if (!p) add(placed);
+    if (!p) addWhenReady(placed);
     else {
       const moodChanged = p.placed.mood !== placed.mood;
       const ownChanged = p.placed.liveliness !== placed.liveliness;

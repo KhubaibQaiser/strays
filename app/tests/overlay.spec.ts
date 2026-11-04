@@ -67,7 +67,8 @@ test("each species draws with its own model", async ({ page }) => {
   const hamster = { ...pet("hamster", "content", 220), species: "hamster", colors: { coatBase: "#E3A564", coatShade: "#C4843F", coatHighlight: "#F3C98F", outline: "#6E4320" } };
   const parrot = { ...pet("parrot", "joyful", 660), species: "parrot", colors: { coatBase: "#7DC44E", coatShade: "#5EA233", coatHighlight: "#A6DE7B", outline: "#2F5A1C" } };
   await emit(page, "overlay", { pets: [pet("cat", "content", 0), hamster, corgi, parrot], liveliness: "calm", reduceMotion: false, hidden: false });
-  await expect(page.locator("canvas")).toHaveCount(4);
+  // each shape is built in a worker first (several seconds in all when the machine is busy)
+  await expect(page.locator("canvas")).toHaveCount(4, { timeout: 30_000 });
   await page.waitForTimeout(1500);
   await page.screenshot({ path: `${shots}/overlay-species.png` });
   const logs = await page.evaluate(() => (window as unknown as { __calls: { cmd: string; args: { msg?: string } }[] }).__calls.filter((c) => c.cmd === "pet_log").map((c) => c.args.msg));

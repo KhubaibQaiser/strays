@@ -29,6 +29,25 @@ pub fn modifier_flags() -> NSEventModifierFlags {
     NSEvent::modifierFlags_class()
 }
 
+/// Whether nobody can see the screen: the main display is asleep or the session is locked. Pets stop
+/// drawing then (review-spec A8).
+pub fn screen_off() -> bool {
+    use objc2_core_foundation::CFBoolean;
+    use objc2_core_graphics::{CGMainDisplayID, CGSessionCopyCurrentDictionary};
+    // declared here: objc2's binding sits behind its `libc` feature
+    unsafe extern "C" {
+        fn CGDisplayIsAsleep(display: u32) -> u32;
+    }
+    // SAFETY: plain C call with a display id CoreGraphics gave us.
+    if unsafe { CGDisplayIsAsleep(CGMainDisplayID()) } != 0 {
+        return true;
+    }
+    let Some(session) = CGSessionCopyCurrentDictionary() else { return false };
+    // SAFETY: the session dictionary has CFString keys (CGSession.h).
+    let session: CFRetained<CFDictionary<CFString, CFType>> = unsafe { CFRetained::cast_unchecked(session) };
+    session.get(&CFString::from_static_str("CGSSessionScreenIsLocked")).and_then(|v| v.downcast::<CFBoolean>().ok()).is_some_and(|b| b.as_bool())
+}
+
 /// Cursor in AppKit global points (bottom-left origin of the primary display).
 pub fn mouse_location() -> (f64, f64) {
     let p = NSEvent::mouseLocation();

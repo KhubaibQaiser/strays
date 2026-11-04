@@ -187,6 +187,7 @@
   - Automatic reports carry a **category and error code only**, never free text.
   - `$geoip_disable` is set (D2).
   - The log upload in Q4 happens only when the user chooses to send it.
+- **Frame clocks (2026-11-05):** each 3D pet keeps its own clock. An A/B test of one shared loop measured no gain.
 - **Q6, backups (B6):** not now, after v1.
 - **Q7, copy tone (E8):** keep it as it is. E7 (the next-action hint on the card) still stands.
 - **Q8, housekeeping:**

@@ -141,6 +141,8 @@ struct Inner {
     hide_full: bool,
     placed: Vec<Placed>,
     hidden: bool,
+    /// the display is asleep or the screen locked: nobody can see the pets
+    screen_off: bool,
 }
 
 /// The settings the overlay follows (§7.1, §7.2, §7.4).
@@ -205,6 +207,7 @@ impl Overlay {
             hide_full: true,
             placed: Vec::new(),
             hidden: false,
+            screen_off: false,
         }))))
     }
 
@@ -218,7 +221,8 @@ impl Overlay {
         relayout(&mut o);
     }
 
-    /// Whether pets are hidden because an app is full screen.
+    /// Whether pets are hidden: a full-screen app is in front, or nobody can see the screen. Sounds and
+    /// nudges hold off then too.
     pub fn is_full_screen(&self) -> bool {
         self.0.lock().unwrap().hidden
     }
@@ -276,6 +280,7 @@ impl Overlay {
                     let screen = main_screen(&h);
                     let front = front_rect();
                     let rm = platform::reduce_motion();
+                    let off = platform::screen_off();
                     let (old, w) = {
                         let o = me.0.lock().unwrap();
                         (o.screen, o.window.clone())
@@ -288,8 +293,10 @@ impl Overlay {
                         crate::log::warn(&format!("could not fit the overlay to the screen: {e}"));
                     }
                     let mut o = me.0.lock().unwrap();
-                    if screen != o.screen || front != o.front || rm != o.reduce_motion {
+                    if screen != o.screen || front != o.front || rm != o.reduce_motion || off != o.screen_off {
+                        o.screen_off = off;
                         let (next, hidden) = layout(&o.views, &screen, front, o.hide_full, o.pet_height);
+                        let hidden = hidden || off;
                         let moved = hidden != o.hidden || next.iter().map(|p| (p.x, p.y)).ne(o.placed.iter().map(|p| (p.x, p.y)));
                         o.screen = screen;
                         o.front = front;
@@ -329,6 +336,7 @@ fn held_modifier(m: Modifier) -> bool {
 
 fn relayout(o: &mut Inner) {
     (o.placed, o.hidden) = layout(&o.views, &o.screen, o.front, o.hide_full, o.pet_height);
+    o.hidden |= o.screen_off;
     #[cfg(debug_assertions)]
     for p in &o.placed {
         println!("LAYOUT {} {} {} {}", p.view.id, (o.screen.frame.x + p.x).round(), (o.screen.frame.y + p.y).round(), p.s.round());
