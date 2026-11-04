@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type Species = "cat" | "dog" | "hamster" | "parrot";
 export type Pace = "sprint" | "normal" | "slowBurn";
+export type Liveliness = "calm" | "gentle" | "lively";
 export type StateKind = "shelter" | "active" | "snoozed" | "paused" | "holiday" | "graduated" | "letGo";
 export type Goal = { text: string; checklist: { text: string; done: boolean }[] };
 
@@ -24,6 +25,8 @@ export type Pet = {
   lastSource: string;
   goal: Goal;
   pace: Pace;
+  /** its own liveliness, or null to follow the app's */
+  liveliness: Liveliness | null;
   onScreen: boolean;
   releases: number;
   missing: boolean;
@@ -47,7 +50,7 @@ export type Settings = {
   maxVisible: number;
   minVisible: number;
   rotationHours: number;
-  liveliness: "calm" | "gentle" | "lively";
+  liveliness: Liveliness;
   ignore: string[];
   petSize: "small" | "medium" | "large";
   modifier: "option" | "control" | "shift" | "optionShift";
@@ -122,7 +125,7 @@ export const api = {
   state: () => invoke<UiState>("ui_state"),
   petAction: (id: string, action: string) => invoke<string>("pet_action", { id, action }),
   setGoal: (id: string, goal: Goal) => invoke<void>("set_goal", { id, goal }),
-  setPet: (id: string, name: string, pace: Pace) => invoke<void>("set_pet", { id, name, pace }),
+  setPet: (id: string, name: string, pace: Pace, liveliness: Liveliness | null) => invoke<void>("set_pet", { id, name, pace, liveliness }),
   adopt: (request: AdoptRequest) => invoke<string>("adopt", { request }),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setFlag: (name: "presentation" | "hideAll" | "vacation", on: boolean) => invoke<void>("set_flag", { name, on }),

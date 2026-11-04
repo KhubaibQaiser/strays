@@ -123,7 +123,7 @@ impl Default for Settings {
             max_visible: 3,
             min_visible: 1,
             rotation_hours: 3,
-            liveliness: Liveliness::Calm,
+            liveliness: Liveliness::Gentle,
             ignore: Vec::new(),
             pet_size: PetSize::Medium,
             modifier: Modifier::Option,

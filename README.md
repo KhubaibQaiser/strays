@@ -18,7 +18,7 @@
   - Clicks pass straight through pets. Hold **⌥ Option** to interact.
   - Pets move aside for your frontmost window, hide over full-screen apps, and stay out of screen recordings and screen sharing.
   - At most 3 are on screen at once, neediest first.
-  - The default **Calm** liveliness holds a still pose with an occasional blink. **Gentle** and **Lively** add more motion at a higher CPU cost.
+  - Liveliness sets how smoothly pets move: **Calm**, **Gentle** (the default) or **Lively**, at a higher CPU cost each. A pet can have its own in its card's Pet settings.
 
 | Input | Action |
 |---|---|
