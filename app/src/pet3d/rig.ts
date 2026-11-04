@@ -3,15 +3,11 @@
 // with the display, at a rate set by the liveliness and what the pet is doing (frames.ts).
 import { Action, Pet3D, type Mood } from "./pet";
 import type { SpeciesDef } from "./species";
-import { cat } from "./cat";
-import { dog } from "./dog";
-import { hamster } from "./hamster";
-import { macaw } from "./macaw";
+import { SPECIES_3D } from "./species3d";
 import { cheaper, due, idleFor, rateFor, type Liveliness, type Quality } from "./frames";
 import { nativeCancel, nativeRaf } from "../throttle";
 
-/** The species drawn in 3D; the others keep their Rive rigs. */
-export const SPECIES_3D: Record<string, SpeciesDef> = { cat, dog, hamster, parrot: macaw };
+export { SPECIES_3D };
 
 const MOODS: Mood[] = ["content", "joyful", "content", "peckish", "hungry", "gloomy"]; // index = the rig's mood number
 /** the fewest coat layers the slow-frame guard goes down to */
@@ -79,7 +75,7 @@ export class Pet3DRig {
     this.raf = 0;
     const rate = this.rate();
     if (!due(now, this.last, rate)) {
-      this.raf = nativeRaf(this.tick);
+      this.wait(idleFor(rate, now - this.last));
       return;
     }
     const start = performance.now();
@@ -87,15 +83,21 @@ export class Pet3DRig {
     this.pet.render();
     this.last = now;
     this.guard(performance.now() - start, rate);
-    // far-apart frames: sleep until just before the next one instead of waking every display frame
-    const wait = idleFor(this.rate());
-    if (wait > 0)
-      this.sleep = window.setTimeout(() => {
-        this.sleep = 0;
-        this.raf = nativeRaf(this.tick);
-      }, wait);
-    else this.raf = nativeRaf(this.tick);
+    this.wait(idleFor(this.rate()));
   };
+
+  /** Asks for the next display frame, first sleeping `ms` if frames are far apart, so the pet doesn't
+   *  wake for every display frame. */
+  private wait(ms: number) {
+    if (ms <= 0) {
+      this.raf = nativeRaf(this.tick);
+      return;
+    }
+    this.sleep = window.setTimeout(() => {
+      this.sleep = 0;
+      this.raf = nativeRaf(this.tick);
+    }, ms);
+  }
 
   /** Frames that cost more than a fifth of their slot give up coat layers, then sharpness, then frames,
    *  so a slow machine stays usable and the motion stays even for as long as possible. */

@@ -35,6 +35,8 @@ describe("frame rate", () => {
   it("sleeps between frames only when they're far apart", () => {
     expect(idleFor(60)).toBe(0);
     expect(idleFor(10)).toBe(76);
+    expect(idleFor(10, 50)).toBe(26);
+    expect(idleFor(10, 90)).toBe(0);
   });
 
   it("gives up coat layers, then sharpness, then frames", () => {

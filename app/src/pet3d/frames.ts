@@ -23,9 +23,10 @@ const EARLY_MS = 4;
 /** Whether this display frame is due to be drawn. */
 export const due = (now: number, last: number, rate: number) => now - last >= 1000 / rate - EARLY_MS;
 
-/** How long to sleep before asking for display frames again: the loop doesn't wake for every
- *  display frame at low rates, only for the last couple before the next one is due. */
-export const idleFor = (rate: number) => Math.max(0, 1000 / rate - 24);
+/** How long to sleep before asking for display frames again, `since` ms after the last drawn frame:
+ *  the loop doesn't wake for every display frame at low rates, only for the last couple before the
+ *  next one is due. */
+export const idleFor = (rate: number, since = 0) => Math.max(0, 1000 / rate - since - 24);
 
 /** What to give up, in order, when frames cost too much: coat layers, then sharpness, then frames. */
 export type Quality = { shells: number; dpr: number; slow: number };
