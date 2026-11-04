@@ -81,6 +81,7 @@
     "pets": [
       {
         "colors": {},
+        "customThresholds": "null",
         "folder": "null|string",
         "goal": {
           "checklist": [

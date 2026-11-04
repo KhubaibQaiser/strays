@@ -953,8 +953,14 @@ impl App {
     }
 
     /// Pet settings: name and pace.
-    pub fn set_pet(&mut self, id: Uuid, name: String, pace: Pace, liveliness: Option<strays_core::settings::Liveliness>) -> Result<(), String> {
+    pub fn set_pet(&mut self, id: Uuid, name: String, pace: Pace, liveliness: Option<strays_core::settings::Liveliness>, thresholds: Option<[f64; 4]>) -> Result<(), String> {
+        // the pet's own mood days (§5.2), or None to follow Settings scaled by its pace
+        let thresholds = match thresholds {
+            Some(days) => Some(strays_core::mood::Thresholds::new(days).ok_or("Each level must last longer than the one before it")?),
+            None => None,
+        };
         let p = self.pets.iter_mut().find(|p| p.id == id).ok_or("No such pet")?;
+        p.thresholds_override = thresholds;
         if !name.trim().is_empty() {
             p.name = name.trim().chars().take(40).collect();
         }
@@ -1205,6 +1211,23 @@ mod tests {
         // the next write keeps only readable lines
         app.append_netlog(vec![entry.clone()]);
         assert!(!std::fs::read_to_string(dir.join(NETLOG_FILE)).unwrap().contains("half"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_pet_can_have_its_own_mood_days_but_only_increasing_ones() {
+        let dir = std::env::temp_dir().join(format!("strays-th-{}", Uuid::new_v4()));
+        let mut app = App::load(dir.clone()).unwrap();
+        let now = strays_core::chrono::Utc::now();
+        let mut p = Pet::new(now, "Miso", Species::Cat, Project::default(), Activity { last: now, source: ActivitySource::LocalCommit }, Pace::Normal);
+        p.adopt(now).unwrap();
+        let id = p.id;
+        app.pets.push(p);
+        assert!(app.set_pet(id, "Miso".into(), Pace::Normal, None, Some([5.0, 2.0, 10.0, 20.0])).is_err());
+        app.set_pet(id, "Miso".into(), Pace::Sprint, None, Some([1.0, 2.0, 3.0, 4.0])).unwrap();
+        assert_eq!(app.pets[0].thresholds(&app.settings).0, [1.0, 2.0, 3.0, 4.0], "its own days win over the pace");
+        app.set_pet(id, "Miso".into(), Pace::Sprint, None, None).unwrap();
+        assert_eq!(app.pets[0].thresholds(&app.settings), app.settings.thresholds.scaled(Pace::Sprint));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

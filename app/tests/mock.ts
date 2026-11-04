@@ -25,6 +25,7 @@ export const STATE: UiState = {
       goal: { text: "Ship v1", checklist: [{ text: "Gate 2", done: true }] },
       pace: "normal",
       liveliness: null,
+      customThresholds: null,
       onScreen: true,
       releases: 0,
       missing: false,

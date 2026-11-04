@@ -320,3 +320,23 @@ test("snooze until a picked time, pause until a date, and a release with its ver
   await page.getByRole("button", { name: "Shipped it? Click again" }).click();
   await expect.poll(last).toMatchObject({ action: "release", label: "v1.2" });
 });
+
+test("a pet can have its own mood days", async ({ page }) => {
+  await mockApp(page);
+  await page.goto(`/ui.html#card/${PET_ID}`);
+  await page.getByText("Pet settings").click();
+  await page.getByLabel("Pace").selectOption("custom");
+  await expect.poll(async () => (await calls(page, "set_pet")).at(-1)?.args).toMatchObject({ thresholds: [2, 5, 10, 20], pace: "normal" });
+  await page.getByLabel("Hungry up to (days), this pet").fill("30");
+  await page.getByLabel("Hungry up to (days), this pet").press("Tab");
+  await expect.poll(async () => (await calls(page, "set_pet")).at(-1)?.args).toMatchObject({ thresholds: [2, 5, 10, 30] });
+  // out of order: refused here, nothing saved
+  const before = (await calls(page, "set_pet")).length;
+  await page.getByLabel("Content up to (days), this pet").fill("40");
+  await page.getByLabel("Content up to (days), this pet").press("Tab");
+  await expect(page.getByText("Each level must last longer than the one before it.")).toBeVisible();
+  expect(await calls(page, "set_pet")).toHaveLength(before);
+  // back to a preset clears them
+  await page.getByLabel("Pace").selectOption("sprint");
+  await expect.poll(async () => (await calls(page, "set_pet")).at(-1)?.args).toMatchObject({ thresholds: null, pace: "sprint" });
+});

@@ -50,6 +50,8 @@ pub struct UiPet {
     goal: Goal,
     pace: Pace,
     liveliness: Option<Liveliness>,
+    /// its own mood days, if not Settings' scaled by its pace
+    custom_thresholds: Option<[f64; 4]>,
     on_screen: bool,
     releases: usize,
     /// GitHub can't find the repo: deleted, or the token can't see it.
@@ -131,6 +133,7 @@ fn ui_pet(app: &App, p: &Pet, now: Time) -> UiPet {
         goal: p.goal.clone(),
         pace: p.pace,
         liveliness: p.liveliness,
+        custom_thresholds: p.thresholds_override.map(|t| t.0),
         on_screen: app.visible.contains(&p.id),
         releases: p.releases.len(),
         missing: p.missing_since.is_some(),
@@ -219,9 +222,9 @@ pub fn set_goal(id: Uuid, goal: Goal, shared: State<'_, Shared>) -> Res<()> {
 }
 
 #[tauri::command]
-pub fn set_pet(id: Uuid, name: String, pace: Pace, liveliness: Option<Liveliness>, shared: State<'_, Shared>) -> Res<()> {
+pub fn set_pet(id: Uuid, name: String, pace: Pace, liveliness: Option<Liveliness>, thresholds: Option<[f64; 4]>, shared: State<'_, Shared>) -> Res<()> {
     logged("set_pet", move || -> Res<()> {
-        shared.app.lock().unwrap().set_pet(id, name, pace, liveliness)?;
+        shared.app.lock().unwrap().set_pet(id, name, pace, liveliness, thresholds)?;
         changed(&shared);
         Ok(())
     })

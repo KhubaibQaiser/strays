@@ -27,6 +27,8 @@ export type Pet = {
   pace: Pace;
   /** its own liveliness, or null to follow the app's */
   liveliness: Liveliness | null;
+  /** its own mood days (Joyful, Content, Peckish, Hungry up to), if not Settings' scaled by its pace */
+  customThresholds: [number, number, number, number] | null;
   onScreen: boolean;
   releases: number;
   missing: boolean;
@@ -128,7 +130,7 @@ export const api = {
   /** `until` (ISO time) for a picked snooze or pause end, `label` for a release's version */
   petAction: (id: string, action: string, extra: { until?: string; label?: string } = {}) => invoke<string>("pet_action", { id, action, until: extra.until ?? null, label: extra.label ?? null }),
   setGoal: (id: string, goal: Goal) => invoke<void>("set_goal", { id, goal }),
-  setPet: (id: string, name: string, pace: Pace, liveliness: Liveliness | null) => invoke<void>("set_pet", { id, name, pace, liveliness }),
+  setPet: (id: string, name: string, pace: Pace, liveliness: Liveliness | null, thresholds: [number, number, number, number] | null) => invoke<void>("set_pet", { id, name, pace, liveliness, thresholds }),
   adopt: (request: AdoptRequest) => invoke<string>("adopt", { request }),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setFlag: (name: "presentation" | "hideAll" | "vacation", on: boolean) => invoke<void>("set_flag", { name, on }),
