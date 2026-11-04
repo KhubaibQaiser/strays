@@ -68,6 +68,7 @@ Every action is also in the 🐾 menu. The modifier key can be changed in **Sett
 - **Vacation mode** (menu bar) pauses every pet.
 - **Mark release…** sends the pet on a short holiday. It asks for a second click first, and in the card you can add the version you shipped.
 - Without GitHub, Strays tracks your folders only, and the menu says **Folders only**. Each pet's menu has **Open card…**, so everything works from the keyboard too.
+- **Settings → Syncing** sets how often Strays checks GitHub, and can hold scheduled syncs in Low Power Mode or until you're on Wi-Fi (not a phone hotspot or Ethernet). **Sync now** always works.
 - When syncing fails, moods are on hold until it works again. Being offline isn't shown as a warning, and a refused token shows **Paste a new token…** right under it.
 - **Graduate** is for a finished project. The pet puts on an accessory, says goodbye and joins the **Graduates** list.
 

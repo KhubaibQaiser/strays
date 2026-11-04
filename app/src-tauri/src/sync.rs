@@ -35,6 +35,8 @@ pub struct Deps {
     pub api: String,
     pub full_screen: Box<dyn Fn() -> bool + Send>,
     pub low_power: Box<dyn Fn() -> bool + Send>,
+    /// whether the main connection is Wi-Fi (None: can't tell)
+    pub on_wifi: Box<dyn Fn() -> Option<bool> + Send>,
 }
 
 impl Deps {
@@ -43,7 +45,7 @@ impl Deps {
         let api = std::env::var("STRAYS_FAKE_GITHUB").unwrap_or_else(|_| github::API.into());
         #[cfg(not(debug_assertions))]
         let api = github::API.to_string();
-        Self { token: Box::new(crate::token::load), api, full_screen: Box::new(full_screen), low_power: Box::new(crate::platform::low_power_mode) }
+        Self { token: Box::new(crate::token::load), api, full_screen: Box::new(full_screen), low_power: Box::new(crate::platform::low_power_mode), on_wifi: Box::new(crate::platform::on_wifi) }
     }
 }
 
@@ -156,7 +158,9 @@ pub fn run(
         let scheduled = app.has_token
             && !app.sync.disconnected
             && wait.is_some_and(|w| app.sync.last_attempt.is_none_or(|a| now - a >= w))
-            && !(app.settings.sync_pause_on_low_power && (deps.low_power)());
+            && !(app.settings.sync_pause_on_low_power && (deps.low_power)())
+            // "Only on Wi-Fi": scheduled syncs wait until the main connection is Wi-Fi; a manual sync always goes
+            && !(app.settings.sync_only_on_wifi && (deps.on_wifi)() != Some(true));
         let allowed = not_before.is_none_or(|t| now >= t);
         let mut outcome = None;
         if app.settings.offline {
@@ -430,7 +434,7 @@ mod tests {
     }
 
     fn deps(api: &str, token: Result<Option<String>, String>) -> Deps {
-        Deps { token: Box::new(move || token.clone()), api: api.into(), full_screen: Box::new(|| false), low_power: Box::new(|| false) }
+        Deps { token: Box::new(move || token.clone()), api: api.into(), full_screen: Box::new(|| false), low_power: Box::new(|| false), on_wifi: Box::new(|| Some(true)) }
     }
 
     fn temp() -> std::path::PathBuf {
@@ -520,7 +524,7 @@ mod tests {
             }
             Ok(None)
         };
-        let deps = Deps { token: Box::new(token), api: "http://127.0.0.1:9".into(), full_screen: Box::new(|| false), low_power: Box::new(|| false) };
+        let deps = Deps { token: Box::new(token), api: "http://127.0.0.1:9".into(), full_screen: Box::new(|| false), low_power: Box::new(|| false), on_wifi: Box::new(|| Some(true)) };
         let (shared, tx, seen, _thread) = start(App::load(dir.clone()).unwrap(), deps);
         assert!(slot.set(shared.clone()).is_ok());
         next_sync(&seen);

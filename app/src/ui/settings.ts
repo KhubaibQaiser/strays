@@ -155,7 +155,7 @@ export function renderSettings(root: HTMLElement, state: UiState, section: strin
       toggle("syncOnWake", "Also when the Mac wakes"),
       toggle("syncOnLaunch", "Also when Strays starts"),
       toggle("syncPauseOnLowPower", "Pause in Low Power Mode"),
-      el("div", { class: "check muted" }, el("input", { type: "checkbox", disabled: true }), "Only on Wi-Fi (not available yet)"),
+      toggle("syncOnlyOnWifi", "Only on Wi-Fi (scheduled syncs wait; Sync now always works)"),
       el("div", { class: "buttons" }, el("button", { onclick: () => void api.syncNow().then(() => notice("Syncing…")).catch((e) => notice(String(e), true)) }, "Sync now")),
     ],
     privacy: () => privacy(state, s, save, notice),

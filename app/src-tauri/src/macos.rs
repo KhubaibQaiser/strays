@@ -76,6 +76,42 @@ pub fn low_power_mode() -> bool {
     NSProcessInfo::processInfo().isLowPowerModeEnabled()
 }
 
+/// Whether the Mac's main connection right now is Wi-Fi, for "Only on Wi-Fi" (§6.3): the primary
+/// network interface from SystemConfiguration, and whether that interface is IEEE 802.11. `None`
+/// when it can't tell (no connection, or the system wouldn't say).
+pub fn on_wifi() -> Option<bool> {
+    use objc2_core_foundation::{CFArray, CFDictionary};
+    use std::ffi::c_void;
+    #[link(name = "SystemConfiguration", kind = "framework")]
+    unsafe extern "C" {
+        fn SCDynamicStoreCreate(alloc: *const c_void, name: &CFString, callout: *const c_void, context: *const c_void) -> Option<std::ptr::NonNull<c_void>>;
+        fn SCDynamicStoreCopyValue(store: std::ptr::NonNull<c_void>, key: &CFString) -> Option<std::ptr::NonNull<CFType>>;
+        fn SCNetworkInterfaceCopyAll() -> Option<std::ptr::NonNull<CFArray>>;
+        fn SCNetworkInterfaceGetBSDName(interface: *const CFType) -> *const CFString;
+        fn SCNetworkInterfaceGetInterfaceType(interface: *const CFType) -> *const CFString;
+        fn CFRelease(cf: std::ptr::NonNull<c_void>);
+    }
+    // SAFETY: plain SystemConfiguration calls; every Copy/Create result is owned and released (or
+    // wrapped in CFRetained), and the Get results are borrowed from objects that outlive their use.
+    unsafe {
+        let store = SCDynamicStoreCreate(std::ptr::null(), &CFString::from_static_str("Strays"), std::ptr::null(), std::ptr::null())?;
+        let global = SCDynamicStoreCopyValue(store, &CFString::from_static_str("State:/Network/Global/IPv4"));
+        CFRelease(store);
+        let global: CFRetained<CFDictionary<CFString, CFType>> = CFRetained::from_raw(global?.cast());
+        let primary = global.get(&CFString::from_static_str("PrimaryInterface"))?.downcast::<CFString>().ok()?.to_string();
+        let all: CFRetained<CFArray<CFType>> = CFRetained::from_raw(SCNetworkInterfaceCopyAll()?.cast());
+        for i in all.iter() {
+            let name = SCNetworkInterfaceGetBSDName(&*i);
+            if name.is_null() || (*name).to_string() != primary {
+                continue;
+            }
+            let kind = SCNetworkInterfaceGetInterfaceType(&*i);
+            return Some(!kind.is_null() && (*kind).to_string() == "IEEE80211");
+        }
+        Some(false)
+    }
+}
+
 /// "26.5.0", for error reports.
 pub fn os_version() -> String {
     let v = NSProcessInfo::processInfo().operatingSystemVersion();
@@ -165,4 +201,16 @@ pub fn set_login_item(on: bool) -> Result<LoginItem, String> {
     let result = if on { unsafe { service.registerAndReturnError() } } else { unsafe { service.unregisterAndReturnError() } };
     result.map_err(|e| e.localizedDescription().to_string())?;
     Ok(login_item())
+}
+
+#[cfg(test)]
+mod tests {
+    /// Run by hand on a Mac (`cargo test -- --ignored wifi`): prints what Strays sees right now.
+    #[test]
+    #[ignore = "depends on this Mac's network"]
+    fn wifi_reading_works_here() {
+        let seen = super::on_wifi();
+        println!("on Wi-Fi: {seen:?}");
+        assert!(seen.is_some(), "a connected Mac should say Wi-Fi or not");
+    }
 }
