@@ -297,6 +297,10 @@ export const Action = { none: 0, eat: 1, petted: 2, celebrate: 3, exit: 4, enter
 export type Action = (typeof Action)[keyof typeof Action];
 
 export type Mood = "joyful" | "content" | "peckish" | "hungry" | "gloomy";
+/** How low each mood sits (0 = content, 1 = gloomy): it lowers the head, ears, lids and tail by that much. */
+const LOW: Record<Mood, number> = { joyful: 0, content: 0, peckish: 0.3, hungry: 0.6, gloomy: 1 };
+/** Seconds between glances: a peckish pet looks around for food, a gloomy one barely looks up. */
+const GLANCE: Record<Mood, [number, number]> = { joyful: [1.8, 5.5], content: [1.8, 5.5], peckish: [1, 3], hungry: [1.4, 3.8], gloomy: [4, 9] };
 
 // ---- the pet ---------------------------------------------------------------------------------------
 
@@ -514,16 +518,20 @@ export class Pet3D {
     const t = (this.t += dt);
     const at = t - this.actionT0;
     const A = this.action;
-    const gloomy = this.mood === "gloomy" || this.mood === "hungry";
+    const low = LOW[this.mood];
+    // species hooks (a dog's panting, a parrot's bobbing) treat hungry and gloomy as down
+    const gloomy = low >= 0.6;
     const joyful = this.mood === "joyful" || A === Action.celebrate || A === Action.postcard;
     const asleep = A === Action.fallAsleep || A === Action.sleep;
     const lively = !this.still && !asleep;
 
     // decisions: glances, ear twitches, tail flicks, head tilts, blinks
     if (lively && t > this.next.glance) {
-      this.next.glance = t + rand(1.8, 5.5);
-      this.yaw.target = rand(-0.55, 0.55);
-      this.pitch.target = rand(-0.12, 0.18) - (gloomy ? 0.22 : 0);
+      this.next.glance = t + rand(...GLANCE[this.mood]);
+      // a hungry pet keeps looking down at the floor, where its bowl would be
+      const atFloor = this.mood === "hungry" && Math.random() < 0.45;
+      this.yaw.target = atFloor ? rand(-0.2, 0.2) : rand(-0.55, 0.55);
+      this.pitch.target = atFloor ? -0.42 : rand(-0.12, 0.18) - low * 0.22;
     }
     if (lively && this.cursor) {
       this.yaw.target = THREE.MathUtils.clamp(this.cursor.x * 0.9, -0.8, 0.8);
@@ -593,13 +601,13 @@ export class Pet3D {
     b[def.head].rotation.set(-this.pitch.x * 0.6 + nod, this.yaw.x * 0.65, this.roll.x);
     if (def.ears) {
       const [l, r] = def.ears;
-      const earBase = (gloomy ? 0.45 : joyful ? -0.1 : 0) + sleepy * 0.3;
+      const earBase = (joyful ? -0.1 : low * 0.45) + sleepy * 0.3;
       b[l].rotation.set(-this.ears[0].x * 0.05 - earBase * 0.5, 0, this.ears[0].x * 0.03 + earBase * 0.6);
       b[r].rotation.set(-this.ears[1].x * 0.05 - earBase * 0.5, 0, -this.ears[1].x * 0.03 - earBase * 0.6);
     }
-    if (def.tail) this.moveTail(def.tail, t, joyful, gloomy, sleepy, A === Action.celebrate);
+    if (def.tail) this.moveTail(def.tail, t, joyful, low, sleepy, A === Action.celebrate);
 
-    let close = Math.max(gloomy ? 0.3 : 0, sleepy, purr * 0.85);
+    let close = Math.max(low * 0.3, sleepy, purr * 0.85);
     if (def.animate) {
       const c: AnimCtx = { t, dt, bones: b, joyful, gloomy, asleep, still: this.still, action: A, at, sleepy, close: 0, mem: this.mem, fast: false };
       def.animate(c);
@@ -622,11 +630,11 @@ export class Pet3D {
 
   /** curl: a slow wave down the tail, the tip lifting off the floor; wag: side to side, faster when happy;
    *  bob: tail feathers rocking with the breath. */
-  private moveTail(tail: NonNullable<SpeciesDef["tail"]>, t: number, joyful: boolean, gloomy: boolean, sleepy: number, celebrating: boolean) {
+  private moveTail(tail: NonNullable<SpeciesDef["tail"]>, t: number, joyful: boolean, low: number, sleepy: number, celebrating: boolean) {
     const b = this.bones;
     const n = tail.bones.length;
     if (tail.style === "wag") {
-      const amp = this.still ? 0 : (joyful ? 0.55 : gloomy ? 0.06 : 0.22) * (1 - sleepy);
+      const amp = this.still ? 0 : (joyful ? 0.55 : 0.22 - low * 0.16) * (1 - sleepy);
       const speed = joyful ? 24 : 9;
       this.wagging = amp > 0.3;
       tail.bones.forEach((bone, i) => b[bone].rotation.set(0, amp * Math.sin(t * speed - i * 0.5) * (0.5 + i / n), 0));
@@ -637,8 +645,8 @@ export class Pet3D {
       tail.bones.forEach((bone) => b[bone].rotation.set(bob, 0, 0));
       return;
     }
-    const speed = this.still ? 0 : (gloomy ? 0.5 : 1) * (1 - sleepy * 0.8);
-    const tipUp = (joyful ? 1.6 : 1) * (1 - sleepy * 0.7) + (celebrating ? 1.2 : 0);
+    const speed = this.still ? 0 : (1 - low * 0.5) * (1 - sleepy * 0.8);
+    const tipUp = (joyful ? 1.6 : 1 - low * 0.6) * (1 - sleepy * 0.7) + (celebrating ? 1.2 : 0);
     for (let i = 0; i < n; i++) {
       const along = i / (n - 1);
       const sway = (0.08 * Math.sin(t * 1.1 * speed - i * 0.55) * Math.min(1, speed * 2) + this.flick.x * 0.05) * (0.25 + 0.75 * along);
