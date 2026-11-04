@@ -1,7 +1,7 @@
 // Prototype page for realistic 3D pets: renders N pets and reports their frame cost. Everything is a
 // query parameter, so CPU can be measured per setting: species (comma list, cycled), pets, size (pt),
-// fps, idle (fps when only slow motion is happening), shells, dpr, mood, acc (accessory 1-5), look, face (close-up), bg.
-import { Pet3D, type Mood } from "../pet3d/pet";
+// fps, idle (fps when only slow motion is happening), shells, dpr, mood, acc (accessory 1-5), act (action), look, face (close-up), bg.
+import { Action, Pet3D, type Mood } from "../pet3d/pet";
 import { SPECIES_3D } from "../pet3d/rig";
 import type { Palette } from "../pet3d/species";
 import { invoke } from "@tauri-apps/api/core";
@@ -51,6 +51,8 @@ const cats = Array.from({ length: pets }, (_, i) => {
   cat.mood = (q.get("mood") as Mood) ?? "content";
   // ?acc=1..5 puts on a graduation accessory
   if (q.has("acc")) cat.wear(num("acc", 0));
+  // ?act=n plays an action (art/STYLE.md numbering), e.g. 7 sleep with its bed and Z's
+  if (q.has("act")) cat.act(num("act", 0) as Action);
   cat.setSize(size, dpr);
   // ?face=1 frames the head, for checking detail
   if (q.get("face") === "1") {
