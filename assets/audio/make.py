@@ -43,3 +43,12 @@ for name, (src, a, b, extra) in CUTS.items():
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", os.path.join(SRC, src), "-af", base + f"volume={gain:.2f}dB", "-ac", "1", "-ar", "44100",
                     "-codec:a", "libmp3lame", "-b:a", "128k", os.path.join(HERE, f"{name}.mp3")], check=True)
     print(f"{name}: {d:.2f}s, +{gain:.1f} dB")
+
+# the sad loop (played while a pet is gloomy): the whole seamless loop, no trim or fades (they'd click at
+# the seam), stereo, peak-normalised to -6 dBFS so it sits under the pet sounds
+LOOPS = {"sad-loop": "sad-loop--580833.mp3"}
+for name, src in LOOPS.items():
+    gain = -6 - peak(os.path.join(SRC, src), "")
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", os.path.join(SRC, src), "-af", f"volume={gain:.2f}dB", "-ar", "44100",
+                    "-codec:a", "libmp3lame", "-b:a", "112k", os.path.join(HERE, f"{name}.mp3")], check=True)
+    print(f"{name}: loop, +{gain:.1f} dB")

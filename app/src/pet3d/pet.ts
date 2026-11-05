@@ -537,6 +537,8 @@ export class Pet3D {
     const posed = new Set<number>();
     for (const p of [def.poses?.crouch, def.poses?.down]) for (const i of Object.keys({ ...p?.rot, ...p?.scale })) posed.add(+i);
     if (def.tapLeg !== undefined) posed.add(def.tapLeg);
+    for (const leg of def.legs ?? []) posed.add(leg);
+    if (def.legs) posed.add(def.spine);
     this.poseBones = [...posed];
 
     // a soft contact shadow underneath
@@ -677,7 +679,21 @@ export class Pet3D {
     const tapping = tapAt >= 0 && tapAt < 0.9 ? Math.max(0, Math.sin((tapAt / 0.9) * Math.PI * 2)) : 0;
 
     // actions steer the same springs, so every pose blends in and out
-    let nod = 0, hop = 0.035 * pulse(hopAt, 0.45), purr = 0;
+    let nod = 0, hop = def.legs ? 0 : 0.03 * pulse(hopAt, 0.45), purr = 0;
+    // a happy jump for pets with legs: crouch to push off, stretch up with the chin raised and the front
+    // paws reaching, then land nose-first with a little squash; the ears flop on take-off and landing
+    let jumpCrouch = 0, jumpPitch = 0, jumpReach = 0;
+    if (def.legs && hopAt >= 0 && hopAt < 0.85) {
+      if (hopAt < 0.2) jumpCrouch = 0.6 * Math.sin(((hopAt / 0.2) * Math.PI) / 2);
+      else if (hopAt < 0.6) {
+        const a = (hopAt - 0.2) / 0.4;
+        hop = 0.11 * Math.sin(a * Math.PI);
+        jumpPitch = -0.25 * Math.cos(a * Math.PI);
+        jumpReach = Math.sin(a * Math.PI);
+        jumpCrouch = 0.6 * Math.max(0, 1 - a / 0.12);
+      } else jumpCrouch = 0.45 * Math.sin(((hopAt - 0.6) / 0.25) * Math.PI);
+      for (const edge of [0.2, 0.6]) if (hopAt >= edge && hopAt - dt < edge) this.ears.forEach((e) => (e.v += rand(18, 26)));
+    }
     this.sleepy.target = asleep ? 1 : 0;
     this.scale.target = A === Action.exit ? 0 : 1;
     this.turn.target = A === Action.exit ? 1.2 : 0;
@@ -755,7 +771,7 @@ export class Pet3D {
     }
     // the mood poses go on top of everything else
     if (def.poses)
-      for (const [p, w] of [[def.poses.crouch, cr], [def.poses.down, dn]] as [Pose, number][]) {
+      for (const [p, w] of [[def.poses.crouch, Math.min(1, cr + jumpCrouch)], [def.poses.down, dn]] as [Pose, number][]) {
         if (w < 0.001) continue;
         b[def.hips].position.y -= p.drop * w;
         b[def.hips].position.z += (p.fwd ?? 0) * w;
@@ -763,6 +779,8 @@ export class Pet3D {
         for (const [i, sc] of Object.entries(p.scale ?? {})) b[+i].scale.multiply(new THREE.Vector3(1 + (sc![0] - 1) * w, 1 + (sc![1] - 1) * w, 1 + (sc![2] - 1) * w));
       }
     if (def.tapLeg !== undefined) b[def.tapLeg].rotation.x -= tapping * 0.75;
+    b[def.spine].rotation.x += jumpPitch;
+    for (const leg of def.legs ?? []) b[leg].rotation.x -= jumpReach * 0.55;
 
     // the mouth: smiling, flat or frowning, opening to meow, eat or cheer; the tongue licks round it
     if (this.mouth) {

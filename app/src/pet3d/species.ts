@@ -122,4 +122,6 @@ export type SpeciesDef = {
   mouth?: { at: V3; w: number; drop: number; color: number; r: number };
   /** the front leg that taps the empty bowl when peckish */
   tapLeg?: number;
+  /** front legs, for a real jump (push off, reach in the air, land); without them a happy pet just bobs */
+  legs?: number[];
 };

@@ -106,6 +106,76 @@ impl Player {
     }
 }
 
+/// Whether the sad loop may play: it's on, sound is allowed, and something on screen is gloomy.
+pub fn gloom_allowed(s: &Settings, any_gloomy: bool, presentation: bool, full_screen: bool, local_minute: u32) -> bool {
+    s.sad_music && any_gloomy && allowed(s, None, presentation, full_screen, local_minute)
+}
+
+/// "Solar winds (Perfect loop, smaller size)" by cookies+policy, CC0 (assets/audio/CREDITS.md).
+const SAD_LOOP: &[u8] = include_bytes!("../../../assets/audio/sad-loop.mp3");
+/// The loop sits well under the pet sounds.
+const SAD_LEVEL: f32 = 0.35;
+
+/// The one sad loop: fades in over 3 s when asked to play, out over 2 s when asked to stop, and keeps the
+/// output device open only while it's audible.
+#[derive(Clone)]
+pub struct Gloom(mpsc::Sender<Option<f32>>);
+
+impl Gloom {
+    pub fn start() -> Self {
+        let (tx, rx) = mpsc::channel::<Option<f32>>();
+        std::thread::spawn(move || {
+            let mut target: Option<f32> = None;
+            let mut level = 0.0f32;
+            let mut playing: Option<(rodio::MixerDeviceSink, rodio::Player)> = None;
+            loop {
+                // idle: block until asked to play; playing: tick every 50 ms to fade
+                let msg = if playing.is_none() { rx.recv().map(Some).map_err(|_| ()) } else { Ok(rx.recv_timeout(std::time::Duration::from_millis(50)).ok()) };
+                match msg {
+                    Err(()) => return,
+                    Ok(Some(t)) => target = t,
+                    Ok(None) => {}
+                }
+                if playing.is_none() && target.is_some() {
+                    let opened = rodio::DeviceSinkBuilder::open_default_sink().map_err(|e| format!("no sound output device: {e}")).and_then(|device| {
+                        let looped = rodio::Decoder::new_looped(Cursor::new(SAD_LOOP)).map_err(|e| format!("could not play the sad loop: {e}"))?;
+                        let player = rodio::Player::connect_new(device.mixer());
+                        player.set_volume(0.0);
+                        player.append(looped);
+                        Ok((device, player))
+                    });
+                    match opened {
+                        Ok(p) => {
+                            level = 0.0;
+                            playing = Some(p);
+                        }
+                        Err(e) => {
+                            crate::log::warn(&e);
+                            target = None;
+                            continue;
+                        }
+                    }
+                }
+                if let Some((_, player)) = &playing {
+                    let want = target.unwrap_or(0.0) * SAD_LEVEL;
+                    let step = if want > level { 0.05 / 3.0 } else { 0.05 / 2.0 } * SAD_LEVEL.max(want);
+                    level = if want > level { (level + step).min(want) } else { (level - step).max(want) };
+                    player.set_volume(level);
+                    if target.is_none() && level <= 0.0 {
+                        playing = None;
+                    }
+                }
+            }
+        });
+        Gloom(tx)
+    }
+
+    /// `Some(volume 0–100)` plays (or changes the volume), `None` fades out and stops.
+    pub fn set(&self, volume: Option<u32>) {
+        let _ = self.0.send(volume.map(|v| v.min(100) as f32 / 100.0));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,11 +197,27 @@ mod tests {
     }
 
     #[test]
+    fn sad_loop_is_off_by_default_and_needs_a_gloomy_pet() {
+        let mut s = Settings::default();
+        assert!(!gloom_allowed(&s, true, false, false, 12 * 60), "off by default");
+        s.sad_music = true;
+        assert!(!gloom_allowed(&s, true, false, false, 12 * 60), "sound itself is off");
+        s.sound = true;
+        assert!(gloom_allowed(&s, true, false, false, 12 * 60));
+        assert!(!gloom_allowed(&s, false, false, false, 12 * 60), "nothing gloomy on screen");
+        assert!(!gloom_allowed(&s, true, false, true, 12 * 60), "full screen");
+        assert!(!gloom_allowed(&s, true, true, false, 12 * 60), "presentation");
+        assert!(!gloom_allowed(&s, true, false, false, 23 * 60), "quiet hours");
+    }
+
+    #[test]
     fn every_sound_is_bundled_and_decodes() {
         let all = [Species::Cat, Species::Dog, Species::Hamster, Species::Parrot]
             .into_iter()
             .flat_map(|sp| [Sound::Greeting(sp), Sound::Happy(sp), Sound::Sad(sp)])
             .chain([Sound::Celebrate, Sound::Wake, Sound::Tick]);
+        let looped = rodio::Decoder::try_from(Cursor::new(SAD_LOOP)).expect("the sad loop decodes");
+        assert!(rodio::Source::total_duration(&looped).is_none_or(|t| t.as_secs_f32() < 60.0), "the sad loop is a short loop");
         for sound in all {
             let d = rodio::Decoder::try_from(Cursor::new(bytes(sound))).unwrap_or_else(|e| panic!("{sound:?}: {e}"));
             assert!(rodio::Source::total_duration(&d).is_none_or(|t| t.as_secs_f32() < 4.0), "{sound:?} is short");

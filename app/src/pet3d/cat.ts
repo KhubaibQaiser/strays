@@ -78,13 +78,15 @@ export const cat: SpeciesDef = {
   head: HEAD,
   ears: [EAR_L, EAR_R],
   tail: { bones: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => TAIL + i), pts: TAIL_PTS, style: "curl" },
-  // hungry: hunched low over its front paws; gloomy: a sphinx on the floor, front legs out, chin down
+  // hungry: hunched low over its front paws; gloomy: a tucked-in loaf
   poses: {
     crouch: { drop: 0.1, rot: { [SPINE]: [0.62, 0, 0], [NECK]: [-0.3, 0, 0], [HEAD]: [-0.2, 0, 0], [LEG_L]: [-0.62, 0, 0], [LEG_R]: [-0.62, 0, 0] } },
-    down: { drop: 0.13, fwd: 0.02, rot: { [SPINE]: [1.2, 0, 0], [NECK]: [-0.4, 0, 0], [HEAD]: [-0.5, 0, 0], [LEG_L]: [-2.4, 0, 0], [LEG_R]: [-2.4, 0, 0] } },
+    // a loaf, as unhappy cats sit: body low and compact, paws tucked under the chest, chin sunk, ears back
+    down: { drop: 0.13, rot: { [SPINE]: [0.6, 0, 0], [NECK]: [-0.05, 0, 0], [HEAD]: [-0.25, 0, 0], [LEG_L]: [0.5, 0, 0], [LEG_R]: [0.5, 0, 0], [EAR_L]: [-0.5, 0, 0.35], [EAR_R]: [-0.5, 0, -0.35] } },
   },
   mouth: { at: head([0, 0.756, 0.222]), w: 0.04, drop: 0.015, color: 0x4a2c2a, r: 0.0042 },
   tapLeg: LEG_L,
+  legs: [LEG_L, LEG_R],
   eyes: { at: head([0.058, 0.8, 0.162]), r: 0.038 * HEAD_SCALE, turn: 0.08, slit: 1.35, pupil: [0.32, 0.45, 0.2], lids: [0.95, 0.25, 0.85, 0.2, 0.04] },
   nose: head([0, 0.772, 0.209]),
   bare: [{ at: head([0, 0.772, 0.209]), r: 0.06 }],

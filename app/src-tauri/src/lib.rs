@@ -354,6 +354,7 @@ pub fn run() {
             let app = Arc::new(Mutex::new(app));
             let (tx, rx) = mpsc::channel();
             let player = audio::Player::start();
+            let gloom = audio::Gloom::start();
             h.manage(Shared { app: app.clone(), tx: tx.clone(), overlay: overlay.clone(), audio: player.clone() });
             let keys = app.lock().unwrap().settings.hide_shortcut.clone();
             if let Err(e) = shortcut::apply(&h, keys.as_deref()) {
@@ -381,7 +382,11 @@ pub fn run() {
                         modifier: s.modifier,
                         hide_in_full_screen: s.hide_in_full_screen,
                     };
-                    overlay.set_pets(app.views(Utc::now()), config);
+                    let views = app.views(Utc::now());
+                    let gloomy = views.iter().any(|v| v.mood == strays_core::mood::Mood::Gloomy);
+                    let sad = audio::gloom_allowed(&app.settings, gloomy, app.flags.presentation, overlay.is_full_screen(), state::local_minute());
+                    gloom.set(sad.then_some(app.settings.volume));
+                    overlay.set_pets(views, config);
                     commands::emit_changed(&ui);
                     // menu calls wait for the main thread, which may itself be waiting for the lock this thread holds
                     let main = ui.clone();

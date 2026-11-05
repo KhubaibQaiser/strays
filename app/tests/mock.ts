@@ -65,6 +65,7 @@ export const STATE: UiState = {
     sound: false,
     volume: 50,
     mutedSpecies: [],
+    sadMusic: false,
     checkUpdates: false,
     errorReports: false,
   },

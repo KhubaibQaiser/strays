@@ -90,6 +90,7 @@ export const dog: SpeciesDef = {
     down: { drop: 0.12, fwd: 0.02, rot: { [SPINE]: [1.15, 0, 0], [NECK]: [-0.35, 0, 0], [HEAD]: [-0.45, 0, 0], [LEG_L]: [-2.35, 0, 0], [LEG_R]: [-2.35, 0, 0], [TAIL]: [0.5, 0, 0], [EAR_L]: [-0.9, 0, 0.55], [EAR_R]: [-0.9, 0, -0.55] } },
   },
   tapLeg: LEG_L,
+  legs: [LEG_L, LEG_R],
   eyes: { at: head([0.06, 0.716, 0.186]), r: 0.026 * HEAD_SCALE, turn: 0.15, slit: 1, pupil: [0.42, 0.48, 0.36], lids: [0.75, 0.35, 0.62, 0.25, 0.1] },
   nose: head([0, 0.664, 0.275]),
   bare: [{ at: head([0, 0.664, 0.275]), r: 0.055 }, { at: head([0, 0.626, 0.255]), r: 0.042 }],
@@ -113,23 +114,31 @@ export const dog: SpeciesDef = {
     stripes: 0,
     tipping: 0.2,
   }),
-  // a tongue: a soft glossy pink capsule on the jaw, hanging from the mouth; animate scales it in and out
+  // a tongue: a soft, flat, glossy pink tongue on the jaw, its tip curling down. It slides out of the mouth
+  // (rather than growing), so it's always the same size
   extras: (_root, bones, palette, keep) => {
-    const geo = new THREE.CapsuleGeometry(0.022, 0.062, 6, 12);
-    geo.translate(0, -0.042, 0); // hang from its top, so scaling pulls it up into the mouth
-    const m = new THREE.MeshPhysicalMaterial({ color: palette.pink, roughness: 0.35, clearcoat: 0.4 });
+    const geo = new THREE.SphereGeometry(1, 20, 14);
+    // flat and wide, rounded at the tip, hanging from its root at the top, the tip curling forward
+    const pos = geo.getAttribute("position");
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i) * 0.026, y = (pos.getY(i) - 1) * 0.036, z = pos.getZ(i) * 0.008;
+      pos.setXYZ(i, x, y, z + y * y * 6 - Math.abs(x) * 0.15);
+    }
+    geo.computeVertexNormals();
+    const m = new THREE.MeshPhysicalMaterial({ color: palette.pink, roughness: 0.3, clearcoat: 0.5 });
     const tongue = new THREE.Mesh(geo, m);
-    const jaw = PIVOT[JAW], at = head([0, 0.624, 0.272]);
-    tongue.position.set(at[0] - jaw[0], at[1] - jaw[1], at[2] - jaw[2]);
-    tongue.scale.set(1.2, 1, 0.42);
-    tongue.rotation.x = 0.35;
-    bones[JAW].add(tongue);
+    const root = new THREE.Group().add(tongue);
+    const jaw = PIVOT[JAW], at = head([0, 0.624, 0.262]);
+    root.position.set(at[0] - jaw[0], at[1] - jaw[1], at[2] - jaw[2]);
+    root.rotation.x = 0.3;
+    bones[JAW].add(root);
     bones[JAW].userData.tongue = tongue;
     keep(geo);
     keep(m);
   },
-  // the tongue only comes out to pant (happy, or now and then when content) or for a quick lick; the
-  // rest of the time the mouth is closed, and the tongue shrinks back into it
+  // the tongue comes out to pant (happy, or now and then when content) or for a quick lick of the nose;
+  // the rest of the time the mouth is closed and it's tucked inside. Panting is quick (about 4 breaths a
+  // second): the jaw works, the tongue rides in and out a little and sways, and the chest heaves.
   animate: (c) => {
     const { bones: b, mem, t } = c;
     const lively = !c.still && !c.asleep;
@@ -140,19 +149,23 @@ export const dog: SpeciesDef = {
       mem.lick = Math.random() < 0.4 ? 1 : 0;
     }
     const bout = lively && t < (mem.pantEnd ?? 0);
-    const licking = bout && mem.lick === 1 && t > (mem.pantEnd ?? 0) - 0.45;
+    const licking = bout && mem.lick === 1 && t > (mem.pantEnd ?? 0) - 0.5;
     // no panting while it crouches or lies sulking
     const panting = lively && c.down < 0.3 && c.crouch < 0.3 && (c.joyful || (bout && mem.lick !== 1));
-    const want = panting ? 1 : licking ? 0.7 : 0;
-    mem.out = (mem.out ?? 0) + (want - (mem.out ?? 0)) * Math.min(1, c.dt * 8);
+    const want = panting ? 1 : licking ? 1 : 0;
+    mem.out = (mem.out ?? 0) + (want - (mem.out ?? 0)) * Math.min(1, c.dt * 7);
     const out = mem.out;
-    // the jaw drops to open the mouth (its dark inside shows in the gap), and the tongue hangs out of it
-    b[JAW].rotation.x = c.asleep ? 0 : out * (0.2 + (panting ? 0.05 * Math.sin(t * 15) : 0));
+    const pant = panting ? Math.sin(t * 25) : 0;
+    // the jaw drops to open the mouth (its dark inside shows in the gap) and works with each breath
+    b[JAW].rotation.x = c.asleep ? 0 : out * (0.22 + 0.05 * pant);
+    if (panting) b[SPINE].scale.y *= 1 + 0.018 * pant;
     const tongue = b[JAW].userData.tongue as THREE.Object3D | undefined;
     if (tongue) {
-      tongue.visible = out > 0.03;
-      const s = Math.max(0.001, out);
-      tongue.scale.set(1.2 * s, s, 0.42 * s);
+      tongue.visible = out > 0.05;
+      // slides out along its length; a lick curls it up towards the nose and back
+      const lick = licking ? Math.sin(Math.min(1, (t - ((mem.pantEnd ?? 0) - 0.5)) / 0.5) * Math.PI) : 0;
+      tongue.position.set(0, (1 - out) * 0.045 - 0.004 * pant, -(1 - out) * 0.02);
+      tongue.rotation.set(-lick * 1.6 + 0.06 * pant, 0, panting ? 0.08 * Math.sin(t * 3.1) : 0);
     }
     c.fast ||= panting || licking || (out > 0.02 && out < 0.98);
   },
