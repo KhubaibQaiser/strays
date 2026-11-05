@@ -81,9 +81,14 @@ export const cat: SpeciesDef = {
   // hungry: hunched low over its front paws; gloomy: lying down
   poses: {
     crouch: { drop: 0.1, rot: { [SPINE]: [0.62, 0, 0], [NECK]: [-0.3, 0, 0], [HEAD]: [-0.2, 0, 0], [LEG_L]: [-0.62, 0, 0], [LEG_R]: [-0.62, 0, 0] } },
-    // lying down, sphinx-style: body low on the floor, both front legs angled forward with the paws resting
-    // in front of the chest (above the floor, so nothing is cut off), head low, ears back
-    down: { drop: 0.13, rot: { [SPINE]: [0.5, 0, 0], [NECK]: [-0.2, 0, 0], [HEAD]: [-0.15, 0, 0], [LEG_L]: [-1.42, 0, 0], [LEG_R]: [-1.42, 0, 0], [EAR_L]: [-0.5, 0, 0.35], [EAR_R]: [-0.5, 0, -0.35] } },
+    // lying down like a real cat: body flat and long on the floor, front paws resting just out in front of
+    // the chest (the forelegs shortened, as if folded at the elbow), head low and forward, ears back
+    down: {
+      drop: 0.15,
+      fwd: 0.03,
+      rot: { [SPINE]: [1.1, 0, 0], [NECK]: [-0.5, 0, 0], [HEAD]: [-0.3, 0, 0], [LEG_L]: [-1.9, 0, 0], [LEG_R]: [-1.9, 0, 0], [EAR_L]: [-0.5, 0, 0.35], [EAR_R]: [-0.5, 0, -0.35] },
+      scale: { [LEG_L]: [1, 0.7, 1], [LEG_R]: [1, 0.7, 1] },
+    },
   },
   mouth: { at: head([0, 0.756, 0.222]), w: 0.04, drop: 0.015, color: 0x4a2c2a, r: 0.0042 },
   tapLeg: LEG_L,
