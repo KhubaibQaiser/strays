@@ -4,7 +4,8 @@ import * as THREE from "three";
 import { accessory } from "./accessories";
 import { Props } from "./props";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import type { AnimCtx, Palette, SpeciesDef } from "./species";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import type { AnimCtx, Palette, Pose, SpeciesDef } from "./species";
 
 // ---- shaders ---------------------------------------------------------------------------------------
 
@@ -65,7 +66,8 @@ function furMaterial(def: SpeciesDef, p: Palette) {
         uniform vec4 uBare[2];
         varying vec3 vRest, vRestN;
         varying float vShell, vFurK;
-        varying vec4 vMat, vMat2, vNoise;`,
+        varying vec4 vMat, vMat2, vNoise;
+        varying float vFloorY;`,
       )
       .replace(
         "#include <skinning_vertex>",
@@ -84,7 +86,8 @@ function furMaterial(def: SpeciesDef, p: Palette) {
         clear *= aMat.w > 0.0 ? mix(1.0, 0.5, aMat.w * aMat.w) : 1.0;
         vFurK = aMat.x * clear;
         float hgt = aShell * uFurLen * vFurK;
-        transformed += normalize(objectNormal) * hgt + uGravity * hgt * aShell;`,
+        transformed += normalize(objectNormal) * hgt + uGravity * hgt * aShell;
+        vFloorY = transformed.y;`,
       );
     sh.fragmentShader = sh.fragmentShader
       .replace(
@@ -96,11 +99,14 @@ function furMaterial(def: SpeciesDef, p: Palette) {
         varying vec3 vRest, vRestN;
         varying float vShell, vFurK;
         varying vec4 vMat, vMat2, vNoise;
+        varying float vFloorY;
         ${NOISE}`,
       )
       .replace(
         "#include <color_fragment>",
         `#include <color_fragment>
+        // a pet lying down sinks into the floor; nothing below it is drawn
+        if (vFloorY < -0.004) discard;
         // fur: a dense lattice of short soft undercoat, and on a coarser lattice mid-length awn hairs plus
         // sparse long guard hairs; short fur (face, paws) gets finer strands. Feathers: soft, wide,
         // overlapping tufts instead of strands.
@@ -220,6 +226,9 @@ function eyeMaterial(def: SpeciesDef, iris: string, irisOuter: string, lid: THRE
     uSide: { value: side },
     uLids: { value: new THREE.Vector4(uo, uc, lo, lc) },
     uSlant: { value: slant },
+    // happy crescent eyes (the lower lid rises in the middle) and sad ones (the inner corners lift)
+    uSmile: { value: 0 },
+    uSad: { value: 0 },
   };
   const m = new THREE.MeshPhysicalMaterial({ roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.03 });
   m.onBeforeCompile = (sh) => {
@@ -233,7 +242,7 @@ function eyeMaterial(def: SpeciesDef, iris: string, irisOuter: string, lid: THRE
         `#include <common>
         uniform vec3 uIris, uIrisOuter, uLid;
         uniform vec4 uLids;
-        uniform float uPupil, uSlit, uOpen, uSide, uSlant;
+        uniform float uPupil, uSlit, uOpen, uSide, uSlant, uSmile, uSad;
         varying vec3 vEyeN;
         ${NOISE}`,
       )
@@ -250,8 +259,8 @@ function eyeMaterial(def: SpeciesDef, iris: string, irisOuter: string, lid: THRE
         col *= smoothstep(1.0, 1.25, slit) * 0.92 + 0.08 * smoothstep(0.9, 1.0, slit); // soft dark rim round the pupil
         col = mix(vec3(0.012), col, smoothstep(0.92, 1.0, slit));
         float x = n.x * uSide;
-        float upper = mix(-0.05, uLids.x, uOpen) - uLids.y * x * x + uSlant * x;
-        float lower = mix(-0.05, -uLids.z, uOpen) + uLids.w * x * x + uSlant * 0.75 * x;
+        float upper = mix(-0.05, uLids.x, uOpen) - uLids.y * x * x + uSlant * x - uSad * (0.2 + 0.35 * x);
+        float lower = mix(-0.05, -uLids.z, uOpen) + uLids.w * x * x + uSlant * 0.75 * x + uSmile * uOpen * (0.48 - 1.3 * x * x);
         float edge = n.z < 0.0 ? -1.0 : min(upper - n.y, n.y - lower);
         col = mix(vec3(0.02), col, smoothstep(0.0, 0.07, edge));
         diffuseColor.rgb = edge < 0.0 ? uLid : col;`,
@@ -263,6 +272,44 @@ function eyeMaterial(def: SpeciesDef, iris: string, irisOuter: string, lid: THRE
       );
   };
   return { m, u };
+}
+
+/** The drawn mouth: an inverted "Y" under the nose (a short line down, then a curve out to each side), as
+ *  thin tubes that morph between neutral, smile and frown, plus a dark opening and a pink tongue that
+ *  scale in to meow, eat or lick. Everything sits on the head bone. */
+function buildMouth(mouth: NonNullable<SpeciesDef["mouth"]>, headAt: number[], headBone: THREE.Bone, keep: (d: { dispose(): void }) => void) {
+  const { at, w, drop, color, r } = mouth;
+  // the face curves back at the sides, so the ends of the mouth sit a little further in
+  const p = (x: number, y: number) => new THREE.Vector3(at[0] + x - headAt[0], at[1] + y - headAt[1], at[2] - x * x * 4 - headAt[2]);
+  const shape = (endY: number, ctrlY: number) =>
+    mergeGeometries([
+      new THREE.TubeGeometry(new THREE.LineCurve3(p(0, 0), p(0, -drop)), 2, r, 5),
+      ...[1, -1].map((s) => new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(p(0, -drop), p(s * w * 0.5, ctrlY), p(s * w, endY)), 10, r, 5)),
+    ])!;
+  const neutral = shape(-drop * 0.75, -drop * 1.55);
+  const smile = shape(-drop * 0.05, -drop * 1.9);
+  const frown = shape(-drop * 1.7, -drop * 1.05);
+  neutral.morphAttributes.position = [smile.getAttribute("position"), frown.getAttribute("position")];
+  smile.dispose();
+  frown.dispose();
+  const lineMat = new THREE.MeshBasicMaterial({ color });
+  const lines = new THREE.Mesh(neutral, lineMat);
+  lines.updateMorphTargets();
+  // the opening hangs from the bottom of the "Y"; the tongue sits in it and pokes out to lick
+  const holeGeo = new THREE.SphereGeometry(w * 0.6, 16, 10);
+  const holeMat = new THREE.MeshBasicMaterial({ color: 0x3a1c22 });
+  const hole = new THREE.Mesh(holeGeo, holeMat);
+  hole.position.copy(p(0, -drop * 1.25)).setZ(hole.position.z - w * 0.35);
+  hole.scale.z = 0.4;
+  const tongueGeo = new THREE.SphereGeometry(w * 0.42, 14, 10).scale(1, 0.7, 0.8);
+  const tongueMat = new THREE.MeshStandardMaterial({ color: 0xe8848f, roughness: 0.35 });
+  const tongue = new THREE.Mesh(tongueGeo, tongueMat);
+  const tongueAt = new THREE.Group().add(tongue);
+  tongueAt.position.copy(p(0, -drop * 1.3));
+  headBone.add(lines, hole, tongueAt);
+  [neutral, lineMat, holeGeo, holeMat, tongueGeo, tongueMat].forEach(keep);
+  hole.visible = tongue.visible = false;
+  return { lines, hole, tongue, at: tongueAt.position.clone() };
 }
 
 function shadowTexture() {
@@ -333,6 +380,21 @@ export class Pet3D {
   private sleepy = new Spring(1.6, 1);
   private scale = Object.assign(new Spring(7, 0.55), { x: 1, target: 1 });
   private turn = new Spring(2.5, 0.9);
+  // mood body language: the hungry crouch and the gloomy lie, happy and sad eyes, the mouth's curve
+  // (-1 frown .. 1 smile) and opening, a lick of the lips and a paw tapping the bowl
+  private crouch = new Spring(2.4, 1);
+  private down = new Spring(2.0, 1);
+  private eyeSmile = new Spring(5, 1);
+  private eyeSad = new Spring(3, 1);
+  private curve = new Spring(5, 1);
+  private open = new Spring(16, 0.8);
+  private lick = new Spring(18, 0.7);
+  /** when each mood moment last started and is next due (a hop, a sigh, a meow, a lick, a tap, a heart) */
+  private moment: Record<string, number> = {};
+  /** bones the mood poses move, which start each frame at rest */
+  private poseBones: number[] = [];
+  private mouth: { lines: THREE.Mesh; hole: THREE.Object3D; tongue: THREE.Object3D; at: THREE.Vector3 } | null = null;
+  private headPos = new THREE.Vector3();
   private root: THREE.Group;
   private furGeo: THREE.InstancedBufferGeometry;
   private action: Action = Action.none;
@@ -340,6 +402,7 @@ export class Pet3D {
   private wagging = false;
   private mem: Record<string, number> = {};
   private ownFast = false;
+  private ownClose = 0;
   /** why the graphics card refused to draw this pet, if it did */
   shaderError: string | null = null;
   /** the accessory being worn (0 none) and what it's made of */
@@ -470,6 +533,14 @@ export class Pet3D {
       this.disposables.push(wGeo, wMat);
     }
 
+    if (def.mouth) this.mouth = buildMouth(def.mouth, headAt, headBone, (d) => this.disposables.push(d));
+    const posed = new Set<number>();
+    for (const p of [def.poses?.crouch, def.poses?.down]) for (const i of Object.keys({ ...p?.rot, ...p?.scale })) posed.add(+i);
+    if (def.tapLeg !== undefined) posed.add(def.tapLeg);
+    for (const leg of def.legs ?? []) posed.add(leg);
+    if (def.legs) posed.add(def.spine);
+    this.poseBones = [...posed];
+
     // a soft contact shadow underneath
     const sTex = shadowTexture();
     const sGeo = new THREE.PlaneGeometry(...def.shadow.size);
@@ -550,12 +621,16 @@ export class Pet3D {
     const lively = !this.still && !asleep;
 
     // decisions: glances, ear twitches, tail flicks, head tilts, blinks
+    const m = this.mood;
+    const posing = A === Action.none;
     if (lively && t > this.next.glance) {
-      this.next.glance = t + rand(...GLANCE[this.mood]);
-      // a hungry pet keeps looking down at the floor, where its bowl would be
-      const atFloor = this.mood === "hungry" && Math.random() < 0.45;
-      this.yaw.target = atFloor ? rand(-0.2, 0.2) : rand(-0.55, 0.55);
-      this.pitch.target = atFloor ? -0.42 : rand(-0.12, 0.18) - low * 0.22;
+      this.next.glance = t + rand(...GLANCE[m]);
+      // a peckish or hungry pet keeps looking at its empty bowl, down by its front paw
+      const atBowl = Math.random() < (m === "hungry" ? 0.65 : m === "peckish" ? 0.6 : 0);
+      // a happy pet mostly looks out at you, chin up
+      const atYou = joyful && Math.random() < 0.7;
+      this.yaw.target = atBowl ? rand(0.45, 0.7) : atYou ? rand(0.25, 0.5) : rand(-0.55, 0.55);
+      this.pitch.target = atBowl ? -0.42 : atYou ? rand(0.05, 0.15) : rand(-0.12, 0.18) - low * 0.22;
     }
     if (lively && this.cursor) {
       this.yaw.target = THREE.MathUtils.clamp(this.cursor.x * 0.9, -0.8, 0.8);
@@ -566,20 +641,59 @@ export class Pet3D {
       this.ears[Math.random() < 0.5 ? 0 : 1].v += rand(14, 24);
     }
     if (lively && t > this.next.flick) {
-      this.next.flick = t + rand(4, 12);
+      this.next.flick = t + (joyful ? rand(1.2, 3) : rand(4, 12));
       this.flick.v += rand(4, 8) * (Math.random() < 0.5 ? -1 : 1);
     }
     if (lively && t > this.next.tilt) {
-      this.next.tilt = t + rand(5, 13);
-      this.roll.target = Math.random() < 0.4 ? rand(-0.22, 0.22) : 0;
+      // a happy pet tilts its head playfully, and often
+      this.next.tilt = t + (joyful ? rand(2, 5) : rand(5, 13));
+      this.roll.target = joyful ? rand(0.15, 0.3) * (Math.random() < 0.5 ? -1 : 1) : Math.random() < 0.4 ? rand(-0.22, 0.22) : 0;
     }
     if (!asleep && t > this.blink.next) {
-      const slow = Math.random() < 0.15;
+      // a content pet gives slow, trusting blinks
+      const slow = Math.random() < (m === "content" ? 0.4 : 0.15);
       this.blink = { start: t, len: slow ? 0.9 : 0.17, next: t + rand(2.5, 7) };
     }
 
+    // mood moments, each on its own timer: a happy hop, a gloomy sigh, a hungry (silent) meow, a peckish
+    // lick of the lips and tap at the bowl, and now and then a heart over a happy pet
+    const k = this.moment;
+    const due = (name: string, on: boolean, lo: number, hi: number) => {
+      k[name + "Next"] ??= t + rand(lo * 0.3, hi * 0.6);
+      if (on && t > k[name + "Next"]) {
+        k[name + "Next"] = t + rand(lo, hi);
+        k[name] = t;
+      }
+      return t - (k[name] ?? -99);
+    };
+    const moving = lively && posing;
+    const hopAt = due("hop", moving && joyful, 2.5, 5);
+    const sighAt = due("sigh", moving && m === "gloomy", 6, 10);
+    const meowAt = due("meow", moving && m === "hungry", 4, 7);
+    const lickAt = due("lick", moving && m === "peckish", 3, 6);
+    const tapAt = due("tap", moving && m === "peckish", 4, 8);
+    const heartAt = due("heart", moving && joyful, 10, 20);
+    const pulse = (since: number, len: number) => (since >= 0 && since < len ? Math.sin((since / len) * Math.PI) : 0);
+    const sigh = pulse(sighAt, 2.4);
+    const meow = pulse(meowAt, 0.7);
+    const tapping = tapAt >= 0 && tapAt < 0.9 ? Math.max(0, Math.sin((tapAt / 0.9) * Math.PI * 2)) : 0;
+
     // actions steer the same springs, so every pose blends in and out
-    let nod = 0, hop = 0, purr = 0;
+    let nod = 0, hop = def.legs ? 0 : 0.03 * pulse(hopAt, 0.45), purr = 0;
+    // a happy jump for pets with legs: crouch to push off, stretch up with the chin raised and the front
+    // paws reaching, then land nose-first with a little squash; the ears flop on take-off and landing
+    let jumpCrouch = 0, jumpPitch = 0, jumpReach = 0;
+    if (def.legs && hopAt >= 0 && hopAt < 0.85) {
+      if (hopAt < 0.2) jumpCrouch = 0.6 * Math.sin(((hopAt / 0.2) * Math.PI) / 2);
+      else if (hopAt < 0.6) {
+        const a = (hopAt - 0.2) / 0.4;
+        hop = 0.11 * Math.sin(a * Math.PI);
+        jumpPitch = -0.25 * Math.cos(a * Math.PI);
+        jumpReach = Math.sin(a * Math.PI);
+        jumpCrouch = 0.6 * Math.max(0, 1 - a / 0.12);
+      } else jumpCrouch = 0.45 * Math.sin(((hopAt - 0.6) / 0.25) * Math.PI);
+      for (const edge of [0.2, 0.6]) if (hopAt >= edge && hopAt - dt < edge) this.ears.forEach((e) => (e.v += rand(18, 26)));
+    }
     this.sleepy.target = asleep ? 1 : 0;
     this.scale.target = A === Action.exit ? 0 : 1;
     this.turn.target = A === Action.exit ? 1.2 : 0;
@@ -607,48 +721,95 @@ export class Pet3D {
       this.yaw.target = 0.1;
       this.roll.target = 0.15;
     }
+    // the mood's pose and face; actions (eating, celebrating, sleeping) sit the pet up first
+    this.crouch.target = posing ? (m === "hungry" ? 1 : m === "peckish" ? 0.35 : 0) : 0;
+    this.down.target = posing && m === "gloomy" ? 1 : 0;
+    this.eyeSmile.target = joyful && !asleep ? 1 : 0;
+    this.eyeSad.target = asleep || !posing ? 0 : m === "gloomy" ? 1 : m === "hungry" ? 0.7 : 0;
+    this.curve.target = joyful || A === Action.petted ? 1 : A !== Action.none ? 0.3 : m === "content" ? 0.4 : m === "peckish" ? 0 : m === "hungry" ? -0.6 : -1;
+    this.open.target = A === Action.eat ? 0.3 + 0.25 * Math.sin(at * 14) : A === Action.celebrate ? 0.7 : Math.max(meow, joyful ? 0.25 : 0);
+    this.lick.target = pulse(lickAt, 0.6);
     const [restPupil, joyPupil, sadPupil] = def.eyes.pupil;
     this.pupil.target = joyful ? joyPupil : gloomy ? sadPupil : restPupil;
-    for (const s of [this.yaw, this.pitch, this.roll, ...this.ears, this.flick, this.pupil, this.sleepy, this.scale, this.turn]) s.step(dt);
+    for (const s of [this.yaw, this.pitch, this.roll, ...this.ears, this.flick, this.pupil, this.sleepy, this.scale, this.turn,
+      this.crouch, this.down, this.eyeSmile, this.eyeSad, this.curve, this.open, this.lick]) s.step(dt);
 
     const b = this.bones;
+    for (const i of this.poseBones) {
+      b[i].rotation.set(0, 0, 0);
+      b[i].scale.set(1, 1, 1);
+    }
     const sleepy = this.sleepy.x;
+    const cr = this.crouch.x, dn = this.down.x;
     this.root.scale.setScalar(Math.max(0.001, this.scale.x));
     this.root.rotation.y = def.camera.turn + this.turn.x;
-    b[def.hips].position.y = def.pivot[def.hips][1] + hop;
-    // breathing: slower and deeper asleep; the chest swells and the neck undoes the scale for the head
-    const breath = Math.sin((t * Math.PI * 2) / (3.4 + sleepy * 1.6)) * (1 + sleepy * 0.6) + purr * 0.25 * Math.sin(t * 50);
+    b[def.hips].position.set(def.pivot[def.hips][0], def.pivot[def.hips][1] + hop, def.pivot[def.hips][2]);
+    // breathing: slower and deeper asleep, a long heavy breath when it sighs; the chest swells and the neck
+    // undoes the scale for the head
+    const breath = Math.sin((t * Math.PI * 2) / (3.4 + sleepy * 1.6)) * (1 + sleepy * 0.6) + purr * 0.25 * Math.sin(t * 50) + sigh * 2.2;
     b[def.spine].scale.set(1 + 0.012 * breath, 1 + 0.006 * breath, 1 + 0.02 * breath);
     b[def.neck].scale.set(1 / b[def.spine].scale.x, 1 / b[def.spine].scale.y, 1 / b[def.spine].scale.z);
     b[def.hips].rotation.z = this.still ? 0 : 0.012 * Math.sin(t * 0.55);
+    // a meow and a sigh lift the head a little
+    const lift = meow * 0.14 + sigh * 0.12;
     b[def.neck].rotation.set(-this.pitch.x * 0.35, this.yaw.x * 0.35, 0);
-    b[def.head].rotation.set(-this.pitch.x * 0.6 + nod, this.yaw.x * 0.65, this.roll.x);
+    b[def.head].rotation.set(-this.pitch.x * 0.6 + nod - lift, this.yaw.x * 0.65, this.roll.x);
     if (def.ears) {
       const [l, r] = def.ears;
-      const earBase = (joyful ? -0.1 : low * 0.45) + sleepy * 0.3;
+      // perked forward when happy; out to the side and then flat as the mood sinks
+      const earBase = (joyful ? -0.25 : low * 0.45 + dn * 0.35) + sleepy * 0.3;
       b[l].rotation.set(-this.ears[0].x * 0.05 - earBase * 0.5, 0, this.ears[0].x * 0.03 + earBase * 0.6);
       b[r].rotation.set(-this.ears[1].x * 0.05 - earBase * 0.5, 0, -this.ears[1].x * 0.03 - earBase * 0.6);
     }
     if (def.tail) this.moveTail(def.tail, t, joyful, low, sleepy, A === Action.celebrate);
 
+    if (def.animate) {
+      const c: AnimCtx = { t, dt, bones: b, joyful, gloomy, asleep, still: this.still, action: A, at, sleepy, close: 0, mem: this.mem, fast: false, mood: m, crouch: cr, down: dn };
+      def.animate(c);
+      this.ownClose = c.close;
+      this.ownFast = c.fast;
+    }
+    // the mood poses go on top of everything else
+    if (def.poses)
+      for (const [p, w] of [[def.poses.crouch, Math.min(1, cr + jumpCrouch)], [def.poses.down, dn]] as [Pose, number][]) {
+        if (w < 0.001) continue;
+        b[def.hips].position.y -= p.drop * w;
+        b[def.hips].position.z += (p.fwd ?? 0) * w;
+        for (const [i, r] of Object.entries(p.rot)) b[+i].rotation.set(b[+i].rotation.x + r![0] * w, b[+i].rotation.y + r![1] * w, b[+i].rotation.z + r![2] * w);
+        for (const [i, sc] of Object.entries(p.scale ?? {})) b[+i].scale.multiply(new THREE.Vector3(1 + (sc![0] - 1) * w, 1 + (sc![1] - 1) * w, 1 + (sc![2] - 1) * w));
+      }
+    if (def.tapLeg !== undefined) b[def.tapLeg].rotation.x -= tapping * 0.75;
+    b[def.spine].rotation.x += jumpPitch;
+    for (const leg of def.legs ?? []) b[leg].rotation.x -= jumpReach * 0.55;
+
+    // the mouth: smiling, flat or frowning, opening to meow, eat or cheer; the tongue licks round it
+    if (this.mouth) {
+      const { lines, hole, tongue } = this.mouth;
+      const c = this.curve.x, o = Math.max(0, this.open.x), lk = Math.max(0, this.lick.x);
+      lines.morphTargetInfluences![0] = Math.max(0, c);
+      lines.morphTargetInfluences![1] = Math.max(0, -c);
+      hole.visible = o > 0.03;
+      hole.scale.set(0.7 + o * 0.3, Math.max(0.01, o), 1);
+      tongue.visible = lk > 0.03 || o > 0.3;
+      tongue.position.set(0, -0.006 - o * 0.006 - lk * 0.006, lk * 0.012);
+      tongue.scale.setScalar(Math.max(0.01, Math.max(lk, o * 0.6)));
+    }
+
+    b[def.head].getWorldPosition(this.headPos);
     this.propsFast = this.props.update({
       t,
       dt,
-      bowl: A === Action.eat ? "eating" : !asleep && (this.mood === "peckish" || this.mood === "hungry") ? "empty" : "none",
+      bowl: A === Action.eat ? "eating" : !asleep && (m === "peckish" || m === "hungry") ? "empty" : "none",
       eatAt: A === Action.eat ? at : 0,
-      rain: !asleep && this.mood === "gloomy",
+      rain: !asleep && m === "gloomy",
       asleep: sleepy,
       confetti: A === Action.celebrate ? at : -1,
       postcard: A === Action.postcard ? at : -1,
+      heart: heartAt < 1.6 && !this.still ? heartAt : -1,
+      head: this.headPos,
     });
 
-    let close = Math.max(low * 0.3, sleepy, purr * 0.85);
-    if (def.animate) {
-      const c: AnimCtx = { t, dt, bones: b, joyful, gloomy, asleep, still: this.still, action: A, at, sleepy, close: 0, mem: this.mem, fast: false };
-      def.animate(c);
-      close = Math.max(close, c.close);
-      this.ownFast = c.fast;
-    }
+    let close = Math.max(low * 0.3, sleepy, purr * 0.85, this.ownClose);
 
     // eyelids: a blink closes both lids, a slow blink holds them half-shut
     let shut = 0;
@@ -660,6 +821,8 @@ export class Pet3D {
     for (const e of this.eyes) {
       e.u.uOpen.value = 1 - Math.max(shut, close);
       e.u.uPupil.value = this.pupil.x;
+      e.u.uSmile.value = this.eyeSmile.x;
+      e.u.uSad.value = this.eyeSad.x;
     }
   }
 

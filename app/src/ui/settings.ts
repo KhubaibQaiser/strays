@@ -133,6 +133,8 @@ export function renderSettings(root: HTMLElement, state: UiState, section: strin
       el("p", { class: "muted" }, "Pets make a small sound when they greet you, eat, celebrate, feel low or wake up. Never during quiet hours, Presentation mode or a full-screen app, and never for snoozed or paused pets."),
       toggle("sound", "Play sounds"),
       row("Volume", volumeSlider(s, save), el("button", { onclick: () => void api.testSound().catch((e) => notice(String(e), true)) }, "Test")),
+      toggle("sadMusic", "Sad music while a pet is gloomy"),
+      el("p", { class: "muted small" }, "A soft piano loop, quietly, while any pet on screen is gloomy. Only when sounds are on."),
       el("h2", {}, "Species"),
       ...SPECIES.map(([sp, label]) => {
         const i = el("input", { type: "checkbox", checked: !s.mutedSpecies.includes(sp), id: `sound-${sp}` });

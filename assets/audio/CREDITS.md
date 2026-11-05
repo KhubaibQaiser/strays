@@ -19,5 +19,8 @@ Every sound here is cut from a recording on [Freesound](https://freesound.org) r
 | `celebrate.mp3` | You've succeeded (game jingle) | Rolly-SFX | [freesound.org/people/Rolly-SFX/sounds/626259/](https://freesound.org/people/Rolly-SFX/sounds/626259/) |
 | `wake.mp3` | Little bell | NikoletB | [freesound.org/people/NikoletB/sounds/846674/](https://freesound.org/people/NikoletB/sounds/846674/) |
 | `tick.mp3` | Starry_UI_Click_63 | SignatureSoundsOrg | [freesound.org/people/SignatureSoundsOrg/sounds/876010/](https://freesound.org/people/SignatureSoundsOrg/sounds/876010/) |
+| `sad-loop.mp3` | Solar winds (Perfect loop, smaller size) | cookies+policy | [freesound.org/people/cookies+policy/sounds/580833/](https://freesound.org/people/cookies+policy/sounds/580833/) |
 
 `parrot-sad.mp3` is one chirp from the recording above, slowed and lowered to 80%, because no sad budgie recording exists.
+
+`sad-loop.mp3` is the whole 32 s seamless loop (downloaded 2026-11-05 as the HQ MP3 preview, CC0 checked on its page), only levelled. It plays quietly while a pet is gloomy, if Sad music is on in Settings → Sound.

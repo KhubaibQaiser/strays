@@ -113,6 +113,8 @@ pub struct Settings {
     /// 0–100.
     pub volume: u32,
     pub muted_species: Vec<Species>,
+    /// A soft sad loop while any pet on screen is gloomy: off by default, and only when sound is on.
+    pub sad_music: bool,
     /// Opt-in update check (§16): off by default; weekly while on, anonymous, to api.github.com only.
     pub check_updates: bool,
     /// Opt-in error and crash reports to PostHog (`report.rs`): off until the user says yes.
@@ -155,6 +157,7 @@ impl Default for Settings {
             sound: false,
             volume: 50,
             muted_species: Vec::new(),
+            sad_music: false,
             check_updates: false,
             error_reports: false,
         }

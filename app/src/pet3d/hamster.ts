@@ -62,6 +62,13 @@ export const hamster: SpeciesDef = {
   headY: 0,
   camera: { pos: [0, 0.55, 2.6], look: [0, 0.45, 0], turn: -0.35 },
   shadow: { at: [0, 0.001, 0], size: [0.75, 0.7] },
+  // hungry: hunched over; gloomy: curled into a ball
+  poses: {
+    crouch: { drop: 0.03, rot: { [SPINE]: [0.3, 0, 0], [NECK]: [-0.1, 0, 0], [HEAD]: [-0.15, 0, 0] } },
+    // curled up in a hunched ball, as hamsters sit when they're low: back rounded, head tucked to its belly
+    down: { drop: 0.04, rot: { [SPINE]: [0.5, 0, 0], [NECK]: [0.1, 0, 0], [HEAD]: [0.2, 0, 0], [EAR_L]: [-0.4, 0, 0.3], [EAR_R]: [-0.4, 0, -0.3] } },
+  },
+  mouth: { at: [0, 0.553, 0.262], w: 0.024, drop: 0.01, color: 0x5a3030, r: 0.0032 },
   bounds: { centre: [0, 0.4, 0], r: 0.6 },
   palette: (c) => ({
     base: c.coatBase ?? "#e3a564",

@@ -152,6 +152,7 @@
       "quietStart": "number",
       "releaseCooldownDays": "number",
       "rotationHours": "number",
+      "sadMusic": "boolean",
       "skipWeekends": "boolean",
       "slots": "number",
       "sound": "boolean",

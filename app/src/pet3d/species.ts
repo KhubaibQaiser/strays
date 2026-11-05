@@ -63,7 +63,15 @@ export type AnimCtx = {
   mem: Record<string, number>;
   /** set true while the species' own motion is quick, so the page draws more frames */
   fast: boolean;
+  /** the mood, and how far into its hungry crouch / gloomy lie the pet is (0..1) */
+  mood: string;
+  crouch: number;
+  down: number;
 };
+
+/** A mood pose, blended in on top of the motion: bone rotations (radians), bone scales, and how far the
+ *  hips sink and slide forward. Bones the engine or species doesn't move itself start each frame at rest. */
+export type Pose = { drop: number; fwd?: number; rot: Partial<Record<number, V3>>; scale?: Partial<Record<number, V3>> };
 
 export type SpeciesDef = {
   shape: () => Mesh;
@@ -107,4 +115,13 @@ export type SpeciesDef = {
   extras?: (root: THREE.Group, bones: THREE.Bone[], palette: Palette, keep: (d: { dispose(): void }) => void) => void;
   /** the species' own motion, run after the shared motion each frame */
   animate?: (c: AnimCtx) => void;
+  /** how it crouches when hungry and lies down when gloomy */
+  poses?: { crouch: Pose; down: Pose };
+  /** a drawn mouth under the nose (mesh coordinates): its centre, half width, how far the line drops below
+   *  the nose before splitting, its colour and line thickness */
+  mouth?: { at: V3; w: number; drop: number; color: number; r: number };
+  /** the front leg that taps the empty bowl when peckish */
+  tapLeg?: number;
+  /** front legs, for a real jump (push off, reach in the air, land); without them a happy pet just bobs */
+  legs?: number[];
 };

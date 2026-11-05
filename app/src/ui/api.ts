@@ -71,6 +71,7 @@ export type Settings = {
   sound: boolean;
   volume: number;
   mutedSpecies: Species[];
+  sadMusic: boolean;
   checkUpdates: boolean;
   errorReports: boolean;
 };
