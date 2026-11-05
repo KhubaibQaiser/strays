@@ -10,3 +10,6 @@ tools/overlay-harness/harness
 native-overlay/.build/
 test-results/
 playwright-report/
+
+# local working files for the launch film (scripts, frames, renders)
+brag-output/

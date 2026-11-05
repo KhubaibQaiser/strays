@@ -1,14 +1,26 @@
 # Strays
 
+<p align="center">
+  <img src="docs/media/cover.jpg" alt="Strays: a desktop pet for every unfinished project. A cream Persian cat, a corgi, a golden hamster and a scarlet macaw sit on a shelf." width="900">
+</p>
+
 **A desktop companion for your unfinished projects.** Each project you're working on gets a small animated pet that lives along the edge of your screen. Pushing commits feeds it. Leave a project alone and its pet gets hungry, then gloomy. Ship a release and it goes on holiday. Pets never die or age; only their mood changes.
 
 > **Status:** pre-alpha, in active development. macOS only for now: Apple Silicon Macs with macOS 14 Sonoma or later. **Intel Macs are not supported** ([why, and what adding them would cost](docs/gate-4.md#intel-macs)). There is no installable release yet.
 
+## Watch it
+
+<p align="center">
+  <a href="docs/media/strays-launch.mp4"><img src="docs/media/launch-poster.jpg" alt="Play the 30-second Strays film: a project ages and its cat sinks from content to gloomy under a rain cloud, then a push feeds it and a release makes it celebrate" width="720"></a>
+</p>
+
+A 30-second film, made from the app's own 3D pets: every project gets a pet, one project goes quiet for three weeks and its cat ends up lying under a rain cloud, then a push feeds it and a release makes it celebrate. ([MP4, 19 MB](docs/media/strays-launch.mp4), with sound; music by Sascha Ende, [ende.app](https://ende.app/en), CC BY 4.0.)
+
+## Meet the strays
+
 <p align="center">
   <img src="docs/media/pets.gif" alt="The four strays, animated: a cream Persian cat, a Pembroke Welsh Corgi, a golden Syrian hamster and a scarlet macaw on its perch" width="680">
 </p>
-
-## Meet the strays
 
 Four species, each a real-time 3D animal with a soft coat or feathers, drawn on your screen. Pick a coat when you adopt one: cream, charcoal, ginger, blue-grey or any colour (the macaw has its own scarlet, blue-and-gold, green and hyacinth).
 
@@ -158,4 +170,4 @@ Windows support and cross-device sync are planned after the macOS release.
 
 ## License
 
-[MIT](LICENSE), code and art. The sounds in `assets/audio` are CC0 recordings from Freesound; see [their credits](assets/audio/CREDITS.md).
+[MIT](LICENSE), code and art. The sounds in `assets/audio` are CC0 recordings from Freesound; see [their credits](assets/audio/CREDITS.md). The film's music (`docs/media/strays-launch.mp4`) is "Happy Beats / Business Moves Vol. 1" by Sascha Ende ([ende.app](https://ende.app/en)), CC BY 4.0, not covered by the MIT licence; its other sound effects are CC0 (Kenney).
