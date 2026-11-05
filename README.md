@@ -25,11 +25,11 @@ A pet's mood follows how long it's been since you last worked on its project (a 
 
 | Mood | | When |
 |---|---|---|
-| **Joyful** | <img src="docs/media/mood-joyful.gif" alt="All four pets joyful: bright-eyed, the corgi panting" width="520"> | worked on in the last 2 days |
-| **Content** | <img src="docs/media/mood-content.gif" alt="All four pets content, looking around calmly" width="520"> | up to 5 days |
-| **Peckish** | <img src="docs/media/mood-peckish.gif" alt="All four pets peckish, an empty blue bowl beside each" width="520"> | up to 10 days: an empty bowl appears, and it looks around for food |
-| **Hungry** | <img src="docs/media/mood-hungry.gif" alt="All four pets hungry, heads and ears lower, eyeing the empty bowl" width="520"> | up to 20 days: head and ears lower, eyes on the bowl |
-| **Gloomy** | <img src="docs/media/mood-gloomy.gif" alt="All four pets gloomy under small rain clouds" width="520"> | after that: a little rain cloud, and it barely looks up |
+| **Joyful** | <img src="docs/media/mood-joyful.gif" alt="All four pets joyful: bright-eyed, the corgi panting" width="520"> | worked on in the last 2 days: happy crescent eyes and a smile, a little jump now and then, and the odd heart floating up |
+| **Content** | <img src="docs/media/mood-content.gif" alt="All four pets content, looking around calmly" width="520"> | up to 5 days: relaxed, with slow, trusting blinks |
+| **Peckish** | <img src="docs/media/mood-peckish.gif" alt="All four pets peckish, an empty blue bowl beside each" width="520"> | up to 10 days: an empty bowl appears; it leans towards it, licks its lips and taps it with a paw |
+| **Hungry** | <img src="docs/media/mood-hungry.gif" alt="All four pets hungry, heads and ears lower, eyeing the empty bowl" width="520"> | up to 20 days: it crouches low by the bowl with pleading eyes and a frown, and meows at it |
+| **Gloomy** | <img src="docs/media/mood-gloomy.gif" alt="All four pets gloomy under small rain clouds" width="520"> | after that: it lies down (the macaw fluffs up and tucks its head) under its own rain shower, sighing now and then |
 
 Pets never die, age or punish you: a failed sync, an expired token, holidays and paused time never make a mood worse.
 
@@ -66,7 +66,7 @@ These GIFs are recorded from the app's own 3D pets by [`app/scripts/readme-media
 | ⌥ + right-click | The pet's own menu |
 | ⌥ + press and hold | Pet it (it enjoys it; mood only changes with work) |
 
-The modifier key can be changed in Settings, which also has an optional shortcut to hide or show every pet. Every action is also in the 🐾 menu-bar menu.
+The modifier key can be changed in Settings, which also has an optional shortcut to hide or show every pet, and an optional soft piano loop while a pet is gloomy (off by default). Every action is also in the 🐾 menu-bar menu.
 
 See the [user guide](docs/user-guide.md) for setup, connecting GitHub, folders and removing the app.
 
