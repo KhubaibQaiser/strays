@@ -84,6 +84,11 @@ export const macaw: SpeciesDef = {
   neck: NECK,
   head: HEAD,
   tail: { bones: [TAIL, TAIL + 1], pts: TAIL_PTS, style: "bob" },
+  // it stays on its perch: hungry hunches, gloomy fluffs up and tucks its head down, tail drooping
+  poses: {
+    crouch: { drop: 0, rot: { [NECK]: [0.25, 0, 0], [HEAD]: [0.2, 0, 0] }, scale: { [SPINE]: [1.05, 0.97, 1.05], [NECK]: [1 / 1.05, 1 / 0.97, 1 / 1.05] } },
+    down: { drop: 0.02, rot: { [NECK]: [0.6, 0, 0], [HEAD]: [0.55, 0, 0.15], [TAIL]: [0.3, 0, 0] }, scale: { [SPINE]: [1.14, 1.04, 1.14], [NECK]: [1 / 1.14, 1 / 1.04, 1 / 1.14] } },
+  },
   eyes: { at: [0.058, 0.703, 0.054], r: 0.012, turn: 1.0, slit: 1, pupil: [0.4, 0.46, 0.34], lids: [1.2, 0.1, 1.1, 0.1, 0] },
   nose: [0, 0.69, 0.1],
   bare: [{ at: [0, 0.69, 0.1], r: 0.045 }],

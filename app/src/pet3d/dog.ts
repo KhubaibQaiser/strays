@@ -84,6 +84,12 @@ export const dog: SpeciesDef = {
   head: HEAD,
   ears: [EAR_L, EAR_R],
   tail: { bones: [TAIL, TAIL + 1], pts: TAIL_PTS, style: "wag" },
+  // hungry: hunched low; gloomy: belly down, front legs out, head flat between the paws
+  poses: {
+    crouch: { drop: 0.08, rot: { [SPINE]: [0.55, 0, 0], [NECK]: [-0.25, 0, 0], [HEAD]: [-0.2, 0, 0], [LEG_L]: [-0.55, 0, 0], [LEG_R]: [-0.55, 0, 0], [EAR_L]: [-0.3, 0, 0.35], [EAR_R]: [-0.3, 0, -0.35] } },
+    down: { drop: 0.12, fwd: 0.02, rot: { [SPINE]: [1.15, 0, 0], [NECK]: [-0.35, 0, 0], [HEAD]: [-0.45, 0, 0], [LEG_L]: [-2.35, 0, 0], [LEG_R]: [-2.35, 0, 0], [TAIL]: [0.5, 0, 0], [EAR_L]: [-0.9, 0, 0.55], [EAR_R]: [-0.9, 0, -0.55] } },
+  },
+  tapLeg: LEG_L,
   eyes: { at: head([0.06, 0.716, 0.186]), r: 0.026 * HEAD_SCALE, turn: 0.15, slit: 1, pupil: [0.42, 0.48, 0.36], lids: [0.75, 0.35, 0.62, 0.25, 0.1] },
   nose: head([0, 0.664, 0.275]),
   bare: [{ at: head([0, 0.664, 0.275]), r: 0.055 }, { at: head([0, 0.626, 0.255]), r: 0.042 }],
@@ -135,7 +141,8 @@ export const dog: SpeciesDef = {
     }
     const bout = lively && t < (mem.pantEnd ?? 0);
     const licking = bout && mem.lick === 1 && t > (mem.pantEnd ?? 0) - 0.45;
-    const panting = lively && (c.joyful || (bout && mem.lick !== 1));
+    // no panting while it crouches or lies sulking
+    const panting = lively && c.down < 0.3 && c.crouch < 0.3 && (c.joyful || (bout && mem.lick !== 1));
     const want = panting ? 1 : licking ? 0.7 : 0;
     mem.out = (mem.out ?? 0) + (want - (mem.out ?? 0)) * Math.min(1, c.dt * 8);
     const out = mem.out;

@@ -1,16 +1,30 @@
 // The props that go with moods and moments (art/STYLE.md colours): a food bowl (empty when peckish
-// or hungry, full while eating), a rain cloud over a gloomy pet, a bed and drifting Z's while it
+// or hungry, full while eating), a rain cloud showering a gloomy pet with a puddle below, a heart
+// floating up from a happy one, a bed and drifting Z's while it
 // sleeps, confetti when it celebrates, and the postcard it brings back from holiday. They stand in
 // the scene beside the pet, not on its bones, and fade in and out.
 import * as THREE from "three";
 import type { SpeciesDef } from "./species";
 
-const BOWL = 0x5b8def, FOOD = 0xc98a4b, BED = 0xb9a2e0, CUSHION = 0xe9dff8, CLOUD = 0x9aa4b5, DROP = 0x6fa8dc;
+const BOWL = 0x5b8def, FOOD = 0xc98a4b, BED = 0xb9a2e0, CUSHION = 0xe9dff8, CLOUD = 0x7c8697, DROP = 0x6fa8dc, PUDDLE = 0x8fb8e0, HEART = 0xff5f86;
 const CARD = 0xfff6e0, STAMP = 0xe2725b, ZZZ = 0x8e8ea0;
 const CONFETTI = [0xf2c14e, 0xe2725b, 0x5b8def, 0x7bc47f];
 
 /** What the props show this frame. */
-export type PropState = { t: number; dt: number; bowl: "none" | "empty" | "eating"; eatAt: number; rain: boolean; asleep: number; confetti: number; postcard: number };
+/** `heart` is seconds since a heart started floating up (or -1); `head` is where the head is now, so the
+ *  cloud and the heart follow it when the pet lies down. */
+export type PropState = {
+  t: number;
+  dt: number;
+  bowl: "none" | "empty" | "eating";
+  eatAt: number;
+  rain: boolean;
+  asleep: number;
+  confetti: number;
+  postcard: number;
+  heart: number;
+  head: THREE.Vector3;
+};
 
 type Fade = { obj: THREE.Object3D; mats: THREE.Material[]; o: number };
 
@@ -19,6 +33,9 @@ export class Props {
   private food: THREE.Mesh;
   private cloud: Fade;
   private drops: THREE.Mesh[] = [];
+  private puddle: Fade;
+  private heart: Fade;
+  private r: number;
   private bed: Fade;
   private zzz: Fade;
   private zs: THREE.Mesh[] = [];
@@ -56,24 +73,45 @@ export class Props {
     bowlG.position.set(r * 0.62, 0, r * 0.38);
     this.bowl = fade(bowlG, from);
 
-    // a small grey cloud up beside the head, dripping slowly
+    // a dark grey cloud over the head, showering steadily down to the floor
+    this.r = r;
     from = mats.length;
     const cloudG = new THREE.Group();
     const puff = mat(CLOUD, 0.95);
-    for (const [x, y, s] of [[0, 0, 1], [-0.7, -0.15, 0.75], [0.7, -0.12, 0.8], [0.25, 0.35, 0.7], [-0.3, 0.3, 0.6]]) {
-      const p = new THREE.Mesh(geo(new THREE.SphereGeometry(r * 0.095 * s, 16, 12)), puff);
-      p.position.set(x * r * 0.11, y * r * 0.11, 0);
+    for (const [x, y, s] of [[0, 0, 1], [-0.7, -0.15, 0.75], [0.7, -0.12, 0.8], [0.25, 0.35, 0.7], [-0.3, 0.3, 0.6], [1.15, -0.2, 0.55], [-1.1, -0.22, 0.5]]) {
+      const p = new THREE.Mesh(geo(new THREE.SphereGeometry(r * 0.11 * s, 16, 12)), puff);
+      p.position.set(x * r * 0.13, y * r * 0.13, 0);
       cloudG.add(p);
     }
     const drop = mat(DROP, 0.3);
-    for (let i = 0; i < 4; i++) {
-      const d = new THREE.Mesh(geo(new THREE.SphereGeometry(r * 0.012, 8, 6).scale(1, 2, 1)), drop);
-      d.position.x = (i - 1.5) * r * 0.045;
+    const dropGeo = geo(new THREE.SphereGeometry(r * 0.011, 8, 6).scale(1, 2.6, 1));
+    for (let i = 0; i < 12; i++) {
+      const d = new THREE.Mesh(dropGeo, drop);
+      d.position.set(((i * 7) % 12) / 11 * r * 0.36 - r * 0.18, 0, ((i * 5) % 12) / 11 * r * 0.1 - r * 0.05);
       this.drops.push(d);
       cloudG.add(d);
     }
-    cloudG.position.set(r * 0.3, this.top + r * 0.02, 0.1);
     this.cloud = fade(cloudG, from);
+
+    // a shallow puddle on the floor where the shower lands
+    from = mats.length;
+    const puddle = new THREE.Mesh(geo(new THREE.CircleGeometry(r * 0.22, 32).scale(1, 0.6, 1)), mat(PUDDLE, 0.15));
+    puddle.rotation.x = -Math.PI / 2;
+    puddle.position.y = 0.002;
+    this.puddle = fade(new THREE.Group().add(puddle), from);
+
+    // a heart that floats up over a happy pet
+    from = mats.length;
+    const hs = new THREE.Shape();
+    hs.moveTo(0, -0.5);
+    hs.bezierCurveTo(-0.15, -0.3, -0.6, -0.05, -0.55, 0.25);
+    hs.bezierCurveTo(-0.5, 0.55, -0.1, 0.6, 0, 0.3);
+    hs.bezierCurveTo(0.1, 0.6, 0.5, 0.55, 0.55, 0.25);
+    hs.bezierCurveTo(0.6, -0.05, 0.15, -0.3, 0, -0.5);
+    const heartMat = mat(HEART, 0.5);
+    heartMat.emissive.setHex(HEART).multiplyScalar(0.35);
+    const heart = new THREE.Mesh(geo(new THREE.ExtrudeGeometry(hs, { depth: 0.12, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelSegments: 3 })), heartMat);
+    this.heart = fade(new THREE.Group().add(heart), from);
 
     // a round lilac bed with a pale cushion, under the pet while it sleeps
     from = mats.length;
@@ -143,13 +181,29 @@ export class Props {
     this.food.visible = left > 0.02;
     this.food.scale.set(0.4 + left * 0.6, 0.15 + left * 0.35, 0.4 + left * 0.6);
 
+    // the cloud rides above the head (lower when the pet lies down); the drops fall all the way to the floor
+    const r = this.r;
+    const cloudY = s.head.y + r * 0.44;
+    this.cloud.obj.position.set(s.head.x + r * 0.05, cloudY, s.head.z - r * 0.05);
     show(this.cloud, s.rain);
+    show(this.puddle, s.rain);
+    this.puddle.obj.position.set(s.head.x + r * 0.05, 0, s.head.z + r * 0.12);
     if (this.cloud.obj.visible)
       this.drops.forEach((d, i) => {
-        const p = (s.t * 0.45 + i * 0.27) % 1;
-        d.position.y = -p * this.top * 0.18 - 0.01;
-        d.scale.setScalar(p < 0.85 ? 1 : (1 - p) / 0.15);
+        const p = (s.t * 1.1 + i * 0.37) % 1;
+        d.position.y = -r * 0.06 - p * (cloudY - r * 0.06);
+        d.scale.setScalar(p < 0.9 ? 1 : (1 - p) / 0.1);
       });
+
+    // a heart: up from just above the head, swaying, growing, then fading
+    const beat = s.heart >= 0 ? s.heart / 1.6 : -1;
+    show(this.heart, beat >= 0 && beat < 0.8);
+    if (this.heart.obj.visible) {
+      const size = r * (0.08 + 0.06 * Math.min(1, Math.max(0, beat) * 3));
+      this.heart.obj.scale.set(size, size, size);
+      this.heart.obj.position.set(s.head.x + r * 0.2 + Math.sin(Math.max(0, beat) * 9) * r * 0.03, s.head.y + r * (0.12 + Math.max(0, beat) * 0.25), s.head.z + r * 0.1);
+      this.heart.obj.rotation.set(0, -0.4, Math.sin(Math.max(0, beat) * 7) * 0.2);
+    }
 
     show(this.bed, this.hasBed && s.asleep > 0.3);
     show(this.zzz, s.asleep > 0.9);
@@ -183,6 +237,6 @@ export class Props {
       });
 
     show(this.card, s.postcard >= 0 && s.postcard < 3.6);
-    return burst || this.bowl.o % 1 > 0.01 || this.card.o % 1 > 0.01;
+    return burst || this.bowl.o % 1 > 0.01 || this.card.o % 1 > 0.01 || this.heart.obj.visible;
   }
 }
