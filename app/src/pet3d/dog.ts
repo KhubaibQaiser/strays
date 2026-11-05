@@ -127,10 +127,10 @@ export const dog: SpeciesDef = {
     geo.computeVertexNormals();
     const m = new THREE.MeshPhysicalMaterial({ color: palette.pink, roughness: 0.3, clearcoat: 0.5 });
     const tongue = new THREE.Mesh(geo, m);
+    // its root sits in the mouth's opening, just in front of the chin
     const root = new THREE.Group().add(tongue);
-    const jaw = PIVOT[JAW], at = head([0, 0.624, 0.262]);
+    const jaw = PIVOT[JAW], at = head([0, 0.627, 0.28]);
     root.position.set(at[0] - jaw[0], at[1] - jaw[1], at[2] - jaw[2]);
-    root.rotation.x = 0.3;
     bones[JAW].add(root);
     bones[JAW].userData.tongue = tongue;
     keep(geo);
@@ -162,10 +162,13 @@ export const dog: SpeciesDef = {
     const tongue = b[JAW].userData.tongue as THREE.Object3D | undefined;
     if (tongue) {
       tongue.visible = out > 0.05;
-      // slides out along its length; a lick curls it up towards the nose and back
+      // a lick curls it up towards the nose and back
       const lick = licking ? Math.sin(Math.min(1, (t - ((mem.pantEnd ?? 0) - 0.5)) / 0.5) * Math.PI) : 0;
-      tongue.position.set(0, (1 - out) * 0.045 - 0.004 * pant, -(1 - out) * 0.02);
-      tongue.rotation.set(-lick * 1.6 + 0.06 * pant, 0, panting ? 0.08 * Math.sin(t * 3.1) : 0);
+      // first it slides straight out between the lips, lying flat and pointing forward, then it droops down
+      // over the lower lip (it never swings back through the chin); negative x tips it forward and up
+      const slide = Math.min(1, out / 0.5), droop = Math.max(0, (out - 0.5) / 0.5);
+      tongue.position.set(0, -0.003 * pant, -(1 - slide) * 0.075);
+      tongue.rotation.set(-1.5 + 1.2 * droop - lick * 0.9 + 0.08 * pant, 0, panting ? 0.08 * Math.sin(t * 3.1) : 0);
     }
     c.fast ||= panting || licking || (out > 0.02 && out < 0.98);
   },

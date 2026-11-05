@@ -78,11 +78,12 @@ export const cat: SpeciesDef = {
   head: HEAD,
   ears: [EAR_L, EAR_R],
   tail: { bones: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => TAIL + i), pts: TAIL_PTS, style: "curl" },
-  // hungry: hunched low over its front paws; gloomy: a tucked-in loaf
+  // hungry: hunched low over its front paws; gloomy: lying down
   poses: {
     crouch: { drop: 0.1, rot: { [SPINE]: [0.62, 0, 0], [NECK]: [-0.3, 0, 0], [HEAD]: [-0.2, 0, 0], [LEG_L]: [-0.62, 0, 0], [LEG_R]: [-0.62, 0, 0] } },
-    // a loaf, as unhappy cats sit: body low and compact, paws tucked under the chest, chin sunk, ears back
-    down: { drop: 0.13, rot: { [SPINE]: [0.6, 0, 0], [NECK]: [-0.05, 0, 0], [HEAD]: [-0.25, 0, 0], [LEG_L]: [0.5, 0, 0], [LEG_R]: [0.5, 0, 0], [EAR_L]: [-0.5, 0, 0.35], [EAR_R]: [-0.5, 0, -0.35] } },
+    // lying down, sphinx-style: body low on the floor, both front legs angled forward with the paws resting
+    // in front of the chest (above the floor, so nothing is cut off), head low, ears back
+    down: { drop: 0.13, rot: { [SPINE]: [0.5, 0, 0], [NECK]: [-0.2, 0, 0], [HEAD]: [-0.15, 0, 0], [LEG_L]: [-1.42, 0, 0], [LEG_R]: [-1.42, 0, 0], [EAR_L]: [-0.5, 0, 0.35], [EAR_R]: [-0.5, 0, -0.35] } },
   },
   mouth: { at: head([0, 0.756, 0.222]), w: 0.04, drop: 0.015, color: 0x4a2c2a, r: 0.0042 },
   tapLeg: LEG_L,
