@@ -45,10 +45,14 @@ pub fn open_card(h: &AppHandle, pet: &str, near: Option<Rect>) -> tauri::Result<
         .focused(true)
         .build()?;
     if let Some(r) = near {
-        let screen = win.current_monitor()?.map(|m| {
+        // the display the pet is on, which may not be the one the card opened on
+        let frame = |m: &tauri::Monitor| {
             let (p, s, k) = (m.position(), m.size(), m.scale_factor());
             Rect { x: p.x as f64 / k, y: p.y as f64 / k, w: s.width as f64 / k, h: s.height as f64 / k }
-        });
+        };
+        let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+        let under = win.available_monitors()?.iter().map(frame).find(|f| cx >= f.x && cx < f.x + f.w && cy >= f.y && cy < f.y + f.h);
+        let screen = under.or(win.current_monitor()?.as_ref().map(frame));
         let (x, y) = card_position(r, (w, ht), screen);
         win.set_position(LogicalPosition::new(x, y))?;
     } else {

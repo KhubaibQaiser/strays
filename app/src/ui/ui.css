@@ -50,6 +50,11 @@
   box-sizing: border-box;
 }
 
+/* `hidden` wins over the flex rows below (the card's "Snooze until" row stayed visible without this) */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -136,6 +141,8 @@ input[type="text"],
 input[type="password"],
 input[type="number"],
 input[type="time"],
+input[type="date"],
+input[type="datetime-local"],
 select,
 textarea {
   padding: 5px 8px;
@@ -153,18 +160,37 @@ input[type="number"] {
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
-  margin: 6px 0;
+  min-height: 30px;
+  margin: 8px 0;
 }
 
+/* a fixed label column: a long label wraps instead of pushing its field out of line */
 .row > label:first-child {
-  min-width: 190px;
+  flex: 0 0 210px;
+}
+
+input[type="range"] {
+  margin: 0;
 }
 
 .buttons {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-top: 10px;
+  margin: 12px 0;
+}
+
+/* a field-and-button pair inside a button group takes its own line, with the group's spacing */
+.buttons > .row {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* the last thing in a box or a card sits on its padding, not on an extra margin */
+.card > :last-child,
+.issues > :last-child,
+.infocard > :last-child {
+  margin-bottom: 0;
 }
 
 .badge {
@@ -188,7 +214,7 @@ input[type="number"] {
   display: flex;
   justify-content: space-between;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 /* settings layout */
@@ -245,9 +271,27 @@ input[type="number"] {
 
 .check {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  margin: 3px 0;
+  min-height: 24px;
+  margin: 6px 0;
+}
+
+/* a checklist step's text fills the line, so its × lines up at the right */
+.infocard .check > span {
+  flex: 1;
+}
+
+/* the card is narrow: fields beside a button share the line instead of clipping */
+.infocard .row > input:not([type="checkbox"]):not([type="number"]),
+.infocard .row > select {
+  flex: 1;
+  min-width: 0;
+}
+
+.infocard > input,
+.infocard > details {
+  margin: 8px 0;
 }
 
 /* adoption */

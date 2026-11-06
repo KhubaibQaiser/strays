@@ -15,7 +15,13 @@ canvas {
   transition: filter 120ms ease-out;
 }
 
+/* the modifier held: every pet glows faintly, to say it can be clicked now */
+body.held canvas {
+  filter: drop-shadow(0 0 5px rgba(120, 170, 255, 0.55));
+}
+
 /* ⌥-hover affordance: soft outline around the pet */
+body.held canvas.hover,
 canvas.hover {
   filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 6px rgba(120, 170, 255, 0.8));
 }
@@ -100,6 +106,10 @@ canvas.dragging {
     background: #000;
     border: 1px solid #fff;
   }
+  body.held canvas {
+    filter: drop-shadow(0 0 2px #fff);
+  }
+  body.held canvas.hover,
   canvas.hover {
     filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 3px #000);
   }

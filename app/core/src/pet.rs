@@ -142,10 +142,13 @@ pub struct Pet {
 
 /// A home spot: the bottom centre of the pet's grid cell, as a fraction (0–1) of the screen's free
 /// area (no menu bar or Dock), so it survives a resolution or display change.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Home {
     pub x: f64,
     pub y: f64,
+    /// The display it's on, by name; none (or one that isn't plugged in) means the main display.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]

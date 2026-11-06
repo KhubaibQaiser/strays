@@ -62,10 +62,11 @@ case "click":
 case "screen": // the main display's size in points
     let f = NSScreen.main?.frame ?? .zero
     print(Int(f.width), Int(f.height))
-case "drag": // drag x1 y1 x2 y2: ⌥-press at the first point, move in steps, let go at the second
+case "drag": // drag x1 y1 x2 y2 [steps] [ms per step]: ⌥-press at the first point, move in steps, let go at the second
     let (a, b) = (point(args[2], args[3]), point(args[4], args[5]))
     func at(_ t: Double) -> CGPoint { CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t) }
-    let steps = 20
+    let steps = args.count > 6 ? Int(args[6])! : 20
+    let pause = useconds_t(args.count > 7 ? Int(args[7])! * 1000 : 25_000)
     var e = CGEvent(mouseEventSource: src, mouseType: .leftMouseDown, mouseCursorPosition: a, mouseButton: .left)
     e?.flags = .maskAlternate
     post(e)
@@ -73,7 +74,7 @@ case "drag": // drag x1 y1 x2 y2: ⌥-press at the first point, move in steps, l
         e = CGEvent(mouseEventSource: src, mouseType: .leftMouseDragged, mouseCursorPosition: at(Double(i) / Double(steps)), mouseButton: .left)
         e?.flags = .maskAlternate
         e?.post(tap: .cghidEventTap)
-        usleep(25_000)
+        usleep(pause)
     }
     usleep(200_000)
     e = CGEvent(mouseEventSource: src, mouseType: .leftMouseUp, mouseCursorPosition: b, mouseButton: .left)
