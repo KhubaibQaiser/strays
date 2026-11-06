@@ -12,6 +12,8 @@ const STATE_TEXT: Record<string, string> = {
 };
 
 export function cardChrome() {
+  // the window is see-through; only the rounded card is drawn
+  document.documentElement.classList.add("card-window");
   addEventListener("keydown", (e) => {
     if (e.key === "Escape") void api.closeWindow("card");
   });

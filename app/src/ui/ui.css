@@ -253,9 +253,15 @@ input[type="range"] {
   padding: 20px 24px;
 }
 
-/* info card */
+/* info card: a compact panel, spaced to macOS conventions (Apple HIG): 16 pt around the edge and
+   between groups, 8 pt between related controls, regular controls about 24 pt tall */
+html.card-window,
+html.card-window body {
+  background: transparent;
+}
+
 .infocard {
-  padding: 14px 16px;
+  padding: 16px;
   height: 100vh;
   overflow: auto;
   background: var(--panel);
@@ -269,12 +275,62 @@ input[type="range"] {
   gap: 8px;
 }
 
+.infocard h1 {
+  margin: 0 0 4px;
+}
+
+.infocard h2 {
+  font-size: 13px;
+  margin: 16px 0 8px;
+}
+
+.infocard p {
+  margin: 0 0 4px;
+}
+
+.infocard button,
+.infocard input[type="text"],
+.infocard input[type="date"],
+.infocard input[type="datetime-local"],
+.infocard input[type="number"],
+.infocard select {
+  padding: 3px 8px;
+  min-height: 24px;
+}
+
+.infocard .row {
+  min-height: 24px;
+  margin: 8px 0;
+}
+
+.infocard .buttons {
+  margin: 16px 0 0;
+}
+
+/* rows inside the button group use its 8 pt gap, not margins of their own */
+.infocard .buttons > .row {
+  margin: 0;
+}
+
+.infocard > input,
+.infocard > details {
+  margin: 8px 0 0;
+}
+
+.infocard summary {
+  margin-top: 16px;
+}
+
 .check {
   display: flex;
   gap: 8px;
   align-items: center;
   min-height: 24px;
   margin: 6px 0;
+}
+
+.infocard .check {
+  margin: 4px 0;
 }
 
 /* a checklist step's text fills the line, so its × lines up at the right */
@@ -287,11 +343,6 @@ input[type="range"] {
 .infocard .row > select {
   flex: 1;
   min-width: 0;
-}
-
-.infocard > input,
-.infocard > details {
-  margin: 8px 0;
 }
 
 /* adoption */
