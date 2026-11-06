@@ -33,13 +33,15 @@ pub fn open_card(h: &AppHandle, pet: &str, near: Option<Rect>) -> tauri::Result<
     if let Some(w) = h.get_webview_window(CARD) {
         w.close()?;
     }
-    let (w, ht) = (320.0, 430.0);
+    let (w, ht) = (320.0, 480.0);
     let url = WebviewUrl::App(format!("ui.html#card/{pet}").into());
     let win = WebviewWindowBuilder::new(h, CARD, url)
         .title("")
         .inner_size(w, ht)
         .resizable(false)
         .decorations(false)
+        // see-through, so the page's rounded card is the window's shape (no square corners behind it)
+        .transparent(true)
         .always_on_top(true)
         .skip_taskbar(true)
         .focused(true)
