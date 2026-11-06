@@ -67,7 +67,7 @@ let mode: Liveliness = "gentle";
 /** A pet's own liveliness, or the app's. */
 const levelOf = (p: { placed: Placed }) => p.placed.liveliness ?? mode;
 let reduceMotion = false;
-let frozen = false;
+let modHeld = false;
 let hidden = false;
 /** WebKit keeps only so many WebGL contexts and drops the oldest past that; pets beyond this draw in 2D. */
 const MAX_3D = 12;
@@ -162,7 +162,8 @@ function schedule(p: Pet) {
   if (p.busy) return;
   window.clearTimeout(p.timer);
   p.rig.setLiveliness?.(levelOf(p), reduceMotion);
-  if (frozen || hidden) return setPlaying(p, false);
+  // holding the modifier keeps pets in place (bigMove), not still: they keep animating, with a glow
+  if (hidden) return setPlaying(p, false);
   const level = reduceMotion ? "calm" : levelOf(p);
   if (level === "lively" || (p.rig.continuous && !reduceMotion)) return setPlaying(p, true);
   setPlaying(p, false);
@@ -184,7 +185,7 @@ function scheduleBig(p: Pet) {
 function bigMove(p: Pet) {
   if (!pets.has(p.placed.id)) return;
   // not now: try again in ten minutes
-  if (reduceMotion || frozen || hidden || p.busy || p.leaving || press) {
+  if (reduceMotion || modHeld || hidden || p.busy || p.leaving || press) {
     p.big = window.setTimeout(() => bigMove(p), 600_000);
     return;
   }
@@ -308,7 +309,7 @@ function add(placed: Placed, forceRive = false) {
   // Let go where it was pressed and it's a click; hold still a second and it's petting; move it and
   // it's a drag onto the grid.
   p.el.addEventListener("mousedown", (e) => {
-    if (!frozen || e.button !== 0 || press) return;
+    if (!modHeld || e.button !== 0 || press) return;
     e.preventDefault();
     const timer = window.setTimeout(() => {
       if (!press || press.p !== p || press.dragging) return;
@@ -322,7 +323,7 @@ function add(placed: Placed, forceRive = false) {
   // the modifier and a right-click: the pet's own menu, where the cursor is (§7.2)
   p.el.addEventListener("contextmenu", (e) => {
     e.preventDefault();
-    if (frozen) invoke("pet_menu", { id: p.placed.id }).catch(unreached("pet_menu"));
+    if (modHeld) invoke("pet_menu", { id: p.placed.id }).catch(unreached("pet_menu"));
   });
 }
 
@@ -491,13 +492,13 @@ ready.push(listen<Frame>("overlay", ({ payload }) => {
   for (const placed of payload.pets) if (placed.confused) bubble(placed.id, "❓ Where did my repo go?", 0, "ask");
 }));
 
-// ⌥ held: every pet freezes, and the one under the cursor gets an outline and a tooltip (§7.2, §7.3).
+// ⌥ held: every pet glows and stays in place, and the one under the cursor gets an outline and a tooltip (§7.2, §7.3).
 ready.push(listen<Hover>("hover", ({ payload }) => {
-  if (payload.held !== frozen) {
-    frozen = payload.held;
-    document.body.classList.toggle("held", frozen);
+  if (payload.held !== modHeld) {
+    modHeld = payload.held;
+    document.body.classList.toggle("held", modHeld);
     // a pet mid-stroll goes straight back to where the clicks expect it
-    if (frozen)
+    if (modHeld)
       pets.forEach((p) => {
         if (!p.el.style.transition.startsWith("left")) return;
         p.el.style.transition = "";

@@ -235,3 +235,22 @@ test("every few hours a pet strolls a little way and back, but never with Reduce
   await page.clock.fastForward(6 * 3_600_000);
   expect(await left()).toBe("500px");
 });
+
+test("holding the modifier keeps pets animating, with a glow", async ({ page }) => {
+  await mockApp(page);
+  await page.setViewportSize({ width: 440, height: 240 });
+  await page.goto("/index.html");
+  await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.some((c) => c.cmd === "overlay_ready"));
+  await emit(page, "overlay", { pets: [pet("p", "content", 220)], liveliness: "lively", reduceMotion: false, hidden: false });
+  await expect(page.locator("canvas")).toHaveCount(1, { timeout: 30_000 });
+  await page.waitForTimeout(1500);
+  await emit(page, "hover", { id: null, held: true });
+  await page.waitForTimeout(3000);
+  await expect(page.locator("body")).toHaveClass(/\bheld\b/);
+  // frames taken apart differ only if the pet is still being drawn
+  const canvas = page.locator("canvas");
+  const a = await canvas.screenshot();
+  await page.waitForTimeout(700);
+  const b = await canvas.screenshot();
+  expect(a.equals(b), "the pet stopped animating while the modifier was held").toBe(false);
+});
