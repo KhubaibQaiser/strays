@@ -74,17 +74,31 @@ test("launch at login: a refusal from macOS unticks the box and says why", async
   await expect(page.getByText("Operation not permitted")).toBeVisible();
 });
 
-test("update check: off by default, opt-in saves, a newer release offers a download", async ({ page }) => {
+test("updates: check now, opt-in weekly check, and a newer release downloads and opens", async ({ page }) => {
   await mockApp(page);
   await page.goto("/ui.html#settings/about");
-  await expect(page.getByLabel("Tell me when a new version is out")).not.toBeChecked();
-  await page.getByLabel("Tell me when a new version is out").check();
+  await expect(page.getByText("Version 0.1.0")).toBeVisible();
+  // Check now works with the weekly check off
+  await page.getByRole("button", { name: "Check now" }).click();
+  expect(await calls(page, "check_update")).toHaveLength(1);
+  await expect(page.getByLabel("Check for a new version every week")).not.toBeChecked();
+  await page.getByLabel("Check for a new version every week").check();
   const saved = (await calls(page, "save_settings")).at(-1)?.args as { settings: { checkUpdates: boolean } };
   expect(saved.settings.checkUpdates).toBe(true);
 
-  await mockApp(page, {}, { settings: { ...STATE.settings, checkUpdates: true }, update: { tag_name: "v0.2.0", html_url: "https://github.com/KhubaibQaiser/strays/releases/tag/v0.2.0" } });
+  const release = { tag_name: "v0.2.0", html_url: "https://github.com/KhubaibQaiser/strays/releases/tag/v0.2.0" };
+  await mockApp(page, {}, { settings: { ...STATE.settings, checkUpdates: true }, update: { ...release, assets: [{ id: 7, name: "Strays_0.2.0_aarch64.dmg", size: 6_000_000 }] } });
   await page.reload();
   await expect(page.getByText("Strays v0.2.0 is out.")).toBeVisible();
+  await page.getByRole("button", { name: "Download and install" }).click();
+  await expect(page.getByText("Opened Strays_0.2.0_aarch64.dmg from Downloads.")).toBeVisible();
+  await page.screenshot({ path: `${shots}/settings-about-update.png` });
+  await page.getByRole("button", { name: "Quit Strays" }).click();
+  expect(await calls(page, "quit_app")).toHaveLength(1);
+
+  // a check saved before releases listed their files: the release page instead
+  await mockApp(page, {}, { update: { ...release, assets: [] } });
+  await page.reload();
   await page.getByRole("button", { name: "Download…" }).click();
   expect((await calls(page, "open_link")).at(-1)?.args).toEqual({ which: "release" });
 });

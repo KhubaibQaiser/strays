@@ -98,6 +98,34 @@ pub struct Repo {
 pub struct Release {
     pub tag_name: String,
     pub html_url: String,
+    /// The release's files; older saved checks have none, so the app falls back to the release page.
+    #[serde(default)]
+    pub assets: Vec<Asset>,
+}
+
+/// One file attached to a release.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Asset {
+    pub id: u64,
+    pub name: String,
+    pub size: u64,
+}
+
+impl Release {
+    /// The Apple Silicon disk image, the only build there is.
+    pub fn dmg(&self) -> Option<&Asset> {
+        self.assets.iter().find(|a| a.name.ends_with("_aarch64.dmg"))
+    }
+}
+
+/// Where api.github.com sends a release download: GitHub's own file hosts, and nowhere else.
+const DOWNLOAD_HOSTS: [&str; 2] = ["https://release-assets.githubusercontent.com/", "https://objects.githubusercontent.com/"];
+
+/// The biggest update Strays downloads (a release is about 6 MB).
+const MAX_DOWNLOAD: u64 = 200 << 20;
+
+fn download_allowed(url: &str) -> bool {
+    DOWNLOAD_HOSTS.iter().any(|h| url.starts_with(h)) || (cfg!(any(test, feature = "devtools")) && url.starts_with("http://127.0.0.1:"))
 }
 
 /// Where releases are published; update checks ask only this repo.
@@ -195,8 +223,11 @@ impl Github {
     }
 
     fn record(&self, url: &str, status: u16) {
-        let host = self.base.split("://").nth(1).unwrap_or(&self.base).to_string();
-        let path = url.strip_prefix(&self.base).unwrap_or(url).to_string();
+        // a download link's query is a one-time signature: not worth keeping
+        let url = url.split('?').next().unwrap_or(url);
+        let rest = url.split("://").nth(1).unwrap_or(url);
+        let (host, path) = rest.split_once('/').map_or((rest, String::new()), |(h, p)| (h, format!("/{p}")));
+        let host = host.to_string();
         self.log.borrow_mut().push(NetEntry { at: Utc::now(), method: "GET".into(), host, path, status, reason: self.reason.clone() });
     }
 
@@ -292,6 +323,42 @@ impl Github {
             return Ok(None);
         }
         json(res).map(Some)
+    }
+
+    /// Downloads a release file (§16): api.github.com answers with one redirect to GitHub's file host,
+    /// which is followed only there, without the token. The bytes must be exactly the listed size.
+    pub fn download_asset(&self, repo: &str, asset: &Asset) -> Result<Vec<u8>, GhError> {
+        use std::io::Read;
+        if asset.size > MAX_DOWNLOAD {
+            return Err(GhError::Parse(format!("the update is {} MB, more than Strays downloads", asset.size >> 20)));
+        }
+        let url = format!("{}/repos/{repo}/releases/assets/{}", self.base, asset.id);
+        let res = self.http.get(&url).header("Accept", "application/octet-stream").send().map_err(|e| {
+            self.record(&url, 0);
+            GhError::Network(e.without_url().to_string())
+        })?;
+        self.record(&url, res.status().as_u16());
+        if !res.status().is_redirection() {
+            return Err(status_error(res.status(), res.headers()));
+        }
+        let to = res.headers().get("location").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+        if !download_allowed(&to) {
+            return Err(GhError::HostNotAllowed(to.split('?').next().unwrap_or_default().into()));
+        }
+        let res = self.http.get(&to).timeout(StdDuration::from_secs(300)).send().map_err(|e| {
+            self.record(&to, 0);
+            GhError::Network(e.without_url().to_string())
+        })?;
+        self.record(&to, res.status().as_u16());
+        if !res.status().is_success() {
+            return Err(GhError::Http(res.status().as_u16()));
+        }
+        let mut body = Vec::new();
+        res.take(MAX_DOWNLOAD + 1).read_to_end(&mut body).map_err(|e| GhError::Network(e.to_string()))?;
+        if body.len() as u64 != asset.size {
+            return Err(GhError::Parse(format!("the update arrived incomplete ({} of {} bytes)", body.len(), asset.size)));
+        }
+        Ok(body)
     }
 
     /// The newest published release of `repo`. `None` = nothing published yet (404).
@@ -658,6 +725,30 @@ mod tests {
         assert_eq!(gh.latest_release(RELEASES_REPO).unwrap(), None);
         // the anonymous client is still limited to the allowed host
         assert!(Github::anonymous("https://evil.example").is_err());
+    }
+
+    #[test]
+    fn an_update_downloads_through_one_redirect_to_the_file_host_only() {
+        let fake = Fake::start();
+        let gh = Github::anonymous(&fake.base).unwrap().with_reason("update");
+        let r = gh.latest_release(RELEASES_REPO).unwrap().unwrap();
+        let dmg = r.dmg().expect("the release lists its disk image").clone();
+        assert_eq!(dmg.name, "Strays_9.9.9_aarch64.dmg");
+        // the fake answers 400 to a token or a non-download Accept header
+        let bytes = gh.download_asset(RELEASES_REPO, &dmg).unwrap();
+        assert_eq!(bytes.len() as u64, dmg.size);
+        let log = gh.take_log();
+        assert_eq!(log.len(), 3, "release, asset redirect, file: {log:?}");
+        assert_eq!((log[1].path.as_str(), log[1].status), ("/repos/KhubaibQaiser/strays/releases/assets/77", 302));
+        assert_eq!((log[2].path.as_str(), log[2].status), ("/_download/77", 200), "logged without the one-time query");
+
+        fake.scenario("short_download");
+        assert!(matches!(gh.download_asset(RELEASES_REPO, &dmg), Err(GhError::Parse(_))), "an incomplete file is refused");
+        fake.scenario("far_redirect");
+        assert_eq!(gh.download_asset(RELEASES_REPO, &dmg), Err(GhError::HostNotAllowed("https://example.com/_download/77".into())));
+        assert!(gh.take_log().iter().all(|e| e.host != "example.com"), "a redirect elsewhere is never followed");
+        let huge = Asset { size: 1 << 40, ..dmg };
+        assert!(gh.download_asset(RELEASES_REPO, &huge).is_err(), "too big to download");
     }
 
     #[test]

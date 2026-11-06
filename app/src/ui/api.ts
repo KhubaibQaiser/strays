@@ -96,7 +96,7 @@ export type UiState = {
   dataDir: string;
   version: string;
   loginItem: "on" | "off" | "needsApproval";
-  update: { tag_name: string; html_url: string } | null;
+  update: { tag_name: string; html_url: string; assets: { id: number; name: string; size: number }[] } | null;
   updateChecked: string | null;
   issues: string[];
   reportsAvailable: boolean;
@@ -138,6 +138,9 @@ export const api = {
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setFlag: (name: "presentation" | "hideAll" | "vacation", on: boolean) => invoke<void>("set_flag", { name, on }),
   syncNow: () => invoke<void>("sync_now"),
+  checkUpdate: () => invoke<void>("check_update"),
+  downloadUpdate: () => invoke<string>("download_update"),
+  quitApp: () => invoke<void>("quit_app"),
   dismissIssues: () => invoke<void>("dismiss_issues"),
   testSound: () => invoke<void>("test_sound"),
   tokenCheck: (token: string) => invoke<TokenCheck>("token_check", { token }),

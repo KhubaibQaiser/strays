@@ -1,6 +1,9 @@
 // Every command needs a permission (capabilities/<window>.json), so each window can call only what it uses.
 const COMMANDS: &[&str] = &[
     "adopt",
+    "check_update",
+    "download_update",
+    "quit_app",
     "close_window",
     "delete_everything",
     "dismiss_issues",

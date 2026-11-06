@@ -11,6 +11,10 @@ Pick a scenario with  POST /_scenario  {"name": "..."}  (default "ok"). Scenario
   no_release    /releases/latest is 404 (nothing published yet)
 Fixed repos for /repositories/{id}: 1 normal, 2 deleted (404), 3 archived, 4 renamed to me/renamed.
 /repos/{owner}/{repo}/releases/latest answers v9.9.9 and must come without a token (update checks are anonymous).
+Its disk image (asset 77, DMG_SIZE bytes) downloads like GitHub's: /repos/.../releases/assets/77 redirects to
+/_download/77 on this server (the fake's stand-in for GitHub's file host).
+  short_download  the download stops short of the listed size
+  far_redirect    the asset redirect points at a host Strays must not follow
 """
 import json
 import sys
@@ -24,6 +28,7 @@ ETAG = '"fake-etag-1"'
 NOW = datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc)
 EXPIRY = "2026-11-29 13:28:15 UTC"
 state = {"scenario": "ok", "requests": []}
+DMG_SIZE = 4096
 
 
 def iso(t):
@@ -85,7 +90,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(400, {"message": "update checks must not send the token"})
             if state["scenario"] == "no_release":
                 return self.send(404, {"message": "Not Found"})
-            return self.send(200, {"tag_name": "v9.9.9", "html_url": "https://github.com" + url.path.removeprefix("/repos").removesuffix("/latest") + "/tag/v9.9.9"})
+            assets = [{"id": 76, "name": "SHA256SUMS", "size": 90}, {"id": 77, "name": "Strays_9.9.9_aarch64.dmg", "size": DMG_SIZE}]
+            return self.send(200, {"tag_name": "v9.9.9", "html_url": "https://github.com" + url.path.removeprefix("/repos").removesuffix("/latest") + "/tag/v9.9.9", "assets": assets})
+        if url.path.endswith("/releases/assets/77"):
+            if self.headers.get("Authorization") or self.headers.get("Accept") != "application/octet-stream":
+                return self.send(400, {"message": "downloads come without a token, as octet-stream"})
+            host = "https://example.com" if state["scenario"] == "far_redirect" else f"http://127.0.0.1:{self.server.server_address[1]}"
+            return self.send(302, None, [("Location", f"{host}/_download/77?token=one-time")])
+        if url.path == "/_download/77":
+            data = b"D" * (DMG_SIZE // 2 if state["scenario"] == "short_download" else DMG_SIZE)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return self.wfile.write(data)
         if self.headers.get("Authorization") != f"Bearer {TOKEN}":
             return self.send(401, {"message": "Bad credentials"})
         sc = state["scenario"]

@@ -18,6 +18,8 @@ pub enum Cmd {
     Changed,
     /// Something changed inside a watched folder.
     Folders,
+    /// "Check now" in Settings → About: look for a new version straight away, even with the weekly check off.
+    CheckUpdate,
 }
 
 pub struct SyncOutcome {
@@ -43,12 +45,18 @@ pub struct Deps {
     pub syncing: Box<dyn Fn(Vec<Uuid>) + Send>,
 }
 
+/// GitHub's API, or in debug builds the fake server named by `STRAYS_FAKE_GITHUB`.
+pub fn api() -> String {
+    #[cfg(debug_assertions)]
+    if let Ok(api) = std::env::var("STRAYS_FAKE_GITHUB") {
+        return api;
+    }
+    github::API.into()
+}
+
 impl Deps {
     pub fn real(full_screen: impl Fn() -> bool + Send + 'static, syncing: impl Fn(Vec<Uuid>) + Send + 'static) -> Self {
-        #[cfg(debug_assertions)]
-        let api = std::env::var("STRAYS_FAKE_GITHUB").unwrap_or_else(|_| github::API.into());
-        #[cfg(not(debug_assertions))]
-        let api = github::API.to_string();
+        let api = api();
         Self { token: Box::new(crate::token::load), api, full_screen: Box::new(full_screen), low_power: Box::new(crate::platform::low_power_mode), on_wifi: Box::new(crate::platform::on_wifi), syncing: Box::new(syncing) }
     }
 }
@@ -111,6 +119,8 @@ pub fn run(
     }
     let mut changed = true;
     let mut manual = false;
+    let mut update_now = false;
+    let mut updates_were_on = shared.lock().unwrap().settings.check_updates;
     let mut watched: Vec<String> = Vec::new();
     let mut watcher = None;
     let mut last_scan: Option<Time> = None;
@@ -260,15 +270,22 @@ pub fn run(
             }
             changed = true;
         }
-        if !app.settings.check_updates {
+        let updates_on = app.settings.check_updates;
+        let turned_off = updates_were_on && !updates_on;
+        updates_were_on = updates_on;
+        if app.settings.offline && std::mem::take(&mut update_now) {
+            app.warn("update", "Offline mode is on, so Strays can't check for a new version");
+            changed = true;
+        }
+        if !updates_on && !update_now {
             // turning it off forgets the last check, so turning it on again checks straight away
-            if app.sync.update_checked.is_some() || app.sync.update.is_some() {
+            if turned_off && (app.sync.update_checked.is_some() || app.sync.update.is_some()) {
                 app.sync.update_checked = None;
                 app.sync.update = None;
                 app.save_all();
                 changed = true;
             }
-        } else if !app.settings.offline && app.sync.update_checked.is_none_or(|t| now - t >= Duration::days(UPDATE_EVERY)) {
+        } else if !app.settings.offline && (std::mem::take(&mut update_now) || app.sync.update_checked.is_none_or(|t| now - t >= Duration::days(UPDATE_EVERY))) {
             drop(app);
             // update checks need no token
             let gh = Github::anonymous(&deps.api).map(|g| g.with_reason("update check"));
@@ -357,6 +374,7 @@ pub fn run(
                 manual = true;
             }
             Ok(Cmd::Changed) => changed = true,
+            Ok(Cmd::CheckUpdate) => update_now = true,
             Ok(Cmd::Folders) => rescan_at = Some(Utc::now() + Duration::seconds(2)),
             // moods drift with time even when nothing happens
             Err(RecvTimeoutError::Timeout) => changed = true,
@@ -532,6 +550,28 @@ mod tests {
         let calls = calls.lock().unwrap();
         assert_eq!(calls.first(), Some(&vec![id]), "the GitHub pet is marked while its repo is fetched");
         assert!(calls.len().is_multiple_of(2) && calls.iter().skip(1).step_by(2).all(|c| c.is_empty()), "every fetch clears it: {calls:?}");
+    }
+
+    #[test]
+    fn check_now_finds_a_new_version_with_the_weekly_check_off_and_keeps_it() {
+        let fake = Fake::start();
+        let app = App::load(temp()).unwrap();
+        assert!(!app.settings.check_updates, "the weekly check is off by default");
+        let (shared, tx, _seen, thread) = start(app, deps(&fake.1, Ok(None)));
+        tx.send(Cmd::CheckUpdate).unwrap();
+        let found = (0..100).find_map(|_| {
+            std::thread::sleep(D::from_millis(100));
+            shared.lock().unwrap().sync.update.clone()
+        });
+        let r = found.expect("Check now found the fake's v9.9.9");
+        assert_eq!(r.dmg().map(|a| a.id), Some(77), "with its disk image");
+        // later passes keep it: only turning the weekly check off forgets a result
+        tx.send(Cmd::Changed).unwrap();
+        std::thread::sleep(D::from_millis(500));
+        assert!(shared.lock().unwrap().sync.update.is_some());
+        shared.lock().unwrap().close();
+        tx.send(Cmd::Changed).unwrap();
+        thread.join().unwrap();
     }
 
     #[test]

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Spec §9: the App Sandbox, api.github.com over the network, and read-only access to folders the user picks,
-     kept across restarts with app-scoped bookmarks. tools/permissions-audit.sh checks nothing else is added. -->
+<!-- Spec §9: the App Sandbox, api.github.com over the network, read-only access to folders the user picks,
+     kept across restarts with app-scoped bookmarks, and the Downloads folder, where "Download and install"
+     saves a new version (§16). tools/permissions-audit.sh checks nothing else is added. -->
 <plist version="1.0">
 <dict>
 	<key>com.apple.security.app-sandbox</key>
@@ -11,6 +12,8 @@
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
 	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
+	<key>com.apple.security.files.downloads.read-write</key>
 	<true/>
 </dict>
 </plist>

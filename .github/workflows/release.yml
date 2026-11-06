@@ -103,8 +103,11 @@ jobs:
       - name: Disk image
         run: |
           v=$(plutil -extract version raw -o - app/src-tauri/tauri.conf.json 2>/dev/null || node -p 'require("./app/src-tauri/tauri.conf.json").version')
-          mkdir -p "$RUNNER_TEMP/dmg"
-          hdiutil create -volname Strays -srcfolder "$RUNNER_TEMP/out/Strays.app" -ov -format UDZO "$RUNNER_TEMP/dmg/Strays_${v}_aarch64.dmg"
+          mkdir -p "$RUNNER_TEMP/dmg" "$RUNNER_TEMP/image"
+          # the app next to an Applications shortcut, so installing or updating is one drag
+          ditto "$RUNNER_TEMP/out/Strays.app" "$RUNNER_TEMP/image/Strays.app"
+          ln -s /Applications "$RUNNER_TEMP/image/Applications"
+          hdiutil create -volname Strays -srcfolder "$RUNNER_TEMP/image" -ov -format UDZO "$RUNNER_TEMP/dmg/Strays_${v}_aarch64.dmg"
       - name: Notarise
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}

@@ -429,6 +429,7 @@ One card per capability. Each card shows **status · what it can do · what it c
 |---|---|---|---|
 | Network (`api.github.com`) | Sandbox entitlement `network.client` + a Rust host allowlist + webview CSP `connect-src 'none'` | Allowlisted host only | GitHub connect |
 | User-chosen folders | Sandbox user-selected read-only + security-scoped bookmarks | None | Adding a folder |
+| Downloads folder | Sandbox `files.downloads.read-write`; a new version's disk image is saved there, downloaded from GitHub's file host (`release-assets.githubusercontent.com` or `objects.githubusercontent.com`) after one redirect from `api.github.com`, nowhere else | Nothing written | Download and install (§16) |
 | Keychain | App's own items only | — | Saving a token |
 | Launch at login | `SMAppService` (shown in System Settings → Login Items) | Off | User turns it on |
 | Focus status | `INFocusStatusCenter`. Shows a macOS permission prompt; the app learns only "Focus on/off". | Off | User turns on "Respect Focus" |
@@ -612,7 +613,7 @@ strays/
 1. **Testing yourself:** local builds (`npm run tauri build`).
 2. **Beta and public:** signed with a Developer ID and **notarised**. Distributed as a `.dmg` on GitHub Releases, with SHA-256 checksums. **Decided (user, 2026-11-02): Apple Silicon only**; see `docs/gate-4.md` § Intel Macs.
 3. **CI:** GitHub Actions on a macOS runner: test → build `.riv` → build app → sign → notarise → draft release. Note: macOS runner minutes on private repos count at a higher rate (check the current GitHub pricing).
-4. **Updates:** ~~Tauri updater with signed update manifests~~. **Decided (user, 2026-11-02): notify only.** The sandboxed app can't replace its own bundle, so it never installs updates. **Opt-in**, off by default; checks weekly when on, logged in the network log. It asks `api.github.com` (already allowed) for this repo's latest release, without the token, and offers a Download button that opens the release page.
+4. **Updates:** ~~Tauri updater with signed update manifests~~. **Decided (user, 2026-11-02): notify only.** **Revised (user, 2026-11-06): near-one-click, sandbox kept.** Settings → About shows the version and a **Check now** button (works with the weekly check off). For a newer release, **Download and install** saves its disk image to Downloads (size checked, logged in the network log), opens it and offers **Quit Strays**; the user drags the app onto the Applications shortcut in the disk image. Strays still never replaces itself. The original 2026-11-02 note: The sandboxed app can't replace its own bundle, so it never installs updates. **Opt-in**, off by default; checks weekly when on, logged in the network log. It asks `api.github.com` (already allowed) for this repo's latest release, without the token, and offers a Download button that opens the release page.
 5. **Later:** Homebrew cask. No Mac App Store in v1.
 
 ---
