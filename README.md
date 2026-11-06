@@ -86,7 +86,8 @@ See the [user guide](docs/user-guide.md) for setup, connecting GitHub, folders a
 
 Strays is local-first and asks for as little as possible.
 
-- **No network** except GitHub, and only once you connect a token, or turn on the opt-in weekly update check (which sends no token).
+- **No network** except GitHub, and only once you connect a token, check for a new version (Settings → About: Check now, or the opt-in weekly check; neither sends a token), or download one.
+- **Updates in two clicks.** Settings → About: Check now, then Download and install saves the new version to Downloads and opens it; quit Strays and drag it onto Applications. The sandboxed app never replaces itself.
 - **Read-only, expiring GitHub token.** A fine-grained token with only **Metadata: Read-only**: it can see when repos were pushed to, not their code. Classic tokens are rejected. The token is kept in the macOS Keychain and never reaches the app's web view.
 - **Only `api.github.com`.** No other host is contacted, and redirects are never followed. The one exception is opt-in: anonymous error reports to PostHog, off until you turn them on: an error code only, never a message, name or path.
 - **No `git` commands.** Local repositories are read directly (commit dates and remote URLs only). Strays never fetches, and never touches your credentials or SSH keys.

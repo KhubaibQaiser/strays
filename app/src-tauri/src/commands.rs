@@ -315,6 +315,49 @@ pub fn sync_now(shared: State<'_, Shared>) {
     let _ = shared.tx.send(Cmd::SyncNow(None));
 }
 
+/// "Check now" in Settings → About: the sync loop looks for a new version straight away.
+#[tauri::command]
+pub fn check_update(shared: State<'_, Shared>) {
+    let _ = shared.tx.send(Cmd::CheckUpdate);
+}
+
+/// "Download and install" (§16): saves the new version's disk image to Downloads and opens it, so the
+/// user drags Strays to Applications. The sandboxed app can't replace itself. Returns the file name.
+#[tauri::command]
+pub async fn download_update(shared: State<'_, Shared>, h: AppHandle) -> Res<String> {
+    logged_async("download_update", async move {
+        let (release, offline) = {
+            let app = shared.app.lock().unwrap();
+            (app.sync.update.clone().ok_or("No new version to download")?, app.settings.offline)
+        };
+        if offline {
+            return Err("Offline mode is on".into());
+        }
+        let dmg = release.dmg().cloned().ok_or("This release has no disk image; download it from the release page")?;
+        let dir = h.path().download_dir().map_err(|e| e.to_string())?;
+        let app = shared.app.clone();
+        let (file, name) = (dir.join(&dmg.name), dmg.name.clone());
+        let path = file.clone();
+        tauri::async_runtime::spawn_blocking(move || -> Res<()> {
+            let gh = Github::anonymous(&crate::sync::api()).map_err(describe)?.with_reason("update download");
+            let bytes = gh.download_asset(github::RELEASES_REPO, &dmg);
+            app.lock().unwrap().append_netlog(gh.take_log());
+            std::fs::write(&path, bytes.map_err(describe)?).map_err(|e| format!("Couldn't save the update to Downloads: {e}"))
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        h.opener().open_path(file.to_string_lossy(), None::<&str>).map_err(|e| format!("Saved the update to Downloads but couldn't open it: {e}"))?;
+        Ok(name)
+    })
+    .await
+}
+
+/// Quits Strays, so the new version can replace it in Applications.
+#[tauri::command]
+pub fn quit_app(h: AppHandle) {
+    h.exit(0);
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenCheck {
@@ -774,7 +817,7 @@ mod tests {
         app.account = Some(Account { login: "me".into(), expires: Some(now), repo_count: 3 });
         app.sync.last_successful_check = Some(now);
         app.sync.rate_remaining = Some(4000);
-        app.sync.update = Some(Release { tag_name: "v0.2.0".into(), html_url: "https://github.com/KhubaibQaiser/strays/releases/tag/v0.2.0".into() });
+        app.sync.update = Some(Release { tag_name: "v0.2.0".into(), html_url: "https://github.com/KhubaibQaiser/strays/releases/tag/v0.2.0".into(), assets: vec![github::Asset { id: 7, name: "Strays_0.2.0_aarch64.dmg".into(), size: 6_000_000 }] });
         app.sync.update_checked = Some(now);
         app.sync_error = Some("offline".into());
         let repo = Repo { id: 9, name: "x".into(), full_name: "me/x".into(), owner: Owner { login: "me".into() }, private: true, fork: false, archived: false, created_at: now, pushed_at: Some(now) };

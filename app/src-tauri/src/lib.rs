@@ -347,6 +347,9 @@ pub fn run() {
             commands::delete_everything,
             commands::open_window,
             commands::close_window,
+            commands::check_update,
+            commands::download_update,
+            commands::quit_app,
         ])
         .on_menu_event(|h, e| handle_menu(h, e.id().as_ref()))
         .setup(|tauri_app| {

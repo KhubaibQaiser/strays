@@ -165,13 +165,9 @@ export function renderSettings(root: HTMLElement, state: UiState, section: strin
     about: () => [
       el("h1", {}, "About Strays"),
       el("p", {}, `Version ${state.version} (pre-release)`),
-      toggle("checkUpdates", "Tell me when a new version is out"),
-      el("p", { class: "muted small" }, "Off by default. When on, Strays asks GitHub once a week for the latest release, without your token. Shown in the activity log. Updates are never installed for you."),
-      state.update
-        ? el("div", { class: "buttons" }, el("span", {}, `Strays ${state.update.tag_name} is out.`), el("button", { class: "primary", onclick: () => void api.openLink("release").catch((e) => notice(String(e), true)) }, "Download…"))
-        : s.checkUpdates && state.updateChecked
-          ? el("p", { class: "muted small" }, `Up to date · checked ${new Date(state.updateChecked).toLocaleDateString()}`)
-          : null,
+      updateBox(state, notice),
+      toggle("checkUpdates", "Check for a new version every week"),
+      el("p", { class: "muted small" }, "Off by default. Checks ask GitHub for the latest release, without your token, and show in the activity log. Strays never updates on its own: Download and install saves the new version to Downloads and opens it, and you drag it to Applications."),
       el("p", { class: "muted" }, "A pet for every unfinished project. Local-first: nothing leaves this Mac except read-only requests to GitHub, and only once you connect it."),
       el("p", { class: "muted small" }, `Data folder: ${state.dataDir}`),
       el("p", { class: "muted small" }, "MIT licence. Sounds are CC0 recordings from Freesound."),
@@ -190,6 +186,44 @@ export function renderSettings(root: HTMLElement, state: UiState, section: strin
 }
 
 /** Problems the app hit (unreadable files, failed saves, lost folder access…), until fixed or dismissed. */
+/** Settings → About (§16): check now, and download and open a newer version. The sandboxed app can't
+ *  replace itself, so the last step, dragging it to Applications, is the user's. */
+function updateBox(state: UiState, notice: Notice): HTMLElement {
+  const box = el("div", { class: "buttons" });
+  const fail = (e: unknown) => notice(String(e), true);
+  const u = state.update;
+  if (!u) {
+    const check = el("button", { onclick: () => { check.disabled = true; check.textContent = "Checking…"; void api.checkUpdate().catch(fail); } }, "Check now");
+    const when = state.updateChecked ? `Up to date · checked ${new Date(state.updateChecked).toLocaleDateString()}` : "";
+    box.append(check, el("span", { class: "muted small" }, when));
+    return box;
+  }
+  // an older check saved no file list: the release page still works
+  if (!u.assets?.some((a) => a.name.endsWith("_aarch64.dmg"))) {
+    box.append(el("span", {}, `Strays ${u.tag_name} is out.`), el("button", { class: "primary", onclick: () => void api.openLink("release").catch(fail) }, "Download…"));
+    return box;
+  }
+  const go = el("button", { class: "primary" }, "Download and install");
+  go.addEventListener("click", () => {
+    go.disabled = true;
+    go.textContent = "Downloading…";
+    api.downloadUpdate()
+      .then((name) =>
+        box.replaceChildren(
+          el("p", {}, `Opened ${name} from Downloads. Quit Strays, then drag Strays onto Applications, choose Replace, and open it.`),
+          el("button", { class: "primary", onclick: () => void api.quitApp().catch(fail) }, "Quit Strays"),
+        ),
+      )
+      .catch((e) => {
+        go.disabled = false;
+        go.textContent = "Download and install";
+        fail(e);
+      });
+  });
+  box.append(el("span", {}, `Strays ${u.tag_name} is out.`), go);
+  return box;
+}
+
 function issues(state: UiState, notice: Notice): HTMLElement | null {
   if (!state.issues.length) return null;
   return el(
