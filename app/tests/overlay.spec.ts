@@ -266,8 +266,15 @@ test("pets whose repos are being fetched show a turning arrow until the fetch en
   await expect(page.locator('.sync[data-for="gh"]')).toBeVisible();
   await expect(page.locator('.sync[data-for="local"]')).toHaveCount(0);
   await page.screenshot({ path: `${shots}/overlay-syncing.png` });
-  // the fetch ends straight away: the arrow still shows for a moment, then goes
-  await emit(page, "syncing", []);
-  await expect(page.locator(".sync")).toHaveCount(1);
+  // a fetch that ends at once: the arrow still shows for a moment (timed in the page, so a slow
+  // runner can't race it), then goes
+  const shownAfter300ms = await page.evaluate(async () => {
+    const emit = (window as unknown as { __emit: (e: string, p: unknown) => void }).__emit;
+    emit("syncing", ["gh"]);
+    emit("syncing", []);
+    await new Promise((r) => setTimeout(r, 300));
+    return document.querySelectorAll(".sync").length;
+  });
+  expect(shownAfter300ms).toBe(1);
   await expect(page.locator(".sync")).toHaveCount(0);
 });
