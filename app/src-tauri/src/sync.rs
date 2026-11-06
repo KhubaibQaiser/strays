@@ -28,6 +28,8 @@ pub struct SyncOutcome {
 const MAX_WAIT: StdDuration = StdDuration::from_secs(60);
 const FULL_EVERY: i64 = 24; // hours
 
+use strays_core::uuid::Uuid;
+
 /// What the loop reaches outside the app state: the Keychain, GitHub and the Mac. Tests swap them.
 pub struct Deps {
     pub token: Box<dyn Fn() -> Result<Option<String>, String> + Send>,
@@ -37,15 +39,17 @@ pub struct Deps {
     pub low_power: Box<dyn Fn() -> bool + Send>,
     /// whether the main connection is Wi-Fi (None: can't tell)
     pub on_wifi: Box<dyn Fn() -> Option<bool> + Send>,
+    /// the pets whose repos are being fetched right now (none once the fetch is over)
+    pub syncing: Box<dyn Fn(Vec<Uuid>) + Send>,
 }
 
 impl Deps {
-    pub fn real(full_screen: impl Fn() -> bool + Send + 'static) -> Self {
+    pub fn real(full_screen: impl Fn() -> bool + Send + 'static, syncing: impl Fn(Vec<Uuid>) + Send + 'static) -> Self {
         #[cfg(debug_assertions)]
         let api = std::env::var("STRAYS_FAKE_GITHUB").unwrap_or_else(|_| github::API.into());
         #[cfg(not(debug_assertions))]
         let api = github::API.to_string();
-        Self { token: Box::new(crate::token::load), api, full_screen: Box::new(full_screen), low_power: Box::new(crate::platform::low_power_mode), on_wifi: Box::new(crate::platform::on_wifi) }
+        Self { token: Box::new(crate::token::load), api, full_screen: Box::new(full_screen), low_power: Box::new(crate::platform::low_power_mode), on_wifi: Box::new(crate::platform::on_wifi), syncing: Box::new(syncing) }
     }
 }
 
@@ -197,11 +201,14 @@ pub fn run(
                     let full = manual || last_full.is_none_or(|t| now - t > Duration::hours(FULL_EVERY));
                     let snapshot = app.sync.clone();
                     let tracked = github::tracked_ids(&app.pets);
+                    let fetching: Vec<Uuid> = app.pets.iter().filter(|p| p.project.github.is_some()).map(|p| p.id).collect();
                     drop(app);
+                    (deps.syncing)(fetching);
                     // network, without holding the state
                     let reason = if for_pet.is_some() || manual { "manual" } else { "scheduled" };
                     let gh = Github::new(&token, &deps.api).map(|g| g.with_reason(reason));
                     let result = gh.as_ref().map_err(Clone::clone).and_then(|gh| github::fetch(gh, &snapshot, &tracked, full).map(|f| (f, gh.meta())));
+                    (deps.syncing)(Vec::new());
                     app = shared.lock().unwrap();
                     if let Ok(gh) = &gh {
                         app.append_netlog(gh.take_log());
@@ -434,7 +441,7 @@ mod tests {
     }
 
     fn deps(api: &str, token: Result<Option<String>, String>) -> Deps {
-        Deps { token: Box::new(move || token.clone()), api: api.into(), full_screen: Box::new(|| false), low_power: Box::new(|| false), on_wifi: Box::new(|| Some(true)) }
+        Deps { token: Box::new(move || token.clone()), api: api.into(), full_screen: Box::new(|| false), low_power: Box::new(|| false), on_wifi: Box::new(|| Some(true)), syncing: Box::new(|_| {}) }
     }
 
     fn temp() -> std::path::PathBuf {
@@ -499,6 +506,35 @@ mod tests {
     }
 
     #[test]
+    fn the_sync_indicator_goes_on_for_a_fetch_and_always_off_after() {
+        let fake = Fake::start();
+        let calls = Arc::new(Mutex::new(Vec::<Vec<Uuid>>::new()));
+        let rec = calls.clone();
+        let mut d = deps(&fake.1, Ok(Some("github_pat_fake".into())));
+        d.syncing = Box::new(move |ids| rec.lock().unwrap().push(ids));
+        let mut app = App::load(temp()).unwrap();
+        let mut pet = strays_core::pet::Pet::new(
+            Utc::now(),
+            "Miso",
+            strays_core::pet::Species::Cat,
+            strays_core::pet::Project { github: Some(strays_core::pet::GithubRef { id: 1, full_name: "me/one".into(), account: "me".into() }), local: None },
+            strays_core::pet::Activity { last: Utc::now(), source: strays_core::pet::ActivitySource::Github },
+            strays_core::mood::Pace::Normal,
+        );
+        pet.adopt(Utc::now()).unwrap();
+        let id = pet.id;
+        app.pets.push(pet);
+        let (shared, tx, seen, thread) = start(app, d);
+        next_sync(&seen);
+        shared.lock().unwrap().close();
+        tx.send(Cmd::Changed).unwrap();
+        thread.join().unwrap();
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.first(), Some(&vec![id]), "the GitHub pet is marked while its repo is fetched");
+        assert!(calls.len().is_multiple_of(2) && calls.iter().skip(1).step_by(2).all(|c| c.is_empty()), "every fetch clears it: {calls:?}");
+    }
+
+    #[test]
     fn an_unreadable_keychain_is_reported_not_taken_for_no_token() {
         let dir = temp();
         // nothing listens here: the loop must not get as far as the network
@@ -524,7 +560,7 @@ mod tests {
             }
             Ok(None)
         };
-        let deps = Deps { token: Box::new(token), api: "http://127.0.0.1:9".into(), full_screen: Box::new(|| false), low_power: Box::new(|| false), on_wifi: Box::new(|| Some(true)) };
+        let deps = Deps { token: Box::new(token), api: "http://127.0.0.1:9".into(), full_screen: Box::new(|| false), low_power: Box::new(|| false), on_wifi: Box::new(|| Some(true)), syncing: Box::new(|_| {}) };
         let (shared, tx, seen, _thread) = start(App::load(dir.clone()).unwrap(), deps);
         assert!(slot.set(shared.clone()).is_ok());
         next_sync(&seen);

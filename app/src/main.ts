@@ -410,7 +410,7 @@ addEventListener("mousemove", (e) => {
   if (!press.dragging) {
     press.dragging = true;
     p.el.classList.add("dragging");
-    document.querySelectorAll(".tooltip, .bubble, .ask").forEach((b) => b.remove());
+    document.querySelectorAll(".tooltip, .bubble, .ask, .sync").forEach((b) => b.remove());
   }
   p.el.style.left = `${p.placed.x + dx}px`;
   p.el.style.top = `${p.placed.y + dy}px`;
@@ -513,6 +513,33 @@ ready.push(listen<Hover>("hover", ({ payload }) => {
   }
 }));
 
+// the pets whose repos are being fetched show a turning ↻; an empty list means the fetch is over. It
+// stays at least SYNC_MIN_MS, so a quick sync still shows.
+const SYNC_MIN_MS = 800;
+let syncSince = 0;
+let syncClear = 0;
+ready.push(listen<string[]>("syncing", ({ payload }) => {
+  const clear = () => document.querySelectorAll(".sync").forEach((b) => b.remove());
+  window.clearTimeout(syncClear);
+  if (!payload.length) {
+    syncClear = window.setTimeout(clear, Math.max(0, SYNC_MIN_MS - (Date.now() - syncSince)));
+    return;
+  }
+  clear();
+  syncSince = Date.now();
+  for (const id of payload) {
+    const p = pets.get(id);
+    if (!p) continue;
+    const b = document.createElement("div");
+    b.className = "sync";
+    b.dataset.for = id;
+    b.textContent = "↻";
+    b.setAttribute("aria-label", "Syncing");
+    b.style.left = `${p.placed.x + p.placed.s * 0.7}px`;
+    b.style.top = `${p.placed.y + p.placed.s * 0.28}px`;
+    document.body.appendChild(b);
+  }
+}));
 ready.push(listen<Feedback>("feedback", ({ payload }) => bubble(payload.id, payload.text, 2500)));
 ready.push(listen<{ id: string; cue: Cue }>("cue", ({ payload }) => {
   const p = pets.get(payload.id);
