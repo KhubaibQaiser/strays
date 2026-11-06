@@ -49,6 +49,34 @@ body.hidden > * {
   visibility: hidden;
 }
 
+/* a pet whose repo is being fetched: a small turning arrow at its top right */
+.sync {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: #2a1e18;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+  pointer-events: none;
+  animation: sync-turn 1s linear infinite;
+}
+
+@keyframes sync-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync {
+    animation: none;
+  }
+}
+
 .tooltip {
   position: absolute;
   transform: translate(-50%, 0);

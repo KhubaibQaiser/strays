@@ -254,3 +254,27 @@ test("holding the modifier keeps pets animating, with a glow", async ({ page }) 
   const b = await canvas.screenshot();
   expect(a.equals(b), "the pet stopped animating while the modifier was held").toBe(false);
 });
+
+test("pets whose repos are being fetched show a turning arrow until the fetch ends", async ({ page }) => {
+  await mockApp(page);
+  await page.setViewportSize({ width: 660, height: 240 });
+  await page.goto("/index.html");
+  await page.waitForFunction(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.some((c) => c.cmd === "overlay_ready"));
+  await emit(page, "overlay", { pets: [pet("gh", "content", 0), pet("local", "content", 220)], liveliness: "calm", reduceMotion: false, hidden: false });
+  await expect(page.locator("canvas")).toHaveCount(2, { timeout: 30_000 });
+  await emit(page, "syncing", ["gh"]);
+  await expect(page.locator('.sync[data-for="gh"]')).toBeVisible();
+  await expect(page.locator('.sync[data-for="local"]')).toHaveCount(0);
+  await page.screenshot({ path: `${shots}/overlay-syncing.png` });
+  // a fetch that ends at once: the arrow still shows for a moment (timed in the page, so a slow
+  // runner can't race it), then goes
+  const shownAfter300ms = await page.evaluate(async () => {
+    const emit = (window as unknown as { __emit: (e: string, p: unknown) => void }).__emit;
+    emit("syncing", ["gh"]);
+    emit("syncing", []);
+    await new Promise((r) => setTimeout(r, 300));
+    return document.querySelectorAll(".sync").length;
+  });
+  expect(shownAfter300ms).toBe(1);
+  await expect(page.locator(".sync")).toHaveCount(0);
+});

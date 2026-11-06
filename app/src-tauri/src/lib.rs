@@ -401,7 +401,9 @@ pub fn run() {
             let ui = h.clone();
             std::thread::spawn(move || {
                 let fs = overlay.clone();
-                sync::run(app, tx, rx, sync::Deps::real(move || fs.is_full_screen()), move |app, outcome, nudge, cues| {
+                // the pets being fetched show a small ↻ while it runs
+                let busy = ui.clone();
+                sync::run(app, tx, rx, sync::Deps::real(move || fs.is_full_screen(), move |ids| overlay::send(&busy, "syncing", ids)), move |app, outcome, nudge, cues| {
                     // cues go first: a pet that's leaving must start its clip before the frame removes it
                     let quiet_ok = |sp| audio::allowed(&app.settings, Some(sp), app.flags.presentation, overlay.is_full_screen(), state::local_minute());
                     let species = |id| app.pets.iter().find(|p| p.id == id).map(|p| p.species);
