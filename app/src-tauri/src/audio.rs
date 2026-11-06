@@ -62,9 +62,20 @@ fn bytes(sound: Sound) -> &'static [u8] {
     }
 }
 
+/// Opens the default sound output. rodio asks for a fixed 50 ms buffer, which some outputs refuse
+/// (AirPods and other Bluetooth headphones: "error opening the stream with the OS"), so a refusal is
+/// retried with the system's own buffer size.
+fn open_output() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
+    rodio::DeviceSinkBuilder::open_default_sink().or_else(|first| {
+        rodio::DeviceSinkBuilder::from_default_device()
+            .and_then(|b| b.with_buffer_size(rodio::cpal::BufferSize::Default).open_stream())
+            .map_err(|_| first)
+    })
+}
+
 /// Whether there's a sound output to play on, for the Test button: playing happens later, on its own thread.
 pub fn check_output() -> Result<(), String> {
-    rodio::DeviceSinkBuilder::open_default_sink().map(drop).map_err(|e| format!("No sound output device: {e}"))
+    open_output().map(drop).map_err(|e| format!("No sound output device: {e}"))
 }
 
 /// Plays sounds one after another on a background thread.
@@ -76,7 +87,7 @@ impl Player {
         let (tx, rx) = mpsc::channel::<(Sound, f32)>();
         std::thread::spawn(move || {
             while let Ok(first) = rx.recv() {
-                let device = match rodio::DeviceSinkBuilder::open_default_sink() {
+                let device = match open_output() {
                     Ok(d) => d,
                     Err(e) => {
                         crate::log::warn(&format!("no sound output device: {e}"));
@@ -137,7 +148,7 @@ impl Gloom {
                     Ok(None) => {}
                 }
                 if playing.is_none() && target.is_some() {
-                    let opened = rodio::DeviceSinkBuilder::open_default_sink().map_err(|e| format!("no sound output device: {e}")).and_then(|device| {
+                    let opened = open_output().map_err(|e| format!("no sound output device: {e}")).and_then(|device| {
                         let looped = rodio::Decoder::new_looped(Cursor::new(SAD_LOOP)).map_err(|e| format!("could not play the sad loop: {e}"))?;
                         let player = rodio::Player::connect_new(device.mixer());
                         player.set_volume(0.0);
