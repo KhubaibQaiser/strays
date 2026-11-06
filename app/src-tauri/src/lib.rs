@@ -201,6 +201,33 @@ fn pet_log(msg: String) {
     let _ = msg;
 }
 
+/// Claims the data folder for this process: None if another Strays already holds it. Two copies of
+/// the app (say one opened from the disk image and one in Applications) are different apps to macOS,
+/// so it starts both; sharing one folder, each would overwrite the other's saves. The OS lets go of
+/// the lock when the process ends, however it ends.
+fn claim(dir: &std::path::Path) -> std::io::Result<Option<std::fs::File>> {
+    std::fs::create_dir_all(dir)?;
+    let lock = std::fs::File::create(dir.join("strays.lock"))?;
+    match lock.try_lock() {
+        Ok(()) => Ok(Some(lock)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(std::fs::TryLockError::Error(e)) => Err(e),
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn only_one_process_holds_the_data_folder() {
+    let dir = std::env::temp_dir().join(format!("strays-claim-{}", std::process::id()));
+    let first = claim(&dir).unwrap();
+    assert!(first.is_some());
+    // a second open of the lock file conflicts like a second app would
+    assert!(claim(&dir).unwrap().is_none(), "a second claim must fail while the first holds");
+    drop(first);
+    assert!(claim(&dir).unwrap().is_some(), "free again once the holder is gone");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 fn data_dir(h: &AppHandle) -> tauri::Result<PathBuf> {
     #[cfg(debug_assertions)]
     if let Some(dir) = std::env::var_os("STRAYS_DATA_DIR") {
@@ -328,6 +355,16 @@ pub fn run() {
             let h = tauri_app.handle().clone();
 
             let dir = data_dir(&h)?;
+            match claim(&dir) {
+                // held until the process ends
+                Ok(Some(lock)) => std::mem::forget(lock),
+                Ok(None) => {
+                    platform::fatal("Strays is already running", "Find it in the menu bar (the paw). To switch to this copy, quit that one first.");
+                    std::process::exit(0);
+                }
+                // can't tell: start anyway rather than refuse to run at all
+                Err(e) => eprintln!("could not check for another Strays: {e}"),
+            }
             // the log is best-effort: without it problems still show in the menu and Settings
             let logging = log::init(&dir);
             if let Err(e) = &logging {

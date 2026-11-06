@@ -51,6 +51,8 @@ pub fn screen_off() -> bool {
 /// A blocking alert, for a failure with no other way to reach the user (the app couldn't start).
 pub fn fatal(title: &str, text: &str) {
     let Some(mtm) = objc2::MainThreadMarker::new() else { return };
+    // a menu-bar app's alert opens behind other apps' windows unless the app comes forward first
+    objc2_app_kit::NSApplication::sharedApplication(mtm).activate();
     let alert = objc2_app_kit::NSAlert::new(mtm);
     alert.setMessageText(&NSString::from_str(title));
     alert.setInformativeText(&NSString::from_str(text));
