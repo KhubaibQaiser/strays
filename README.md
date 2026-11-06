@@ -74,7 +74,7 @@ These GIFs are recorded from the app's own 3D pets by [`app/scripts/readme-media
 | ⌥ + hover | Freeze pets, outline this one, show name · repo · mood |
 | ⌥ + click | Open the pet's info card: mood, activity, goal checklist, and sync, snooze, release, pause, graduate |
 | ⌥⇧ + click | Sync this pet now |
-| ⌥ + drag | Move the pet onto a grid spot it keeps |
+| ⌥ + drag | Move the pet onto a grid spot it keeps, on any display |
 | ⌥ + right-click | The pet's own menu |
 | ⌥ + press and hold | Pet it (it enjoys it; mood only changes with work) |
 

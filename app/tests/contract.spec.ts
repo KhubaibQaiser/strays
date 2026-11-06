@@ -107,7 +107,8 @@ test("each window may call exactly the commands its pages use, and no wrapper is
   for (const [window, cmds] of Object.entries(used)) {
     const cap = (await (await request.get(`/src-tauri/capabilities/${window}.json`)).json()) as { windows: string[]; permissions: string[] };
     const allowed = new Set(cap.permissions.filter((p) => p.startsWith("allow-")).map((p) => p.slice(6).replace(/-/g, "_")));
-    expect(cap.windows).toEqual([window]);
+    // the overlay has one window per display: overlay, overlay-1, …
+    expect(cap.windows).toEqual(window === "overlay" ? ["overlay", "overlay-*"] : [window]);
     problems.push(...[...cmds].filter((c) => !allowed.has(c)).map((c) => `${window} calls ${c} without permission`));
     problems.push(...[...allowed].filter((c) => !cmds.has(c)).map((c) => `${window} may call ${c} but never does`));
   }

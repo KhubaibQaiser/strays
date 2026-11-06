@@ -107,10 +107,15 @@ test("a click counts whenever the chosen modifier is held, whichever key that is
   expect(await clicks()).toHaveLength(0);
   // Control chosen and held (no ⌥ involved): Rust reports it through "hover"
   await emit(page, "hover", { id: "p", held: true });
+  // held: every pet glows faintly, so it's clear they can be clicked now
+  await expect(page.locator("body")).toHaveClass(/\bheld\b/);
+  expect(await page.locator("canvas").evaluate((c) => getComputedStyle(c).filter)).toContain("drop-shadow");
   await page.keyboard.down("Control");
   await page.mouse.click(320, 120);
   await page.keyboard.up("Control");
   expect(await clicks()).toEqual([{ cmd: "pet_click", args: { id: "p", shift: false } }]);
+  await emit(page, "hover", { id: null, held: false });
+  await expect(page.locator("body")).not.toHaveClass(/\bheld\b/);
 });
 
 test("a full-screen app hides pets without rebuilding them", async ({ page }) => {
@@ -169,6 +174,21 @@ test("with the modifier held, a pet can be dragged onto the grid; a press that d
   expect(drop).toEqual({ id: "a", x: 580 - 280, y: 20 - 80 });
   await expect(page.locator("#grid")).toHaveCount(0);
   expect(await calls("pet_click")).toHaveLength(1);
+
+  // a trackpad press that eases off mid-drag and presses again at once carries the drag on: one drop, at the end
+  await page.mouse.move(400, 300);
+  await emit(page, "overlay", { pets: [pet("a", "content", 580)], grid, liveliness: "gentle", reduceMotion: false, hidden: false });
+  await page.mouse.move(680, 140);
+  await page.mouse.down();
+  await page.mouse.move(600, 140, { steps: 4 });
+  await page.mouse.up();
+  await page.mouse.down();
+  await page.mouse.move(500, 140, { steps: 4 });
+  await page.waitForTimeout(400);
+  expect(await calls("pet_drop")).toHaveLength(1);
+  await page.mouse.up();
+  await expect.poll(() => calls("pet_drop")).toHaveLength(2);
+  expect(((await calls("pet_drop")) as { x: number }[])[1].x).toBe(580 - 180);
 });
 
 test("holding still on a pet pets it (no click), and a right-click opens its menu", async ({ page }) => {

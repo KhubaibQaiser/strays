@@ -8,7 +8,12 @@ import { artFor } from "./art";
 import { Pet3DRig, SPECIES_3D } from "./pet3d/rig";
 import { meshBuilt, meshReady } from "./pet3d/meshes";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+
+// each display has its own overlay page, so each listens on its own window only: a frame for one
+// display mustn't reach another's
+const win = getCurrentWebviewWindow();
+const listen: typeof win.listen = (event, handler) => win.listen(event, handler);
 
 type Liveliness = "calm" | "gentle" | "lively";
 export type Placed = { id: string; species: string; colors: Record<string, string>; label: string; mood: string; confused: boolean; liveliness: Liveliness | null; x: number; y: number; s: number };
@@ -69,7 +74,10 @@ const MAX_3D = 12;
 let grid: Grid = { x0: 0, y0: 0, cw: 0, ch: 0, cols: 0, rows: 0, s: 0 };
 /** A press on a pet: it becomes a drag once the cursor moves this many points (§7.2). */
 const DRAG_PT = 4;
-let press: { p: Pet; x: number; y: number; shift: boolean; dragging: boolean; petted: boolean; timer: number } | null = null;
+let press: { p: Pet; x: number; y: number; shift: boolean; dragging: boolean; petted: boolean; timer: number; letGo: number } | null = null;
+/** A trackpad press that eases off for a moment mid-drag reads as a let-go: pressing again this soon
+ *  carries the drag on instead of dropping the pet. */
+const REGRAB_MS = 300;
 /** Holding still on a pet this long pets it (§7.2): a happy reaction that never changes mood. */
 const PET_MS = 1000;
 
@@ -308,7 +316,7 @@ function add(placed: Placed, forceRive = false) {
       if (!reduceMotion && !p.busy) void play(p, [[ACT.petted, CLIP_S[ACT.petted]]]);
       else bubble(p.placed.id, "♥", 1200);
     }, PET_MS);
-    press = { p, x: e.clientX, y: e.clientY, shift: e.shiftKey, dragging: false, petted: false, timer };
+    press = { p, x: e.clientX, y: e.clientY, shift: e.shiftKey, dragging: false, petted: false, timer, letGo: 0 };
     invoke("pet_press", { id: p.placed.id, down: true }).catch(unreached("pet_press"));
   });
   // the modifier and a right-click: the pet's own menu, where the cursor is (§7.2)
@@ -377,8 +385,9 @@ function hideGrid() {
 /** Ends a press: a click if it never moved, else a drop that Rust snaps to the nearest free cell. */
 function endPress() {
   if (!press) return;
-  const { p, shift, dragging, petted, timer } = press;
+  const { p, shift, dragging, petted, timer, letGo } = press;
   window.clearTimeout(timer);
+  window.clearTimeout(letGo);
   press = null;
   hideGrid();
   p.el.classList.remove("dragging");
@@ -406,7 +415,19 @@ addEventListener("mousemove", (e) => {
   p.el.style.top = `${p.placed.y + dy}px`;
   drawGrid(p);
 });
-addEventListener("mouseup", (e) => e.button === 0 && endPress());
+addEventListener("mouseup", (e) => {
+  if (e.button !== 0 || !press) return;
+  if (!press.dragging) return endPress();
+  window.clearTimeout(press.letGo);
+  press.letGo = window.setTimeout(endPress, REGRAB_MS);
+});
+// pressed again soon after a let-go mid-drag (anywhere: the overlay keeps the mouse until the drop)
+addEventListener("mousedown", (e) => {
+  if (e.button !== 0 || !press?.letGo) return;
+  e.preventDefault();
+  window.clearTimeout(press.letGo);
+  press.letGo = 0;
+});
 
 function remove(id: string) {
   const p = pets.get(id);
@@ -474,6 +495,7 @@ ready.push(listen<Frame>("overlay", ({ payload }) => {
 ready.push(listen<Hover>("hover", ({ payload }) => {
   if (payload.held !== frozen) {
     frozen = payload.held;
+    document.body.classList.toggle("held", frozen);
     // a pet mid-stroll goes straight back to where the clicks expect it
     if (frozen)
       pets.forEach((p) => {

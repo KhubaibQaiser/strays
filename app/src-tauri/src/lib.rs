@@ -149,12 +149,12 @@ fn pet_press(id: Uuid, down: bool, shared: State<'_, Shared>) {
     shared.overlay.press(id, down);
 }
 
-/// A pet was dragged and dropped with its canvas at window-local (x, y): it moves to the nearest free
-/// grid cell, which becomes its home spot. With no free cell it goes back where it was.
+/// A pet was dragged and dropped with its canvas at (x, y) in its display's window: it moves to the
+/// nearest free grid cell on the display under it, which becomes its home spot. With no free cell it goes back where it was.
 #[tauri::command]
-fn pet_drop(id: Uuid, x: f64, y: f64, shared: State<'_, Shared>) {
+fn pet_drop(id: Uuid, x: f64, y: f64, window: tauri::WebviewWindow, shared: State<'_, Shared>) {
     shared.overlay.press(id, false);
-    let spot = shared.overlay.drop_spot(id, (x, y));
+    let spot = shared.overlay.drop_spot(id, window.label(), (x, y));
     #[cfg(debug_assertions)]
     println!("DROP pet={id} at={x},{y} home={spot:?}");
     if let Some(home) = spot {

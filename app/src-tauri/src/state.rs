@@ -515,7 +515,7 @@ impl App {
                     Some(r) => format!("{} · {r} · {}", p.name, mood_word(mood)),
                     None => format!("{} · {}", p.name, mood_word(mood)),
                 };
-                PetView { id: p.id, species: p.species, colors: p.colors.clone(), label, mood, confused: p.missing_since.is_some(), liveliness: p.liveliness, home: p.home }
+                PetView { id: p.id, species: p.species, colors: p.colors.clone(), label, mood, confused: p.missing_since.is_some(), liveliness: p.liveliness, home: p.home.clone() }
             })
             .collect()
     }
