@@ -11,12 +11,10 @@ use objc2_service_management::{SMAppService, SMAppServiceStatus};
 
 /// Pass-through overlay rules (spec §7.1): every Space, still in Mission Control, kept out of ⌘-Tab,
 /// over full-screen apps, and excluded from screen capture and sharing.
-pub fn configure_overlay(ns_window: *mut std::ffi::c_void) {
+pub fn configure_overlay(ns_window: *mut std::ffi::c_void, capturable: bool) {
+    set_capturable(ns_window, capturable);
     // SAFETY: Tauri hands out the window's live NSWindow pointer, and this runs on the main thread.
     let window = unsafe { &*(ns_window as *const NSWindow) };
-    // debug builds can opt back in so the test harness can screenshot pets
-    let capturable = cfg!(debug_assertions) && std::env::var("STRAYS_CAPTURABLE").as_deref() == Ok("1");
-    window.setSharingType(if capturable { NSWindowSharingType::ReadOnly } else { NSWindowSharingType::None });
     window.setCollectionBehavior(
         NSWindowCollectionBehavior::CanJoinAllSpaces
             | NSWindowCollectionBehavior::Stationary
@@ -27,6 +25,16 @@ pub fn configure_overlay(ns_window: *mut std::ffi::c_void) {
 
 pub fn modifier_flags() -> NSEventModifierFlags {
     NSEvent::modifierFlags_class()
+}
+
+/// Whether screenshots, screen recordings and screen sharing can see the window (Settings → Display).
+/// Main thread only.
+pub fn set_capturable(ns_window: *mut std::ffi::c_void, on: bool) {
+    // SAFETY: Tauri hands out the window's live NSWindow pointer, and this runs on the main thread.
+    let window = unsafe { &*(ns_window as *const NSWindow) };
+    // debug builds can opt in regardless, so the test harness can screenshot pets
+    let on = on || (cfg!(debug_assertions) && std::env::var("STRAYS_CAPTURABLE").as_deref() == Ok("1"));
+    window.setSharingType(if on { NSWindowSharingType::ReadOnly } else { NSWindowSharingType::None });
 }
 
 /// Whether nobody can see the screen: the main display is asleep or the session is locked. Pets stop

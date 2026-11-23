@@ -279,7 +279,7 @@ idleDays     = max(0, idleSpan − frozen − excluded) / 24h
   - Borderless, transparent, always on top (floating level).
   - Joins all Spaces, stationary in Mission Control.
   - Hidden from ⌘-Tab and the Dock (the app is `LSUIElement`).
-  - Excluded from screen capture (`sharingType = .none`); whether this holds on current macOS is a **Gate 2 check**.
+  - Excluded from screen capture (`sharingType = .none`) **(default; setting: Display → Show pets in screenshots, screen recordings and screen sharing)**; whether the default holds on current macOS is a **Gate 2 check**.
 - **Placement:** pets live on screen **edges** within each screen's `visibleFrame`, avoiding the notch, menu bar and Dock.
   - Ground species (cat, dog, hamster) use the bottom edge.
   - The parrot perches top-right under the menu bar, or on the bottom edge.
@@ -413,7 +413,7 @@ One card per capability. Each card shows **status · what it can do · what it c
 │ 41 requests today.  [View activity log]  [ ] Go fully offline│
 ├─ Launch at login ──────────────────────────── ○ Off [Turn on]┤
 ├─ Focus status ───────────────────────────── ○ Off [Turn on]  ┤
-├─ Screen capture ────────────── Hide pets when sharing ● On   ┤
+├─ Screen capture ──────── Pets hidden when sharing (Display)  ┤
 └─ Your data ──── [Export JSON]  [Open data folder]  [Delete everything] ┘
 ```
 

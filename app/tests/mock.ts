@@ -53,6 +53,7 @@ export const STATE: UiState = {
     modifier: "option",
     hideShortcut: null,
     hideInFullScreen: true,
+    showInScreenCapture: false,
     nudgeStyle: "gentle",
     nudgesPerPetDaily: 1,
     nudgesDaily: 3,
