@@ -13,8 +13,8 @@ Needs a Mac with **Apple Silicon** (M1 or later) and macOS 14 Sonoma or later. *
 **macOS blocks the first open.** Releases are test builds: signed ad hoc, not with an Apple Developer ID, and not notarised by Apple. So the first time you open each new version, macOS says it can't check Strays for malware. To allow it:
 
 1. Click **Done** on that message.
-2. Open **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway** next to the Strays line.
-3. Confirm with your password or Touch ID, then click **Open**.
+2. Open **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway** next to the Strays line. The button shows for about an hour after the blocked open; if it's gone, open Strays again first.
+3. Confirm when macOS asks again, with your password or Touch ID.
 
 You only do this once per version.
 
