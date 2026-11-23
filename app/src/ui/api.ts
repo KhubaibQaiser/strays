@@ -59,6 +59,7 @@ export type Settings = {
   /** keys that hide or show every pet, like "Control+Alt+S"; null is off */
   hideShortcut: string | null;
   hideInFullScreen: boolean;
+  showInScreenCapture: boolean;
   nudgeStyle: "gentle" | "playful" | "off";
   nudgesPerPetDaily: number;
   nudgesDaily: number;

@@ -115,6 +115,8 @@ export function renderSettings(root: HTMLElement, state: UiState, section: strin
       row("Fewest pets on screen", num("minVisible", 0, 8)),
       row("Change who's on screen every", num("rotationHours", 1, 48), "hours"),
       toggle("hideInFullScreen", "Hide pets when an app is full screen"),
+      toggle("showInScreenCapture", "Show pets in screenshots, screen recordings and screen sharing"),
+      el("p", { class: "muted small" }, "Off by default, so pets never turn up in a recording or a shared screen. Turn it on to show them off in a demo or a video."),
       flag("presentation", state.presentation, "Presentation mode (hide repo names)"),
       flag("hideAll", state.hideAll, "Hide all pets"),
     ],

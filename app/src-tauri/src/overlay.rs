@@ -260,6 +260,8 @@ struct Inner {
     pet_height: f64,
     modifier: Modifier,
     hide_full: bool,
+    /// pets show in screenshots, recordings and screen sharing
+    capturable: bool,
     /// the display is asleep or the screen locked: nobody can see the pets
     screen_off: bool,
     /// the pet the mouse is pressed on: clicks keep coming to the overlay until the button is let go
@@ -274,6 +276,7 @@ pub struct Config {
     pub pet_height: f64,
     pub modifier: Modifier,
     pub hide_in_full_screen: bool,
+    pub show_in_screen_capture: bool,
 }
 
 #[derive(Clone)]
@@ -320,7 +323,7 @@ fn fit(w: &WebviewWindow, s: &Screen) -> tauri::Result<()> {
 }
 
 /// The overlay window for display `i`. Must run on the main thread (window creation and NSWindow setup).
-fn new_window(h: &AppHandle, i: usize, screen: &Screen) -> tauri::Result<WebviewWindow> {
+fn new_window(h: &AppHandle, i: usize, screen: &Screen, capturable: bool) -> tauri::Result<WebviewWindow> {
     // debug builds can load another page in the overlay, e.g. proto3d.html to measure 3D pets' CPU
     let page = std::env::var("STRAYS_OVERLAY_PAGE").ok().filter(|_| cfg!(debug_assertions)).unwrap_or_else(|| "index.html".into());
     let window = WebviewWindowBuilder::new(h, label(i), WebviewUrl::App(page.into()))
@@ -336,7 +339,7 @@ fn new_window(h: &AppHandle, i: usize, screen: &Screen) -> tauri::Result<Webview
         .build()?;
     fit(&window, screen)?;
     window.set_ignore_cursor_events(true)?;
-    platform::configure_overlay(window.ns_window()?);
+    platform::configure_overlay(window.ns_window()?, capturable);
     Ok(window)
 }
 
@@ -351,7 +354,7 @@ impl Overlay {
         let all = screens(h).ok_or(tauri::Error::WindowNotFound)?;
         let mut displays = Vec::new();
         for (i, (name, screen)) in all.into_iter().enumerate() {
-            match new_window(h, i, &screen) {
+            match new_window(h, i, &screen, false) {
                 Ok(window) => displays.push(Display { name, screen, window, placed: Vec::new(), hidden: false }),
                 Err(e) if i > 0 => {
                     crate::log::warn(&format!("could not open the pets' window on {name}: {e}"));
@@ -369,6 +372,7 @@ impl Overlay {
             pet_height: 104.0,
             modifier: Modifier::Option,
             hide_full: true,
+            capturable: false,
             screen_off: false,
             pressed: None,
             adding: false,
@@ -382,6 +386,20 @@ impl Overlay {
         o.pet_height = c.pet_height;
         o.modifier = c.modifier;
         o.hide_full = c.hide_in_full_screen;
+        if c.show_in_screen_capture != o.capturable {
+            o.capturable = c.show_in_screen_capture;
+            for d in &o.displays {
+                let (w, on) = (d.window.clone(), o.capturable);
+                // AppKit calls belong on the main thread; this runs on the sync thread
+                let queued = d.window.run_on_main_thread(move || match w.ns_window() {
+                    Ok(ns) => platform::set_capturable(ns, on),
+                    Err(e) => crate::log::warn(&format!("could not change whether captures show the pets: {e}")),
+                });
+                if let Err(e) = queued {
+                    crate::log::warn(&format!("could not change whether captures show the pets: {e}"));
+                }
+            }
+        }
         relayout(&mut o);
     }
 
@@ -485,8 +503,11 @@ impl Overlay {
             let add = now[old.len()..].to_vec();
             let queued = h.run_on_main_thread(move || {
                 for (name, screen) in add {
-                    let i = me.0.lock().unwrap().displays.len();
-                    match new_window(&h2, i, &screen) {
+                    let (i, capturable) = {
+                        let o = me.0.lock().unwrap();
+                        (o.displays.len(), o.capturable)
+                    };
+                    match new_window(&h2, i, &screen, capturable) {
                         Ok(window) => me.0.lock().unwrap().displays.push(Display { name, screen, window, placed: Vec::new(), hidden: false }),
                         Err(e) => {
                             // the poller tries again on its next check

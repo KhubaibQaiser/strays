@@ -95,6 +95,9 @@ pub struct Settings {
     /// Keys that hide or show every pet from anywhere, like "Control+Alt+S"; None is off (the default).
     pub hide_shortcut: Option<String>,
     pub hide_in_full_screen: bool,
+    /// Pets show up in screenshots, screen recordings and screen sharing. Off by default: they're
+    /// left out of every capture (§7.1).
+    pub show_in_screen_capture: bool,
     pub nudge_style: NudgeStyle,
     pub nudges_per_pet_daily: u32,
     pub nudges_daily: u32,
@@ -145,6 +148,7 @@ impl Default for Settings {
             modifier: Modifier::Option,
             hide_shortcut: None,
             hide_in_full_screen: true,
+            show_in_screen_capture: false,
             nudge_style: NudgeStyle::Gentle,
             nudges_per_pet_daily: 1,
             nudges_daily: 3,
@@ -234,6 +238,7 @@ mod tests {
         let partial: Settings = serde_json::from_str(r#"{"slots": 5}"#).unwrap();
         assert_eq!(partial.slots, 5);
         assert_eq!(partial.holiday_days, 3);
+        assert!(!partial.show_in_screen_capture, "pets stay out of screen captures unless the user opts in");
     }
 
     #[test]

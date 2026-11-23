@@ -47,6 +47,10 @@ test("settings save each change and reject thresholds that don't increase", asyn
   await page.getByRole("button", { name: "Display" }).click();
   await page.getByLabel("liveliness").selectOption({ label: "Lively: the smoothest, always moving (most battery)" });
   await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ liveliness: "lively" });
+  // pets stay out of screen captures until the user turns this on
+  await expect(page.getByLabel("Show pets in screenshots, screen recordings and screen sharing")).not.toBeChecked();
+  await page.getByLabel("Show pets in screenshots, screen recordings and screen sharing").check();
+  await expect.poll(async () => (await calls(page, "save_settings")).at(-1)?.args.settings).toMatchObject({ showInScreenCapture: true });
   await page.screenshot({ path: `${shots}/settings-display.png` });
 });
 

@@ -153,6 +153,7 @@
       "releaseCooldownDays": "number",
       "rotationHours": "number",
       "sadMusic": "boolean",
+      "showInScreenCapture": "boolean",
       "skipWeekends": "boolean",
       "slots": "number",
       "sound": "boolean",

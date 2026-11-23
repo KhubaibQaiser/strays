@@ -423,6 +423,7 @@ pub fn run() {
                         pet_height: s.pet_size.height(),
                         modifier: s.modifier,
                         hide_in_full_screen: s.hide_in_full_screen,
+                        show_in_screen_capture: s.show_in_screen_capture,
                     };
                     let views = app.views(Utc::now());
                     let gloomy = views.iter().any(|v| v.mood == strays_core::mood::Mood::Gloomy);
