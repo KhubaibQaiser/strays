@@ -107,6 +107,16 @@ test("updates: check now, opt-in weekly check, and a newer release downloads and
   expect((await calls(page, "open_link")).at(-1)?.args).toEqual({ which: "release" });
 });
 
+test("privacy page says whether screen captures show the pets", async ({ page }) => {
+  await mockApp(page);
+  await page.goto("/ui.html#settings/privacy");
+  await expect(page.getByText("Pets hidden when sharing")).toBeVisible();
+  await mockApp(page, {}, { settings: { ...STATE.settings, showInScreenCapture: true } });
+  await page.reload();
+  await expect(page.getByText("Pets visible in captures")).toBeVisible();
+  await expect(page.getByText("Pets don't appear in screenshots")).toHaveCount(0);
+});
+
 test("privacy page shows what GitHub access can and can't do, and guards delete", async ({ page }) => {
   await mockApp(page);
   await page.goto("/ui.html#settings/privacy");

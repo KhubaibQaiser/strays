@@ -241,6 +241,8 @@ struct Display {
     placed: Vec<Placed>,
     /// a full-screen app is in front on this display, or nobody can see the screens
     hidden: bool,
+    /// whether this window shows in screen captures right now (`Inner::capturable` is the wanted value)
+    capturable: bool,
 }
 
 impl Display {
@@ -355,7 +357,7 @@ impl Overlay {
         let mut displays = Vec::new();
         for (i, (name, screen)) in all.into_iter().enumerate() {
             match new_window(h, i, &screen, false) {
-                Ok(window) => displays.push(Display { name, screen, window, placed: Vec::new(), hidden: false }),
+                Ok(window) => displays.push(Display { name, screen, window, placed: Vec::new(), hidden: false, capturable: false }),
                 Err(e) if i > 0 => {
                     crate::log::warn(&format!("could not open the pets' window on {name}: {e}"));
                     break;
@@ -386,18 +388,21 @@ impl Overlay {
         o.pet_height = c.pet_height;
         o.modifier = c.modifier;
         o.hide_full = c.hide_in_full_screen;
-        if c.show_in_screen_capture != o.capturable {
-            o.capturable = c.show_in_screen_capture;
-            for d in &o.displays {
-                let (w, on) = (d.window.clone(), o.capturable);
-                // AppKit calls belong on the main thread; this runs on the sync thread
-                let queued = d.window.run_on_main_thread(move || match w.ns_window() {
-                    Ok(ns) => platform::set_capturable(ns, on),
-                    Err(e) => crate::log::warn(&format!("could not change whether captures show the pets: {e}")),
-                });
-                if let Err(e) = queued {
-                    crate::log::warn(&format!("could not change whether captures show the pets: {e}"));
-                }
+        o.capturable = c.show_in_screen_capture;
+        // every update brings windows that aren't there yet (a failed switch, a new display) in line
+        let want = o.capturable;
+        for d in o.displays.iter_mut().filter(|d| d.capturable != want) {
+            let w = d.window.clone();
+            // AppKit calls belong on the main thread; this runs on the sync thread
+            let queued = d.window.run_on_main_thread(move || match w.ns_window() {
+                Ok(ns) => platform::set_capturable(ns, want),
+                // the window is closing (its display was unplugged): nothing left to hide
+                Err(e) => crate::log::warn(&format!("could not change whether captures show the pets: {e}")),
+            });
+            match queued {
+                Ok(()) => d.capturable = want,
+                // left as is, so the next update tries again
+                Err(e) => crate::log::warn(&format!("could not change whether captures show the pets on {}, trying again: {e}", d.name)),
             }
         }
         relayout(&mut o);
@@ -508,7 +513,18 @@ impl Overlay {
                         (o.displays.len(), o.capturable)
                     };
                     match new_window(&h2, i, &screen, capturable) {
-                        Ok(window) => me.0.lock().unwrap().displays.push(Display { name, screen, window, placed: Vec::new(), hidden: false }),
+                        Ok(window) => {
+                            let mut o = me.0.lock().unwrap();
+                            // the setting may have changed while the window was being made; this is the main thread
+                            if o.capturable != capturable {
+                                match window.ns_window() {
+                                    Ok(ns) => platform::set_capturable(ns, o.capturable),
+                                    Err(e) => crate::log::warn(&format!("could not set whether captures show the pets on {name}: {e}")),
+                                }
+                            }
+                            let applied = o.capturable;
+                            o.displays.push(Display { name, screen, window, placed: Vec::new(), hidden: false, capturable: applied });
+                        }
                         Err(e) => {
                             // the poller tries again on its next check
                             crate::log::warn(&format!("could not open the pets' window on {name}: {e}"));

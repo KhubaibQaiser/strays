@@ -209,7 +209,7 @@
 - **Store:** atomic, and corrupt files are set aside.
 - **Privacy:** everything is opt-in, with the payload shown.
 - **Comfort settings:** nudge caps and Reduce Motion are respected.
-- **Screen capture:** pets are excluded from it.
+- **Screen capture:** pets are excluded from it by default (Settings → Display can show them).
 
 ## Proposed order of work, once you approve (one small PR each, stacked on #62)
 

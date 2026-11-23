@@ -352,7 +352,9 @@ function privacy(state: UiState, s: Settings, save: () => Promise<unknown>, noti
     logBox,
   );
 
-  const capture = card("Screen capture", "Pets hidden when sharing", true, el("p", {}, "Pets never appear in screenshots, recordings or screen sharing."));
+  const capture = s.showInScreenCapture
+    ? card("Screen capture", "Pets visible in captures", false, el("p", {}, "Pets show up in screenshots, screen recordings and screen sharing. Turn it off in Display."))
+    : card("Screen capture", "Pets hidden when sharing", true, el("p", {}, "Pets don't appear in screenshots, screen recordings or screen sharing. Change it in Display."));
   const login = (() => {
     const i = el("input", { type: "checkbox", checked: state.loginItem !== "off", id: "login-item" });
     i.addEventListener("change", () => void api.setLoginItem(i.checked).then(() => notice("Saved")).catch((e) => { i.checked = !i.checked; notice(String(e), true); }));
