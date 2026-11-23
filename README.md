@@ -6,7 +6,7 @@
 
 **A desktop companion for your unfinished projects.** Each project you're working on gets a small animated pet that lives along the edge of your screen. Pushing commits feeds it. Leave a project alone and its pet gets hungry, then gloomy. Ship a release and it goes on holiday. Pets never die or age; only their mood changes.
 
-> **Status:** pre-alpha, in active development. macOS only for now: Apple Silicon Macs with macOS 14 Sonoma or later. **Intel Macs are not supported** ([why, and what adding them would cost](docs/gate-4.md#intel-macs)). There is no installable release yet.
+> **Status:** pre-alpha, in active development. macOS only for now: Apple Silicon Macs with macOS 14 Sonoma or later. **Intel Macs are not supported** ([why, and what adding them would cost](docs/gate-4.md#intel-macs)). Download the latest test build from [Releases](https://github.com/KhubaibQaiser/strays/releases/latest) ([install steps](docs/user-guide.md#install)). Builds aren't notarised yet, so macOS asks you to allow each new version once.
 
 ## Watch it
 
