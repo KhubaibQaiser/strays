@@ -6,10 +6,17 @@ Needs a Mac with **Apple Silicon** (M1 or later) and macOS 14 Sonoma or later. *
 
 ## Install
 
-1. Open `Strays.dmg` and drag **Strays** into **Applications**.
-2. Open Strays from Applications. It lives in the menu bar (🐾), not the Dock.
+1. Download `Strays_<version>_aarch64.dmg` from the [latest release](https://github.com/KhubaibQaiser/strays/releases/latest).
+2. Open it and drag **Strays** into **Applications**.
+3. Open Strays from Applications. It lives in the menu bar (🐾), not the Dock.
 
-> Until releases are signed with a Developer ID and notarised, macOS blocks the app on first open. Builds before then are for testing only.
+**macOS blocks the first open.** Releases are test builds: signed ad hoc, not with an Apple Developer ID, and not notarised by Apple. So the first time you open each new version, macOS says it can't check Strays for malware. To allow it:
+
+1. Click **Done** on that message.
+2. Open **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway** next to the Strays line. The button shows for about an hour after the blocked open; if it's gone, open Strays again first.
+3. Confirm when macOS asks again, with your password or Touch ID.
+
+You only do this once per version.
 
 ## First run
 
@@ -83,11 +90,15 @@ On a MacBook with a full menu bar, macOS hides icons behind the notch. Open **St
 
 ## Updates
 
-**Settings → About → Tell me when a new version is out.** It's off by default. When it's on, Strays asks GitHub once a week for the latest release, without your token, and tells you in About and the menu bar when a new version is out. **Download…** opens the release page; install the new `.dmg` the same way as the first. Strays never installs anything by itself.
+**Settings → About** shows the installed version.
+
+- **Check now** asks GitHub for the latest release, without your token. **Check for a new version every week** does the same once a week; it's off by default. Each check shows in the activity log.
+- When a newer version is out, **Download and install** saves its `.dmg` to Downloads and opens it. Click **Quit Strays**, drag **Strays** onto **Applications**, choose **Replace**, and open it. macOS asks you to allow the new version once (see [Install](#install)).
+- Strays never installs anything by itself: the sandboxed app can't replace its own copy in Applications.
 
 ## Privacy
 
-- No network until you connect GitHub, and then only `api.github.com`.
+- No network until you connect GitHub or check for updates, and then only `api.github.com` (an update download follows one redirect to GitHub's file host).
 - **Error reports** are off unless you turn them on (on the welcome screen, or **Settings → Privacy & Permissions → Error reports**). When they're on, Strays sends PostHog the kind of error and a short code (never the message itself, so no names or paths), plus the Strays and macOS versions and a random id, with PostHog's location lookup turned off. That's at most 20 a day, and each one shows in the activity log. Turning reports off forgets the id.
 - When something goes wrong, anywhere in Strays (including drawing the pets), the menu bar shows ⚠, and the menu and the top of Settings say what happened. Everything is also written to `logs/strays.log`, capped at about 2 MB.
 - To report a bug, open **Settings → Privacy & Permissions → Error reports**:
@@ -96,7 +107,7 @@ On a MacBook with a full menu bar, macOS hides icons behind the notch. Open **St
   - **Show log** reveals the raw log file, names included.
 - **Settings → Privacy & Permissions → View activity log** lists every request Strays made.
 - **Export JSON** saves all your data. **Open data folder** shows where it lives.
-- Pets are hidden from screen recordings and screen sharing.
+- Pets are hidden from screenshots, screen recordings and screen sharing, unless you turn on **Settings → Display → Show pets in screenshots, screen recordings and screen sharing**.
 
 ## Remove Strays
 
